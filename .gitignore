@@ -1,0 +1,19 @@
+Go-specific ignores
+
+*.exe *.exe~ *.dll *.so *.dylib
+
+Dependency directories
+
+vendor/
+
+Environment files with sensitive data
+
+.env
+
+Logs and temporary files
+
+*.log tmp/
+
+IDE-specific files
+
+.vscode/ .idea/
