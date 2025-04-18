@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  gemfactory:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gemfactory
+    env_file:
+      - .env
+    restart: unless-stopped
