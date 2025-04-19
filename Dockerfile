@@ -1,11 +1,15 @@
+Dockerfile
 # Stage 1: Build the application
-FROM golang:1.22 AS builder
+FROM golang:1.24.1 AS builder
 
 WORKDIR /app
 
+# Install git for downloading dependencies
+RUN apt-get update && apt-get install -y git
+
 # Copy go.mod and go.sum to download dependencies
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download -x
 
 # Copy the source code
 COPY . .
