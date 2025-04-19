@@ -52,6 +52,9 @@ func InitializeCache(logger *zap.Logger) {
 
 	logger.Info("Starting cache initialization for all months", zap.Int("month_count", len(months)))
 	var wg sync.WaitGroup
+	totalReleases := 0
+	var totalReleasesMu sync.Mutex
+
 	for _, month := range months {
 		wg.Add(1)
 		go func(month string) {
@@ -59,18 +62,21 @@ func InitializeCache(logger *zap.Logger) {
 			var err error
 			for retries := 0; retries < maxRetries; retries++ {
 				fullWhitelist := utils.LoadWhitelist(false)
-				_, err = GetReleasesForMonths([]string{month}, fullWhitelist, false, false, fullWhitelist, logger)
+				releases, err := GetReleasesForMonths([]string{month}, fullWhitelist, false, false, fullWhitelist, logger)
 				if err != nil {
 					if retries < maxRetries-1 {
 						time.Sleep(delay)
 						continue
 					}
 					logger.Error("Max retries reached for cache initialization", zap.String("month", month), zap.Error(err))
+				} else {
+					totalReleasesMu.Lock()
+					totalReleases += len(releases)
+					totalReleasesMu.Unlock()
 				}
 				break
 			}
 			// Update the last full update time after initialization, even if there was an error
-			// This prevents infinite retry loops in UpdateCache
 			lastFullUpdateMu.Lock()
 			lastFullUpdate = time.Now()
 			lastFullUpdateMu.Unlock()
@@ -80,7 +86,7 @@ func InitializeCache(logger *zap.Logger) {
 		}(month)
 	}
 	wg.Wait()
-	logger.Info("Cache initialization completed for all months")
+	logger.Info("Cache initialization completed", zap.Int("total_releases", totalReleases))
 }
 
 // FilterReleasesByWhitelist filters releases by the provided whitelist
@@ -106,12 +112,13 @@ func ClearCache() {
 func UpdateCache(logger *zap.Logger) {
 	// Проверяем, прошло ли CACHE_DURATION с последнего полного обновления
 	lastFullUpdateMu.RLock()
-	needsFullUpdate := time.Since(lastFullUpdate) >= cacheDuration
-	logger.Info("Checking if full cache update is needed", zap.Bool("needs_full_update", needsFullUpdate))
+	elapsed := time.Since(lastFullUpdate)
+	needsFullUpdate := elapsed >= cacheDuration
+	logger.Info("Checking cache staleness", zap.Duration("elapsed", elapsed), zap.Duration("cache_duration", cacheDuration), zap.Bool("needs_full_update", needsFullUpdate))
 	lastFullUpdateMu.RUnlock()
 
 	if needsFullUpdate {
-		logger.Info("CACHE_DURATION exceeded, triggering full cache update")
+		logger.Info("Cache has expired, triggering full update")
 		go InitializeCache(logger) // Асинхронно запускаем полное обновление кэша
 	}
 }
