@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"new_parser/parser"
+	"gemfactory/parser"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"

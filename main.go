@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"new_parser/bot"
+	"gemfactory/bot"
 
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"new_parser/formatter"
-	"new_parser/models"
-	"new_parser/utils"
+	"gemfactory/formatter"
+	"gemfactory/models"
+	"gemfactory/utils"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"

@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"new_parser/models"
-	"new_parser/parser"
-	"new_parser/utils"
+	"gemfactory/models"
+	"gemfactory/parser"
+	"gemfactory/utils"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"

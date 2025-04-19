@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"new_parser/models"
+	"gemfactory/models"
 
 	"go.uber.org/zap"
 )

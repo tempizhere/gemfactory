@@ -3,8 +3,8 @@ package bot
 import (
 	"time"
 
-	"new_parser/parser"
-	"new_parser/utils"
+	"gemfactory/parser"
+	"gemfactory/utils"
 
 	"go.uber.org/zap"
 )

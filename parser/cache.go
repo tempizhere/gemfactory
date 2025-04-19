@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"new_parser/models"
-	"new_parser/utils"
+	"gemfactory/models"
+	"gemfactory/utils"
 
 	"go.uber.org/zap"
 )
