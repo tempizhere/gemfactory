@@ -53,7 +53,6 @@ func GetMonthlyLinks(months []string, logger *zap.Logger) ([]string, error) {
 	}
 
 	collector.Wait()
-	logger.Info("Found monthly links", zap.Int("count", len(monthlyLinks)))
 	return monthlyLinks, nil
 }
 
@@ -128,7 +127,7 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 			}
 		})
 
-		if len(detailsLines) < 2 {
+		if len(detailsLines) < 1 {
 			return
 		}
 
@@ -195,12 +194,14 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 				var err error
 				parsedDate, err = formatter.FormatDate(datePart, logger)
 				if err != nil {
+					logger.Error("Failed to parse date in event", zap.String("dateText", datePart), zap.Error(err))
 					continue
 				}
 			} else {
 				var err error
 				parsedDate, err = formatter.FormatDate(dateText, logger)
 				if err != nil {
+					logger.Error("Failed to parse date in event", zap.String("dateText", dateText), zap.Error(err))
 					continue
 				}
 			}
@@ -210,15 +211,33 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 				continue
 			}
 
+			// Извлекаем альбом, трек и ссылку
 			albumName := ExtractAlbumName(eventLines, 0, len(eventLines), logger)
 			trackName := ExtractTrackName(eventLines, 0, len(eventLines), logger)
 			startIndex := eventStartIndices[idx]
 			mv := ExtractYouTubeLinkFromEvent(e, startIndex, startIndex+len(eventLines), logger)
 
-			if albumName == "N/A" && trackName == "N/A" {
+			// Проверяем наличие события
+			hasEvent := false
+			for _, line := range eventLines {
+				lowerLine := strings.ToLower(line)
+				if strings.HasPrefix(lowerLine, "album:") ||
+					strings.HasPrefix(lowerLine, "ost:") ||
+					strings.HasPrefix(lowerLine, "title track:") ||
+					strings.Contains(lowerLine, "pre-release") ||
+					strings.Contains(lowerLine, "release") ||
+					strings.Contains(lowerLine, "mv release") {
+					hasEvent = true
+					break
+				}
+			}
+
+			if !hasEvent {
+				logger.Debug("No event found for release", zap.String("artist", artist), zap.String("date", parsedDate))
 				continue
 			}
 
+			// Создаём релиз
 			release := models.Release{
 				Date:       parsedDate,
 				TimeMSK:    timeMSK,
@@ -227,10 +246,16 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 				TitleTrack: trackName,
 				MV:         mv,
 			}
-
 			key := fmt.Sprintf("%s-%s", strings.ToLower(artist), parsedDate)
 			artistReleases[key] = append(artistReleases[key], release)
 		}
+
+		// Убираем промежуточное логирование
+		totalReleases := 0
+		for _, releases := range artistReleases {
+			totalReleases += len(releases)
+		}
+		// Убираем logger.Info("Completed parsing page", ...)
 	})
 
 	if err := collector.Visit(url); err != nil {
@@ -239,7 +264,7 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 	}
 
 	collector.Wait()
-	logger.Info("Processed rows", zap.String("url", url), zap.Int("row_count", rowCount))
+	//logger.Info("Processed rows", zap.String("url", url), zap.Int("row_count", rowCount))
 
 	for _, releases := range artistReleases {
 		sort.Slice(releases, func(i, j int) bool {
