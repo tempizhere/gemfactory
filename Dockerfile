@@ -1,4 +1,3 @@
-Dockerfile
 # Stage 1: Build the application
 FROM golang:1.24.1 AS builder
 
