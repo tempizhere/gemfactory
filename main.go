@@ -10,12 +10,8 @@ import (
 )
 
 func main() {
-	// Load environment variables
-	err := godotenv.Load()
-	if err != nil {
-		fmt.Printf("Error loading .env file: %v\n", err)
-		return
-	}
+	// Load environment variables (optional)
+	_ = godotenv.Load() // Игнорируем ошибку, переменные будут браться из окружения
 
 	// Initialize logger
 	logger, err := zap.NewProduction()

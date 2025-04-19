@@ -2,10 +2,21 @@ version: '3.8'
 
 services:
   gemfactory:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: tempizhere/gemfactory:latest
     container_name: gemfactory
-    env_file:
-      - .env
+    pull_policy: always  # Всегда подтягивать последнюю версию образа
+    environment:
+      # Required: Telegram Bot Token (get it from @BotFather)
+      - BOT_TOKEN=${BOT_TOKEN}
+      # Admin username for restricted commands
+      - ADMIN_USERNAME=your_telegram_username
+      # Whitelists for filtering releases
+      - female_whitelist="artist1,artist2,artist3"
+      - male_whitelist="artist4,artist5,artist6"
+      # Cache settings
+      - CACHE_DURATION=8h
+      - CACHE_CHECK_INTERVAL=1h
+      # Parser settings
+      - MAX_RETRIES=3
+      - REQUEST_DELAY=5s
     restart: unless-stopped
