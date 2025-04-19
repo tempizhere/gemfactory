@@ -64,44 +64,60 @@ func NewBot(config *Config, logger *zap.Logger) (*Bot, error) {
 }
 
 // Start runs the bot
-func (h *Bot) Start() error {
-	defer h.handlers.keyboard.Stop() // Останавливаем тикер при завершении работы бота
+func (b *Bot) Start() error {
+	defer b.handlers.keyboard.Stop() // Останавливаем тикер при завершении работы бота
 
-	h.logger.Info("Bot started", zap.String("username", h.api.Self.UserName))
+	b.logger.Info("Bot started", zap.String("username", b.api.Self.UserName))
+
+	// Отключаем вебхук и очищаем очередь обновлений
+	_, err := b.api.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: true})
+	if err != nil {
+		b.logger.Error("Failed to delete webhook", zap.Error(err))
+		return fmt.Errorf("failed to delete webhook: %v", err)
+	}
+	b.logger.Info("Webhook removed successfully")
+
+	// Устанавливаем команды один раз при запуске
+	if err := b.handlers.SetBotCommands(); err != nil {
+		b.logger.Error("Failed to set bot commands", zap.Error(err))
+		return fmt.Errorf("failed to set bot commands: %v", err)
+	}
 
 	// Инициализируем кэш асинхронно
-	go parser.InitializeCache(h.logger)
+	go parser.InitializeCache(b.logger)
 
 	// Запускаем фоновое обновление кэша
-	go StartCacheUpdater(h.logger)
+	go StartCacheUpdater(b.logger)
 
+	// Настраиваем обновления
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
+	u.AllowedUpdates = []string{"message", "callback_query"} // Явно указываем типы обновлений
 
-	updates, err := h.api.GetUpdates(tgbotapi.NewUpdate(0))
-	if err != nil {
-		return fmt.Errorf("failed to get updates: %v", err)
+	b.logger.Info("Starting to fetch updates from Telegram API")
+	updatesChan := b.api.GetUpdatesChan(u)
+	if updatesChan == nil {
+		b.logger.Error("Failed to create updates channel")
+		return fmt.Errorf("failed to create updates channel")
 	}
-	if len(updates) > 0 {
-		u.Offset = updates[len(updates)-1].UpdateID + 1
-	}
 
-	updatesChan := h.api.GetUpdatesChan(u)
-
+	b.logger.Info("Listening for updates")
 	for update := range updatesChan {
+		// Логируем получение обновления с минимальными деталями
+		if update.Message != nil {
+			b.logger.Info("Received command", zap.String("text", update.Message.Text))
+		} else if update.CallbackQuery != nil {
+			b.logger.Info("Received callback", zap.String("data", update.CallbackQuery.Data))
+		}
+
 		// Handle Commands and Callback Queries
 		if update.Message == nil && update.CallbackQuery == nil {
 			continue
 		}
 
-		// Устанавливаем команды для всех пользователей
-		if err := h.handlers.SetBotCommands(); err != nil {
-			h.logger.Error("Failed to set bot commands", zap.Error(err))
-		}
-
 		// Handle Callback Queries (Inline Keyboard)
 		if update.CallbackQuery != nil {
-			go h.handlers.HandleCallbackQuery(update)
+			go b.handlers.HandleCallbackQuery(update)
 			continue
 		}
 
@@ -110,8 +126,9 @@ func (h *Bot) Start() error {
 			continue
 		}
 
-		go h.handlers.HandleCommand(update)
+		go b.handlers.HandleCommand(update)
 	}
 
+	b.logger.Info("Update channel closed, stopping bot")
 	return nil
 }

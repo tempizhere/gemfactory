@@ -2,47 +2,69 @@ package bot
 
 import (
 	"strings"
-	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// months defines the list of month names
+var months = []string{
+	"January", "February", "March", "April", "May", "June",
+	"July", "August", "September", "October", "November", "December",
+}
+
 // KeyboardHandler manages Inline Keyboards for the bot
 type KeyboardHandler struct {
 	mainMonthKeyboard tgbotapi.InlineKeyboardMarkup
 	allMonthsKeyboard tgbotapi.InlineKeyboardMarkup
-	mu                sync.RWMutex
-	stopChan          chan struct{}
-	stopOnce          sync.Once
 }
 
 // NewKeyboardHandler creates a new KeyboardHandler instance with cached keyboards
 func NewKeyboardHandler() *KeyboardHandler {
-	k := &KeyboardHandler{
-		stopChan: make(chan struct{}),
-	}
-	k.updateKeyboards() // Инициализируем клавиатуры при создании
+	k := &KeyboardHandler{}
 
-	// Запускаем периодическое обновление клавиатур каждые 10 дней
+	// Создаём статическую клавиатуру для всех месяцев
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for i := 0; i < len(months); i += 3 {
+		var row []tgbotapi.InlineKeyboardButton
+		for j := 0; j < 3 && i+j < len(months); j++ {
+			month := months[i+j]
+			row = append(row, tgbotapi.NewInlineKeyboardButtonData(month, "month_"+strings.ToLower(month)))
+		}
+		rows = append(rows, row)
+	}
+	// Добавляем кнопку "Back"
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Back", "back_to_main")))
+	k.allMonthsKeyboard = tgbotapi.NewInlineKeyboardMarkup(rows...)
+
+	// Инициализируем mainMonthKeyboard
+	k.updateMainMonthKeyboard()
+
+	// Запускаем периодическое обновление mainMonthKeyboard 1-го числа каждого месяца
 	go func() {
-		ticker := time.NewTicker(10 * 24 * time.Hour) // 10 дней
-		defer ticker.Stop()
 		for {
-			select {
-			case <-ticker.C:
-				k.updateKeyboards()
-			case <-k.stopChan:
-				return
-			}
+			// Вычисляем время до следующего 1-го числа
+			now := time.Now()
+			// Получаем начало следующего месяца
+			nextMonth := now.AddDate(0, 1, 0)
+			// Устанавливаем 1-е число следующего месяца, 00:00:00
+			firstOfNextMonth := time.Date(nextMonth.Year(), nextMonth.Month(), 1, 0, 0, 0, 0, now.Location())
+			// Вычисляем время ожидания
+			durationUntilFirst := firstOfNextMonth.Sub(now)
+
+			// Ждём до 1-го числа
+			time.Sleep(durationUntilFirst)
+
+			// Обновляем клавиатуру
+			k.updateMainMonthKeyboard()
 		}
 	}()
 
 	return k
 }
 
-// updateKeyboards updates the cached keyboards
-func (k *KeyboardHandler) updateKeyboards() {
+// updateMainMonthKeyboard updates the main month keyboard with the current, previous, and next months
+func (k *KeyboardHandler) updateMainMonthKeyboard() {
 	// Main Month Keyboard: текущий, предыдущий и следующий месяц
 	currentMonth := time.Now().Month()
 	prevMonth := currentMonth - 1
@@ -54,8 +76,6 @@ func (k *KeyboardHandler) updateKeyboards() {
 		nextMonth = 1
 	}
 
-	months := []string{"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"}
-
 	buttons := []tgbotapi.InlineKeyboardButton{
 		tgbotapi.NewInlineKeyboardButtonData(months[prevMonth-1], "month_"+strings.ToLower(months[prevMonth-1])),
 		tgbotapi.NewInlineKeyboardButtonData(months[currentMonth-1], "month_"+strings.ToLower(months[currentMonth-1])),
@@ -63,47 +83,22 @@ func (k *KeyboardHandler) updateKeyboards() {
 		tgbotapi.NewInlineKeyboardButtonData("...", "show_all_months"),
 	}
 
-	// Обновляем клавиатуры с использованием мьютекса
-	k.mu.Lock()
 	k.mainMonthKeyboard = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(buttons...),
 	)
-
-	// All Months Keyboard: все 12 месяцев
-	var rows [][]tgbotapi.InlineKeyboardButton
-	for i := 0; i < len(months); i += 3 {
-		var row []tgbotapi.InlineKeyboardButton
-		for j := 0; j < 3 && i+j < len(months); j++ {
-			month := months[i+j]
-			row = append(row, tgbotapi.NewInlineKeyboardButtonData(month, "month_"+strings.ToLower(month)))
-		}
-		rows = append(rows, row)
-	}
-
-	// Добавляем кнопку "Back"
-	rows = append(rows, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Back", "back_to_main")))
-
-	k.allMonthsKeyboard = tgbotapi.NewInlineKeyboardMarkup(rows...)
-	k.mu.Unlock()
 }
 
 // GetMainMonthKeyboard returns the cached main month keyboard
 func (k *KeyboardHandler) GetMainMonthKeyboard() tgbotapi.InlineKeyboardMarkup {
-	k.mu.RLock()
-	defer k.mu.RUnlock()
 	return k.mainMonthKeyboard
 }
 
 // GetAllMonthsKeyboard returns the cached all months keyboard
 func (k *KeyboardHandler) GetAllMonthsKeyboard() tgbotapi.InlineKeyboardMarkup {
-	k.mu.RLock()
-	defer k.mu.RUnlock()
 	return k.allMonthsKeyboard
 }
 
-// Stop stops the keyboard update ticker
+// Stop is a no-op since periodic updates are managed with a simple sleep loop
 func (k *KeyboardHandler) Stop() {
-	k.stopOnce.Do(func() {
-		close(k.stopChan)
-	})
+	// Ничего не делаем, так как бесконечный цикл завершится при остановке бота
 }

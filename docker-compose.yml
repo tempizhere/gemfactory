@@ -15,7 +15,6 @@ services:
       - male_whitelist="artist4,artist5,artist6"
       # Cache settings
       - CACHE_DURATION=8h
-      - CACHE_CHECK_INTERVAL=1h
       # Parser settings
       - MAX_RETRIES=3
       - REQUEST_DELAY=5s

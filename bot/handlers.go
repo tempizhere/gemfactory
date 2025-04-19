@@ -100,10 +100,10 @@ func (h *CommandHandlers) handleHelp(chatID int64) {
 	helpText := "Парсю сайтик и шлю релизики\n\n" +
 		"Доступные команды:\n" +
 		"/help - показать это сообщение\n" +
-		"/month - получить релизы за текущий месяц\n" +
+		"/month - показать клавиатуру для выбора месяца\n" +
 		"/month <month> - получить релизы за указанный месяц (например, /month march)\n" +
-		"Параметр -gg: использовать только female_whitelist (например, /month -gg, /month march -gg)\n" +
-		"Параметр -mg: использовать только male_whitelist (например, /month -mg, /month march -mg)\n" +
+		"Параметр -gg: использовать только female_whitelist (например, /month march -gg)\n" +
+		"Параметр -mg: использовать только male_whitelist (например, /month march -mg)\n" +
 		"/whitelists - показать вайтлисты\n\n" +
 		"По вопросам вайтлистов, обращаться к @" + h.config.AdminUsername
 
@@ -177,7 +177,6 @@ func (h *CommandHandlers) fetchReleases(months []string, femaleOnly, maleOnly bo
 		}
 	}
 
-	h.logger.Info("Loaded whitelist", zap.Int("size", len(whitelist)))
 	releases, err := parser.GetReleasesForMonths(months, whitelist, femaleOnly, maleOnly, fullWhitelist, h.logger)
 	if err != nil {
 		return nil, err

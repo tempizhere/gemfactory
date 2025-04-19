@@ -23,16 +23,22 @@ type CacheEntry struct {
 var cache = make(map[string]CacheEntry)
 var cacheMu sync.RWMutex
 
-// CacheKeyInfo holds information about a cached key
-type CacheKeyInfo struct {
-	Months        []string
-	Whitelist     map[string]struct{}
-	FullWhitelist map[string]struct{}
-}
+// lastFullUpdate tracks the time of the last full cache update
+var lastFullUpdate time.Time
+var lastFullUpdateMu sync.RWMutex
 
-// cacheKeys holds the list of cache keys and their associated parameters
-var cacheKeys = make(map[string]CacheKeyInfo)
-var cacheKeysMu sync.RWMutex
+// cacheDuration holds the parsed CACHE_DURATION value
+var cacheDuration time.Duration
+
+// init initializes the cache duration
+func init() {
+	cacheDurationStr := os.Getenv("CACHE_DURATION")
+	var err error
+	cacheDuration, err = time.ParseDuration(cacheDurationStr)
+	if err != nil || cacheDuration <= 0 {
+		cacheDuration = 24 * time.Hour // Значение по умолчанию
+	}
+}
 
 // InitializeCache initializes the cache for all months asynchronously
 func InitializeCache(logger *zap.Logger) {
@@ -44,25 +50,37 @@ func InitializeCache(logger *zap.Logger) {
 	maxRetries := utils.GetMaxRetries()
 	delay := utils.GetRequestDelay()
 
+	logger.Info("Starting cache initialization for all months", zap.Int("month_count", len(months)))
+	var wg sync.WaitGroup
 	for _, month := range months {
+		wg.Add(1)
 		go func(month string) {
+			defer wg.Done()
+			var err error
 			for retries := 0; retries < maxRetries; retries++ {
-				logger.Info("Initializing cache for month", zap.String("month", month), zap.Int("retry", retries))
 				fullWhitelist := utils.LoadWhitelist(false)
-				_, err := GetReleasesForMonths([]string{month}, fullWhitelist, false, false, fullWhitelist, logger)
+				_, err = GetReleasesForMonths([]string{month}, fullWhitelist, false, false, fullWhitelist, logger)
 				if err != nil {
-					logger.Error("Failed to initialize cache for month", zap.String("month", month), zap.Error(err))
 					if retries < maxRetries-1 {
-						logger.Info("Retrying cache initialization after delay", zap.String("month", month), zap.Duration("delay", delay))
 						time.Sleep(delay)
 						continue
 					}
-					logger.Error("Max retries reached for cache initialization", zap.String("month", month))
+					logger.Error("Max retries reached for cache initialization", zap.String("month", month), zap.Error(err))
 				}
 				break
 			}
+			// Update the last full update time after initialization, even if there was an error
+			// This prevents infinite retry loops in UpdateCache
+			lastFullUpdateMu.Lock()
+			lastFullUpdate = time.Now()
+			lastFullUpdateMu.Unlock()
+			if err != nil {
+				logger.Warn("Cache initialization for month completed with error", zap.String("month", month), zap.Error(err))
+			}
 		}(month)
 	}
+	wg.Wait()
+	logger.Info("Cache initialization completed for all months")
 }
 
 // FilterReleasesByWhitelist filters releases by the provided whitelist
@@ -82,61 +100,19 @@ func ClearCache() {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	cache = make(map[string]CacheEntry)
-
-	cacheKeysMu.Lock()
-	defer cacheKeysMu.Unlock()
-	cacheKeys = make(map[string]CacheKeyInfo)
 }
 
-// UpdateCache updates expired cache entries, one at a time
+// UpdateCache checks if CACHE_DURATION has passed and triggers a full cache update if needed
 func UpdateCache(logger *zap.Logger) {
-	cacheKeysMu.RLock()
-	keys := make([]string, 0, len(cacheKeys))
-	for key := range cacheKeys {
-		keys = append(keys, key)
-	}
-	cacheKeysMu.RUnlock()
+	// Проверяем, прошло ли CACHE_DURATION с последнего полного обновления
+	lastFullUpdateMu.RLock()
+	needsFullUpdate := time.Since(lastFullUpdate) >= cacheDuration
+	logger.Info("Checking if full cache update is needed", zap.Bool("needs_full_update", needsFullUpdate))
+	lastFullUpdateMu.RUnlock()
 
-	// Проверяем, есть ли устаревшие ключи
-	cacheDurationStr := os.Getenv("CACHE_DURATION")
-	cacheDuration, err := time.ParseDuration(cacheDurationStr)
-	if err != nil || cacheDuration <= 0 {
-		cacheDuration = 24 * time.Hour
-	}
-
-	// Ищем первый устаревший ключ и обновляем только его
-	for _, key := range keys {
-		cacheMu.RLock()
-		entry, exists := cache[key]
-		cacheMu.RUnlock()
-
-		if !exists {
-			continue
-		}
-
-		if time.Since(entry.Timestamp) >= cacheDuration {
-			cacheKeysMu.RLock()
-			info, ok := cacheKeys[key]
-			cacheKeysMu.RUnlock()
-
-			if !ok {
-				continue
-			}
-
-			logger.Info("Cache expired, updating", zap.String("months", strings.Join(info.Months, ",")))
-			releases, err := GetReleasesForMonths(info.Months, info.Whitelist, false, false, info.FullWhitelist, logger)
-			if err != nil {
-				logger.Error("Failed to update cache", zap.String("months", strings.Join(info.Months, ",")), zap.Error(err))
-				return // Прерываем цикл после первой неудачной попытки, попробуем снова в следующем цикле
-			}
-
-			cacheMu.Lock()
-			logger.Info("Updating cache", zap.String("months", strings.Join(info.Months, ",")))
-			cache[key] = CacheEntry{Releases: releases, Timestamp: time.Now()}
-			cacheMu.Unlock()
-			logger.Info("Cache updated", zap.String("months", strings.Join(info.Months, ",")))
-			return // Обновили один ключ, выходим из цикла
-		}
+	if needsFullUpdate {
+		logger.Info("CACHE_DURATION exceeded, triggering full cache update")
+		go InitializeCache(logger) // Асинхронно запускаем полное обновление кэша
 	}
 }
 
@@ -155,41 +131,30 @@ func GetReleasesForMonths(months []string, whitelist map[string]struct{}, female
 	// Ключ кэша для текущего whitelist
 	cacheKey := fmt.Sprintf("%s-%v", strings.Join(months, ","), whitelist)
 
-	// Чтение CACHE_DURATION из .env
-	cacheDurationStr := os.Getenv("CACHE_DURATION")
-	cacheDuration, err := time.ParseDuration(cacheDurationStr)
-	if err != nil || cacheDuration <= 0 {
-		cacheDuration = 24 * time.Hour // Значение по умолчанию
-	}
-
-	// Проверяем кэш для текущего whitelist
-	cacheMu.RLock()
-	if entry, ok := cache[cacheKey]; ok && time.Since(entry.Timestamp) < cacheDuration {
-		cacheMu.RUnlock()
-		logger.Info("Returning releases from cache", zap.String("months", strings.Join(months, ",")), zap.Int("whitelist_size", len(whitelist)))
-		return entry.Releases, nil
-	}
-	cacheMu.RUnlock()
-
-	// Если femaleOnly=true или maleOnly=true, проверяем кэш для полного whitelist
+	// Проверяем кэш для полного whitelist, если femaleOnly или maleOnly активны
 	if (femaleOnly || maleOnly) && fullWhitelist != nil {
 		fullCacheKey := fmt.Sprintf("%s-%v", strings.Join(months, ","), fullWhitelist)
 		cacheMu.RLock()
 		if entry, ok := cache[fullCacheKey]; ok && time.Since(entry.Timestamp) < cacheDuration {
 			cacheMu.RUnlock()
-			logger.Info("Returning filtered releases from full whitelist cache", zap.String("months", strings.Join(months, ",")), zap.Int("whitelist_size", len(whitelist)), zap.Int("full_whitelist_size", len(fullWhitelist)))
 			return FilterReleasesByWhitelist(entry.Releases, whitelist), nil
 		}
 		cacheMu.RUnlock()
 	}
 
-	// Логируем обновление кэша из-за протухания или отсутствия
-	logger.Info("Cache expired or not found, updating cache", zap.String("months", strings.Join(months, ",")), zap.Int("whitelist_size", len(whitelist)))
+	// Проверяем кэш для текущего whitelist
+	cacheMu.RLock()
+	entry, ok := cache[cacheKey]
+	isFresh := ok && time.Since(entry.Timestamp) < cacheDuration
+	if isFresh {
+		cacheMu.RUnlock()
+		return entry.Releases, nil
+	}
+	cacheMu.RUnlock()
 
 	// Если кэш не найден, парсим сайт
 	monthlyLinks, err := GetMonthlyLinks(months, logger)
 	if err != nil {
-		logger.Error("Failed to update cache", zap.Error(err))
 		// Проверяем, есть ли устаревшие данные в кэше
 		cacheMu.RLock()
 		if entry, ok := cache[cacheKey]; ok {
@@ -198,11 +163,12 @@ func GetReleasesForMonths(months []string, whitelist map[string]struct{}, female
 			return entry.Releases, nil
 		}
 		cacheMu.RUnlock()
+		logger.Error("Failed to get monthly links", zap.Error(err))
 		return nil, fmt.Errorf("failed to get monthly links: %v", err)
 	}
 
-	var allReleases []models.Release
-	var mu sync.Mutex
+	// Используем канал для сбора релизов из горутин
+	releaseChan := make(chan []models.Release, len(monthlyLinks))
 	var wg sync.WaitGroup
 
 	for _, link := range monthlyLinks {
@@ -212,15 +178,26 @@ func GetReleasesForMonths(months []string, whitelist map[string]struct{}, female
 			releases, err := ParseMonthlyPage(link, whitelist, months[0], logger)
 			if err != nil {
 				logger.Error("Failed to parse page", zap.String("url", link), zap.Error(err))
+				releaseChan <- nil
 				return
 			}
-			mu.Lock()
-			allReleases = append(allReleases, releases...)
-			mu.Unlock()
+			releaseChan <- releases
 		}(link)
 	}
 
-	wg.Wait()
+	// Закрываем канал после завершения всех горутин
+	go func() {
+		wg.Wait()
+		close(releaseChan)
+	}()
+
+	// Собираем релизы из канала
+	var allReleases []models.Release
+	for releases := range releaseChan {
+		if releases != nil {
+			allReleases = append(allReleases, releases...)
+		}
+	}
 
 	sort.Slice(allReleases, func(i, j int) bool {
 		dateI, _ := time.Parse(models.DateFormat, allReleases[i].Date)
@@ -231,15 +208,6 @@ func GetReleasesForMonths(months []string, whitelist map[string]struct{}, female
 	cacheMu.Lock()
 	cache[cacheKey] = CacheEntry{Releases: allReleases, Timestamp: time.Now()}
 	cacheMu.Unlock()
-
-	// Сохраняем параметры запроса для фонового обновления
-	cacheKeysMu.Lock()
-	cacheKeys[cacheKey] = CacheKeyInfo{
-		Months:        months,
-		Whitelist:     whitelist,
-		FullWhitelist: fullWhitelist,
-	}
-	cacheKeysMu.Unlock()
 
 	return allReleases, nil
 }
