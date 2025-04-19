@@ -21,9 +21,6 @@ WORKDIR /root/
 # Copy the binary from the builder stage
 COPY --from=builder /app/gemfactory .
 
-# Copy .env file (will be overridden by Docker Compose or runtime environment)
-COPY .env .
-
 # Install ca-certificates for HTTPS requests
 RUN apk --no-cache add ca-certificates
 

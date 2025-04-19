@@ -27,4 +27,6 @@ jobs:
         context: .
         file: ./Dockerfile
         push: true
-        tags: ${{ secrets.DOCKERHUB_USERNAME }}/gemfactory:latest
+        tags: |
+          ${{ secrets.DOCKERHUB_USERNAME }}/gemfactory:latest
+          ${{ secrets.DOCKERHUB_USERNAME }}/gemfactory:${{ github.sha }}
