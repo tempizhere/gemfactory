@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  gemfactory:
+    image: tempizhere/gemfactory:latest
+    container_name: gemfactory
+    pull_policy: always
+    env_file:
+      - .env
+    restart: unless-stopped
