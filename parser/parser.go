@@ -127,7 +127,10 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 			}
 		})
 
+		logger.Debug("Extracted details for artist", zap.String("artist", artist), zap.Strings("details", detailsLines))
+
 		if len(detailsLines) < 1 {
+			logger.Debug("No details extracted for artist", zap.String("artist", artist)) // Добавляем лог
 			return
 		}
 
@@ -233,7 +236,7 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 			}
 
 			if !hasEvent {
-				logger.Debug("No event found for release", zap.String("artist", artist), zap.String("date", parsedDate))
+				logger.Debug("No event found for release", zap.String("artist", artist), zap.String("date", parsedDate), zap.Strings("eventLines", eventLines)) // Обновляем лог с eventLines
 				continue
 			}
 
