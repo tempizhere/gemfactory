@@ -100,9 +100,6 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 			}
 		}
 		artist = strings.TrimSpace(artist)
-
-		logger.Debug("Found artist row", zap.String("artist", artist), zap.String("date", dateText))
-
 		artistKey := strings.ToLower(artist)
 		if _, ok := whitelist[artistKey]; !ok {
 			return
@@ -129,8 +126,6 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 				currentLine.Reset()
 			}
 		})
-
-		logger.Debug("Extracted details for artist", zap.String("artist", artist), zap.Strings("details", detailsLines))
 
 		if len(detailsLines) < 1 {
 			logger.Debug("No details extracted for artist", zap.String("artist", artist)) // Добавляем лог

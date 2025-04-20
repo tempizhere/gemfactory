@@ -14,7 +14,7 @@ func main() {
 	_ = godotenv.Load() // Игнорируем ошибку, переменные будут браться из окружения
 
 	// Initialize logger
-	logger, err := zap.NewDevelopment()
+	logger, err := zap.NewProduction()
 	if err != nil {
 		fmt.Printf("Failed to initialize logger: %v\n", err)
 		return
