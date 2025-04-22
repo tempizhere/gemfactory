@@ -38,6 +38,11 @@ func init() {
 	if err != nil || cacheDuration <= 0 {
 		cacheDuration = 24 * time.Hour // Значение по умолчанию
 	}
+
+	// Инициализируем lastFullUpdate текущим временем
+	lastFullUpdateMu.Lock()
+	lastFullUpdate = time.Now()
+	lastFullUpdateMu.Unlock()
 }
 
 // InitializeCache initializes the cache for all months asynchronously
