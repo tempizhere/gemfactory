@@ -118,7 +118,7 @@ func UpdateCache(logger *zap.Logger) {
 	// Проверяем, прошло ли CACHE_DURATION с последнего полного обновления
 	lastFullUpdateMu.RLock()
 	elapsed := time.Since(lastFullUpdate)
-	needsFullUpdate := elapsed >= cacheDuration
+	needsFullUpdate := elapsed+time.Second >= cacheDuration // Добавляем запас в 1 секунду
 	logger.Info("Checking cache staleness", zap.Duration("elapsed", elapsed), zap.Duration("cache_duration", cacheDuration), zap.Bool("needs_full_update", needsFullUpdate))
 	lastFullUpdateMu.RUnlock()
 
