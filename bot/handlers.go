@@ -262,13 +262,22 @@ func (h *CommandHandlers) handleClearCache(update tgbotapi.Update) {
 		return
 	}
 
+	// Проверяем, пуст ли кэш
+	cacheSize := len(parser.GetCacheKeys())
+	if cacheSize == 0 {
+		msg := tgbotapi.NewMessage(chatID, "Кэш уже пуст.")
+		msg.ReplyMarkup = h.keyboard.GetMainMonthKeyboard()
+		h.api.Send(msg)
+		return
+	}
+
 	// Очищаем кэш
 	parser.ClearCache()
 
-	// Запускаем асинхронное обновление кэша, как при старте бота
+	// Запускаем асинхронное обновление кэша
 	go parser.InitializeCache(h.logger)
 
-	// Сообщаем пользователю, что кэш очищен и обновление началось
+	// Сообщаем пользователю
 	msg := tgbotapi.NewMessage(chatID, "Кэш очищен. Обновление кэша запущено.")
 	msg.ReplyMarkup = h.keyboard.GetMainMonthKeyboard()
 	h.api.Send(msg)

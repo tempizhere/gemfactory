@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"gemfactory/bot"
@@ -20,6 +21,12 @@ func main() {
 		return
 	}
 	defer logger.Sync()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Запускаем автоматическое обновление кэша через bot/cache_updater.go
+	bot.StartCacheUpdater(ctx, logger)
 
 	// Load configuration
 	config, err := bot.NewConfig()

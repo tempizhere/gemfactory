@@ -1,7 +1,7 @@
 package bot
 
 import (
-	"os"
+	"context"
 	"time"
 
 	"gemfactory/parser"
@@ -9,25 +9,21 @@ import (
 	"go.uber.org/zap"
 )
 
-// StartCacheUpdater runs a background task to periodically update the cache based on CACHE_DURATION
-func StartCacheUpdater(logger *zap.Logger) {
-	// Чтение CACHE_DURATION из .env
-	cacheDurationStr := os.Getenv("CACHE_DURATION")
-	cacheDuration, err := time.ParseDuration(cacheDurationStr)
-	if err != nil || cacheDuration <= 0 {
-		cacheDuration = 24 * time.Hour // Значение по умолчанию
-		logger.Warn("Invalid CACHE_DURATION, using default", zap.String("cache_duration", cacheDurationStr), zap.Duration("default", cacheDuration))
-	}
-
-	logger.Info("Starting cache updater", zap.Duration("interval", cacheDuration))
-
-	for {
-		// Ждём истечения CACHE_DURATION
-		time.Sleep(cacheDuration)
-
-		// Обновляем кэш
-		logger.Info("Cache update started")
-		parser.UpdateCache(logger)
-		logger.Info("Cache update completed")
-	}
+// StartCacheUpdater starts a goroutine to update the cache every CACHE_DURATION
+func StartCacheUpdater(ctx context.Context, logger *zap.Logger) {
+	ticker := time.NewTicker(parser.GetCacheDuration())
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				logger.Info("Triggering periodic cache update")
+				parser.InitializeCache(logger)
+				parser.CleanupOldCacheEntries()
+			case <-ctx.Done():
+				logger.Info("Stopping cache updater")
+				return
+			}
+		}
+	}()
 }

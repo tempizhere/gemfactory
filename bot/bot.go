@@ -86,9 +86,6 @@ func (b *Bot) Start() error {
 	// Инициализируем кэш асинхронно
 	go parser.InitializeCache(b.logger)
 
-	// Запускаем фоновое обновление кэша
-	go StartCacheUpdater(b.logger)
-
 	// Настраиваем обновления
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
