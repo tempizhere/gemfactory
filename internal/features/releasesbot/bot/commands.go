@@ -137,12 +137,13 @@ func (h *CommandHandlers) handleStart(msg *tgbotapi.Message) {
 // handleHelp processes the /help command
 func (h *CommandHandlers) handleHelp(msg *tgbotapi.Message) {
 	text := "Доступные команды:\n" +
-		"/start - Начать работу с ботом\n" +
+		"\n/start - Начать работу с ботом\n" +
 		"/help - Показать это сообщение\n" +
 		"/month [месяц] - Получить релизы за указанный месяц\n" +
 		"/month [месяц] -gg - Получить релизы только для женских групп\n" +
 		"/month [месяц] -mg - Получить релизы только для мужских групп\n" +
 		"/whitelists - Показать списки артистов\n" +
+		"\n" +
 		fmt.Sprintf("По вопросам вайтлистов обращайтесь к @%s", h.config.AdminUsername)
 	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
 	reply.ReplyMarkup = h.keyboard.GetMainKeyboard()
@@ -160,6 +161,19 @@ func (h *CommandHandlers) handleMonth(msg *tgbotapi.Message, args []string) {
 	}
 
 	month := strings.ToLower(args[0])
+	femaleOnly := false
+	maleOnly := false
+
+	// Проверяем флаги -gg и -mg
+	for _, arg := range args[1:] {
+		if arg == "-gg" {
+			femaleOnly = true
+		} else if arg == "-mg" {
+			maleOnly = true
+		}
+	}
+
+	// Проверяем корректность месяца
 	validMonth := false
 	for _, m := range release.Months {
 		if month == m {
@@ -172,8 +186,17 @@ func (h *CommandHandlers) handleMonth(msg *tgbotapi.Message, args []string) {
 		return
 	}
 
-	whitelist := h.al.GetUnitedWhitelist()
-	releases, err := cache.GetReleasesForMonths([]string{month}, whitelist, false, false, whitelist, h.config, h.logger)
+	// Получаем вайтлист в зависимости от флагов
+	var whitelist map[string]struct{}
+	if femaleOnly && !maleOnly {
+		whitelist = h.al.GetFemaleWhitelist()
+	} else if maleOnly && !femaleOnly {
+		whitelist = h.al.GetMaleWhitelist()
+	} else {
+		whitelist = h.al.GetUnitedWhitelist()
+	}
+
+	releases, err := cache.GetReleasesForMonths([]string{month}, whitelist, femaleOnly, maleOnly, h.al.GetUnitedWhitelist(), h.config, h.logger)
 	if err != nil {
 		h.sendMessage(msg.Chat.ID, fmt.Sprintf("Ошибка при получении релизов: %v", err))
 		return
@@ -193,7 +216,7 @@ func (h *CommandHandlers) handleMonth(msg *tgbotapi.Message, args []string) {
 	reply := tgbotapi.NewMessage(msg.Chat.ID, response.String())
 	reply.ParseMode = "HTML"
 	reply.ReplyMarkup = h.keyboard.GetMainKeyboard()
-	reply.DisableWebPagePreview = true // Отключаем превью ссылок
+	reply.DisableWebPagePreview = true
 	h.sendMessageWithMarkup(msg.Chat.ID, response.String(), reply.ReplyMarkup)
 }
 
@@ -203,29 +226,83 @@ func (h *CommandHandlers) handleWhitelists(msg *tgbotapi.Message) {
 	male := h.al.GetMaleWhitelist()
 
 	var response strings.Builder
-	response.WriteString("<b>Женские артисты:</b> ")
+	response.WriteString("<b>Женские артисты:</b><code>\n")
 	femaleArtists := make([]string, 0, len(female))
 	for artist := range female {
 		femaleArtists = append(femaleArtists, artist)
 	}
-	sort.Strings(femaleArtists) // Сортируем для упорядоченного вывода
+	sort.Strings(femaleArtists)
 	if len(femaleArtists) == 0 {
-		response.WriteString("пусто")
+		response.WriteString("пусто\n")
 	} else {
-		response.WriteString(strings.Join(femaleArtists, ", "))
+		const columns = 3
+		// Находим максимальную длину имени
+		maxLength := 0
+		for _, artist := range femaleArtists {
+			if len(artist) > maxLength {
+				maxLength = len(artist)
+			}
+		}
+		columnWidth := maxLength + 4 // Увеличенный отступ
+		// Рассчитываем количество строк
+		rows := (len(femaleArtists) + columns - 1) / columns
+		// Заполняем столбцы вертикально
+		for i := 0; i < rows; i++ {
+			for j := 0; j < columns; j++ {
+				index := i + j*rows
+				if index < len(femaleArtists) {
+					response.WriteString(fmt.Sprintf("%-*s", columnWidth, femaleArtists[index]))
+				} else {
+					response.WriteString(strings.Repeat(" ", columnWidth))
+				}
+			}
+			response.WriteString("\n")
+			// Добавляем пустую строку каждые 5 строк
+			if i > 0 && (i+1)%5 == 0 && i < rows-1 {
+				response.WriteString("\n")
+			}
+		}
 	}
+	response.WriteString("</code>\n")
 
-	response.WriteString("\n<b>Мужские артисты:</b> ")
+	response.WriteString("<b>Мужские артисты:</b><code>\n")
 	maleArtists := make([]string, 0, len(male))
 	for artist := range male {
 		maleArtists = append(maleArtists, artist)
 	}
-	sort.Strings(maleArtists) // Сортируем для упорядоченного вывода
+	sort.Strings(maleArtists)
 	if len(maleArtists) == 0 {
-		response.WriteString("пусто")
+		response.WriteString("пусто\n")
 	} else {
-		response.WriteString(strings.Join(maleArtists, ", "))
+		const columns = 2
+		// Находим максимальную длину имени
+		maxLength := 0
+		for _, artist := range maleArtists {
+			if len(artist) > maxLength {
+				maxLength = len(artist)
+			}
+		}
+		columnWidth := maxLength + 4 // Увеличенный отступ
+		// Рассчитываем количество строк
+		rows := (len(maleArtists) + columns - 1) / columns
+		// Заполняем столбцы вертикально
+		for i := 0; i < rows; i++ {
+			for j := 0; j < columns; j++ {
+				index := i + j*rows
+				if index < len(maleArtists) {
+					response.WriteString(fmt.Sprintf("%-*s", columnWidth, maleArtists[index]))
+				} else {
+					response.WriteString(strings.Repeat(" ", columnWidth))
+				}
+			}
+			response.WriteString("\n")
+			// Добавляем пустую строку каждые 5 строк
+			if i > 0 && (i+1)%5 == 0 && i < rows-1 {
+				response.WriteString("\n")
+			}
+		}
 	}
+	response.WriteString("</code>\n")
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, response.String())
 	reply.ParseMode = "HTML"
