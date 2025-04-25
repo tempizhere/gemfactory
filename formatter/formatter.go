@@ -124,26 +124,26 @@ func CleanLink(link string, logger *zap.Logger) string {
 
 // FormatReleaseForTelegram formats a release for Telegram
 func FormatReleaseForTelegram(release models.Release) string {
-    artist := html.EscapeString(release.Artist)
-    albumName := html.EscapeString(release.AlbumName)
-    albumName = strings.TrimPrefix(albumName, "Album: ")
-    albumName = strings.TrimPrefix(albumName, "OST: ")
-    cleanedTitleTrack := strings.ReplaceAll(release.TitleTrack, "Title Track:", "")
-    cleanedTitleTrack = strings.TrimSpace(cleanedTitleTrack)
-    trackName := html.EscapeString(cleanedTitleTrack)
+	artist := html.EscapeString(release.Artist)
+	albumName := html.EscapeString(release.AlbumName)
+	albumName = strings.TrimPrefix(albumName, "Album: ")
+	albumName = strings.TrimPrefix(albumName, "OST: ")
+	cleanedTitleTrack := strings.ReplaceAll(release.TitleTrack, "Title Track:", "")
+	cleanedTitleTrack = strings.TrimSpace(cleanedTitleTrack)
+	trackName := html.EscapeString(cleanedTitleTrack)
 
-    result := fmt.Sprintf("%s | <b>%s</b>", release.Date, artist)
-    if albumName != "N/A" { // Отображаем альбом, если он есть
-        result += fmt.Sprintf(" | %s", albumName)
-    }
-    if release.MV != "" && release.MV != "N/A" {
-        if trackName != "N/A" {
-            result += fmt.Sprintf(" | <a href=\"%s\">%s</a>", release.MV, trackName)
-        } else {
-            result += fmt.Sprintf(" | <a href=\"%s\">Link</a>", release.MV)
-        }
-    } else if trackName != "N/A" {
-        result += fmt.Sprintf(" | %s", trackName)
-    }
-    return result
+	result := fmt.Sprintf("%s | <b>%s</b>", release.Date, artist)
+	if albumName != "N/A" { // Отображаем альбом, если он есть
+		result += fmt.Sprintf(" | %s", albumName)
+	}
+	if release.MV != "" && release.MV != "N/A" {
+		if trackName != "N/A" {
+			result += fmt.Sprintf(" | <a href=\"%s\">%s</a>", release.MV, trackName)
+		} else {
+			result += fmt.Sprintf(" | <a href=\"%s\">Link</a>", release.MV)
+		}
+	} else if trackName != "N/A" {
+		result += fmt.Sprintf(" | %s", trackName)
+	}
+	return result
 }
