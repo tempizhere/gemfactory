@@ -22,11 +22,13 @@ func NewCollector(config *config.Config, logger *zap.Logger) *colly.Collector {
 		colly.MaxDepth(1),
 	)
 
-	collector.Limit(&colly.LimitRule{
+	if err := collector.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
 		Delay:       config.RequestDelay,
 		RandomDelay: config.RequestDelay / 2,
-	})
+	}); err != nil {
+		logger.Error("Failed to set collector limit", zap.Error(err))
+	}
 
 	// Реализуем повторы вручную через OnError
 	collector.OnError(func(r *colly.Response, err error) {
@@ -41,8 +43,9 @@ func NewCollector(config *config.Config, logger *zap.Logger) *colly.Collector {
 			retryCount++
 			r.Request.Ctx.Put("retries", retryCount)
 			logger.Warn("Retrying request", zap.String("url", r.Request.URL.String()), zap.Int("retry", retryCount), zap.Error(err))
-			time.Sleep(config.RequestDelay)
-			r.Request.Retry()
+			if err := r.Request.Retry(); err != nil {
+				logger.Error("Failed to retry request", zap.String("url", r.Request.URL.String()), zap.Int("retry", retryCount), zap.Error(err))
+			}
 			return
 		}
 
@@ -258,8 +261,8 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 				lowerLine := strings.ToLower(line)
 				if strings.HasPrefix(lowerLine, "album:") ||
 					strings.HasPrefix(lowerLine, "ost:") ||
-					strings.Contains(lowerLine, "pre-release") ||
 					strings.HasPrefix(lowerLine, "title track:") ||
+					strings.Contains(lowerLine, "pre-release") ||
 					strings.Contains(lowerLine, "release") ||
 					strings.Contains(lowerLine, "mv release") {
 					hasEvent = true

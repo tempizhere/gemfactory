@@ -25,8 +25,7 @@ type CacheEntry struct {
 var cache = make(map[string]CacheEntry)
 var cacheMu sync.RWMutex
 
-// lastFullUpdate tracks the time of the last full cache update
-var lastFullUpdate time.Time
+// lastFullUpdateMu protects access to lastFullUpdate
 var lastFullUpdateMu sync.RWMutex
 
 // cacheDuration holds the parsed CACHE_DURATION value
@@ -43,11 +42,6 @@ func init() {
 	if err != nil || cacheDuration <= 0 {
 		cacheDuration = 24 * time.Hour // Значение по умолчанию
 	}
-
-	// Инициализируем lastFullUpdate текущим временем
-	lastFullUpdateMu.Lock()
-	lastFullUpdate = time.Now()
-	lastFullUpdateMu.Unlock()
 }
 
 // InitializeCache initializes the cache for all months asynchronously
@@ -108,7 +102,6 @@ func InitializeCache(config *config.Config, logger *zap.Logger, al *artistlist.A
 
 	// Обновляем время последнего полного обновления
 	lastFullUpdateMu.Lock()
-	lastFullUpdate = time.Now()
 	lastFullUpdateMu.Unlock()
 
 	// Логируем результат
@@ -180,7 +173,9 @@ func GetReleasesForMonths(months []string, whitelist map[string]struct{}, female
 		cacheMu.RLock()
 		if entry, ok := cache[cacheKey]; ok {
 			cacheMu.RUnlock()
-			logger.Warn("Returning stale cache data due to fetch error", zap.String("months", strings.Join(months, ",")), zap.Int("whitelist_size", len(whitelist)))
+			logger.Warn("Returning stale cache data due to fetch error",
+				zap.String("months", strings.Join(months, ",")),
+				zap.Int("whitelist_size", len(whitelist)))
 			return entry.Releases, nil
 		}
 		cacheMu.RUnlock()

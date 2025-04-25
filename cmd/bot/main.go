@@ -6,7 +6,6 @@ import (
 	"gemfactory/internal/features/releasesbot/artistlist"
 	"gemfactory/internal/features/releasesbot/bot"
 	"gemfactory/internal/features/releasesbot/cache"
-
 	"gemfactory/pkg/log"
 	"go.uber.org/zap"
 )
@@ -14,7 +13,11 @@ import (
 func main() {
 	// Initialize logger
 	logger := log.Init()
-	defer logger.Sync()
+	defer func() {
+		if err := logger.Sync(); err != nil {
+			logger.Error("Failed to sync logger", zap.Error(err))
+		}
+	}()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

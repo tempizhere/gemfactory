@@ -13,6 +13,8 @@ import (
 	"gemfactory/pkg/config"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // KeyboardManager manages Inline Keyboards for the bot
@@ -42,7 +44,7 @@ func NewKeyboardManager(api *tgbotapi.BotAPI, logger *zap.Logger, al *artistlist
 		var row []tgbotapi.InlineKeyboardButton
 		for j := 0; j < 3 && i+j < len(release.Months); j++ {
 			month := release.Months[i+j]
-			row = append(row, tgbotapi.NewInlineKeyboardButtonData(strings.Title(month), "month_"+month))
+			row = append(row, tgbotapi.NewInlineKeyboardButtonData(cases.Title(language.English).String(month), "month_"+month))
 		}
 		rows = append(rows, row)
 	}
@@ -90,9 +92,9 @@ func (k *KeyboardManager) updateMainMonthKeyboard() {
 	}
 
 	buttons := []tgbotapi.InlineKeyboardButton{
-		tgbotapi.NewInlineKeyboardButtonData(strings.Title(release.Months[prevMonth-1]), "month_"+release.Months[prevMonth-1]),
-		tgbotapi.NewInlineKeyboardButtonData(strings.Title(release.Months[currentMonth-1]), "month_"+release.Months[currentMonth-1]),
-		tgbotapi.NewInlineKeyboardButtonData(strings.Title(release.Months[nextMonth-1]), "month_"+release.Months[nextMonth-1]),
+		tgbotapi.NewInlineKeyboardButtonData(cases.Title(language.English).String(release.Months[prevMonth-1]), "month_"+release.Months[prevMonth-1]),
+		tgbotapi.NewInlineKeyboardButtonData(cases.Title(language.English).String(release.Months[currentMonth-1]), "month_"+release.Months[currentMonth-1]),
+		tgbotapi.NewInlineKeyboardButtonData(cases.Title(language.English).String(release.Months[nextMonth-1]), "month_"+release.Months[nextMonth-1]),
 		tgbotapi.NewInlineKeyboardButtonData("...", "show_all_months"),
 	}
 
