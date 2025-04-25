@@ -2,64 +2,54 @@ package bot
 
 import (
 	"fmt"
-	"os"
 
-	"gemfactory/parser"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"gemfactory/internal/debounce"
+	"gemfactory/internal/features/releasesbot/artistlist"
+	"gemfactory/internal/features/releasesbot/cache"
+	"gemfactory/pkg/config"
+	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
 )
-
-// Config holds the bot's configuration
-type Config struct {
-	AdminUsername string
-	BotToken      string
-}
-
-// NewConfig creates a new Config instance by reading environment variables
-func NewConfig() (*Config, error) {
-	adminUsername := os.Getenv("ADMIN_USERNAME")
-	if adminUsername == "" {
-		adminUsername = "fullofsarang" // Значение по умолчанию
-	}
-
-	botToken := os.Getenv("BOT_TOKEN")
-	if botToken == "" {
-		return nil, fmt.Errorf("BOT_TOKEN is not set in .env")
-	}
-
-	return &Config{
-		AdminUsername: adminUsername,
-		BotToken:      botToken,
-	}, nil
-}
 
 // Bot represents the Telegram bot
 type Bot struct {
 	api      *tgbotapi.BotAPI
 	logger   *zap.Logger
 	handlers *CommandHandlers
-	config   *Config
+	config   *config.Config
+	al       *artistlist.ArtistList
+}
+
+// NewConfig creates a new Config instance by reading environment variables
+func NewConfig() (*config.Config, error) {
+	return config.Load()
 }
 
 // NewBot creates a new bot instance
-func NewBot(config *Config, logger *zap.Logger) (*Bot, error) {
+func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 	api, err := tgbotapi.NewBotAPI(config.BotToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Telegram bot: %v", err)
 	}
 
+	// Инициализируем ArtistList
+	al, err := artistlist.NewArtistList(config.WhitelistDir, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize artist list: %v", err)
+	}
+
 	// Инициализируем Debouncer для защиты от дабл-клика
-	debouncer := NewDebouncer()
+	debouncer := debounce.NewDebouncer()
 
 	// Создаём CommandHandlers с необходимыми зависимостями
-	handlers := NewCommandHandlers(api, logger, debouncer, config)
+	handlers := NewCommandHandlers(api, logger, debouncer, config, al)
 
 	return &Bot{
 		api:      api,
 		logger:   logger,
 		handlers: handlers,
 		config:   config,
+		al:       al,
 	}, nil
 }
 
@@ -84,7 +74,7 @@ func (b *Bot) Start() error {
 	}
 
 	// Инициализируем кэш асинхронно
-	go parser.InitializeCache(b.logger)
+	go cache.InitializeCache(b.config, b.logger, b.al)
 
 	// Настраиваем обновления
 	u := tgbotapi.NewUpdate(0)

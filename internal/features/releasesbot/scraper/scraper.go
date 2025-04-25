@@ -1,4 +1,4 @@
-package parser
+package scraper
 
 import (
 	"fmt"
@@ -6,23 +6,62 @@ import (
 	"strings"
 	"time"
 
-	"gemfactory/formatter"
-	"gemfactory/models"
-	"gemfactory/utils"
+	"gemfactory/internal/features/releasesbot/release"
+	"gemfactory/internal/features/releasesbot/releasefmt"
+	"gemfactory/pkg/config"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"
 	"go.uber.org/zap"
 )
 
+// NewCollector creates a new Colly collector with configured settings
+func NewCollector(config *config.Config, logger *zap.Logger) *colly.Collector {
+	collector := colly.NewCollector(
+		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"),
+		colly.MaxDepth(1),
+	)
+
+	if err := collector.Limit(&colly.LimitRule{
+		DomainGlob:  "*",
+		Delay:       config.RequestDelay,
+		RandomDelay: config.RequestDelay / 2,
+	}); err != nil {
+		logger.Error("Failed to set collector limit", zap.Error(err))
+	}
+
+	// Реализуем повторы вручную через OnError
+	collector.OnError(func(r *colly.Response, err error) {
+		maxRetries := config.MaxRetries
+		retries := r.Request.Ctx.GetAny("retries")
+		retryCount, ok := retries.(int)
+		if !ok {
+			retryCount = 0
+		}
+
+		if retryCount < maxRetries {
+			retryCount++
+			r.Request.Ctx.Put("retries", retryCount)
+			logger.Warn("Retrying request", zap.String("url", r.Request.URL.String()), zap.Int("retry", retryCount), zap.Error(err))
+			if err := r.Request.Retry(); err != nil {
+				logger.Error("Failed to retry request", zap.String("url", r.Request.URL.String()), zap.Int("retry", retryCount), zap.Error(err))
+			}
+			return
+		}
+
+		logger.Error("Request failed after max retries", zap.String("url", r.Request.URL.String()), zap.Int("retries", retryCount), zap.Error(err))
+	})
+
+	return collector
+}
+
 // GetMonthlyLinks retrieves links to monthly schedules
-func GetMonthlyLinks(months []string, logger *zap.Logger) ([]string, error) {
-	maxRetries, delay := utils.GetCollectorConfig()
+func GetMonthlyLinks(months []string, config *config.Config, logger *zap.Logger) ([]string, error) {
 	var monthlyLinks []string
 	uniqueLinks := make(map[string]struct{})
-	currentYear := models.CurrentYear()
+	currentYear := release.CurrentYear()
 
-	collector := NewCollector(maxRetries, delay, logger)
+	collector := NewCollector(config, logger)
 	collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
 		if strings.Contains(link, "kpop-comeback-schedule-") &&
@@ -57,18 +96,16 @@ func GetMonthlyLinks(months []string, logger *zap.Logger) ([]string, error) {
 }
 
 // ParseMonthlyPage parses a monthly schedule page
-func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth string, logger *zap.Logger) ([]models.Release, error) {
-	maxRetries, delay := utils.GetCollectorConfig()
-
-	monthNum, ok := models.MonthToNumber[strings.ToLower(targetMonth)]
+func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth string, config *config.Config, logger *zap.Logger) ([]release.Release, error) {
+	monthNum, ok := release.MonthToNumber[strings.ToLower(targetMonth)]
 	if !ok {
 		logger.Error("Unknown month", zap.String("month", targetMonth))
 		return nil, fmt.Errorf("unknown month: %s", targetMonth)
 	}
 
-	var allReleases []models.Release
-	artistReleases := make(map[string][]models.Release)
-	collector := NewCollector(maxRetries, delay, logger)
+	var allReleases []release.Release
+	artistReleases := make(map[string][]release.Release)
+	collector := NewCollector(config, logger)
 	var rowCount int
 
 	collector.OnHTML("tr", func(e *colly.HTMLElement) {
@@ -82,12 +119,12 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 		timeKST := ""
 		if strings.Contains(timeText, "at") {
 			var err error
-			timeKST, err = formatter.FormatTimeKST(timeText, logger)
+			timeKST, err = releasefmt.FormatTimeKST(timeText, logger)
 			if err != nil {
 				timeKST = ""
 			}
 		}
-		timeMSK, err := formatter.ConvertKSTtoMSK(timeKST, logger)
+		timeMSK, err := releasefmt.ConvertKSTtoMSK(timeKST, logger)
 		if err != nil {
 			timeMSK = ""
 		}
@@ -128,7 +165,7 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 		})
 
 		if len(detailsLines) < 1 {
-			logger.Debug("No details extracted for artist", zap.String("artist", artist)) // Добавляем лог
+			logger.Debug("No details extracted for artist", zap.String("artist", artist))
 			return
 		}
 
@@ -136,7 +173,7 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 		var eventStartIndices []int
 		firstLineAfterArtist := detailsLines[1]
 		isDate := false
-		for _, month := range models.Months {
+		for _, month := range release.Months {
 			if strings.HasPrefix(strings.ToLower(firstLineAfterArtist), month) {
 				isDate = true
 				break
@@ -152,7 +189,7 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 					parts := strings.SplitN(line, ":", 2)
 					if len(parts) == 2 {
 						datePart := strings.TrimSpace(parts[0])
-						parsedDate, err := formatter.FormatDate(datePart, logger)
+						parsedDate, err := releasefmt.FormatDate(datePart, logger)
 						if err == nil && parsedDate != "" {
 							if len(currentEvent) > 0 {
 								events = append(events, currentEvent)
@@ -193,14 +230,14 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 				}
 				datePart := strings.TrimSpace(parts[0])
 				var err error
-				parsedDate, err = formatter.FormatDate(datePart, logger)
+				parsedDate, err = releasefmt.FormatDate(datePart, logger)
 				if err != nil {
 					logger.Error("Failed to parse date in event", zap.String("dateText", datePart), zap.Error(err))
 					continue
 				}
 			} else {
 				var err error
-				parsedDate, err = formatter.FormatDate(dateText, logger)
+				parsedDate, err = releasefmt.FormatDate(dateText, logger)
 				if err != nil {
 					logger.Error("Failed to parse date in event", zap.String("dateText", dateText), zap.Error(err))
 					continue
@@ -234,12 +271,12 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 			}
 
 			if !hasEvent {
-				logger.Debug("No event found for release", zap.String("artist", artist), zap.String("date", parsedDate), zap.Strings("eventLines", eventLines)) // Обновляем лог с eventLines
+				logger.Debug("No event found for release", zap.String("artist", artist), zap.String("date", parsedDate), zap.Strings("eventLines", eventLines))
 				continue
 			}
 
 			// Создаём релиз
-			release := models.Release{
+			release := release.Release{
 				Date:       parsedDate,
 				TimeMSK:    timeMSK,
 				Artist:     artist,
@@ -251,12 +288,10 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 			artistReleases[key] = append(artistReleases[key], release)
 		}
 
-		// Убираем промежуточное логирование
 		totalReleases := 0
 		for _, releases := range artistReleases {
 			totalReleases += len(releases)
 		}
-		// Убираем logger.Info("Completed parsing page", ...)
 	})
 
 	if err := collector.Visit(url); err != nil {
@@ -265,30 +300,29 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 	}
 
 	collector.Wait()
-	//logger.Info("Processed rows", zap.String("url", url), zap.Int("row_count", rowCount))
 
 	for _, releases := range artistReleases {
 		sort.Slice(releases, func(i, j int) bool {
-			dateI, _ := time.Parse(models.DateFormat, releases[i].Date)
-			dateJ, _ := time.Parse(models.DateFormat, releases[j].Date)
+			dateI, _ := time.Parse(release.DateFormat, releases[i].Date)
+			dateJ, _ := time.Parse(release.DateFormat, releases[j].Date)
 			return dateI.Before(dateJ)
 		})
 
-		var bestRelease models.Release
+		var bestRelease release.Release
 		found := false
-		for _, release := range releases {
+		for _, rel := range releases {
 			if !found {
-				bestRelease = release
+				bestRelease = rel
 				found = true
 				continue
 			}
-			if release.TitleTrack != "N/A" && release.MV != "" {
-				bestRelease = release
+			if rel.TitleTrack != "N/A" && rel.MV != "" {
+				bestRelease = rel
 				break
-			} else if release.TitleTrack != "N/A" && bestRelease.TitleTrack == "N/A" {
-				bestRelease = release
-			} else if release.MV != "" && bestRelease.MV == "" {
-				bestRelease = release
+			} else if rel.TitleTrack != "N/A" && bestRelease.TitleTrack == "N/A" {
+				bestRelease = rel
+			} else if rel.MV != "" && bestRelease.MV == "" {
+				bestRelease = rel
 			}
 		}
 
@@ -296,8 +330,8 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
 	}
 
 	sort.Slice(allReleases, func(i, j int) bool {
-		dateI, _ := time.Parse(models.DateFormat, allReleases[i].Date)
-		dateJ, _ := time.Parse(models.DateFormat, allReleases[j].Date)
+		dateI, _ := time.Parse(release.DateFormat, allReleases[i].Date)
+		dateJ, _ := time.Parse(release.DateFormat, allReleases[j].Date)
 		return dateI.Before(dateJ)
 	})
 
@@ -331,7 +365,7 @@ func ExtractYouTubeLinkFromEvent(e *colly.HTMLElement, startIndex, endIndex int,
 	})
 
 	if len(allLinks) > 0 {
-		return formatter.CleanLink(lastLink, logger)
+		return releasefmt.CleanLink(lastLink, logger)
 	}
 	return ""
 }

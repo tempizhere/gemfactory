@@ -1,31 +1,22 @@
-# Stage 1: Build the application
-FROM golang:1.24.1 AS builder
+# Этап сборки
+FROM golang:1.24 AS builder
 
 WORKDIR /app
-
-# Install git for downloading dependencies
-RUN apt-get update && apt-get install -y git
-
-# Copy go.mod and go.sum to download dependencies
 COPY go.mod go.sum ./
-RUN go mod download -x
-
-# Copy the source code
+RUN go mod download
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o gemfactory cmd/bot/main.go
 
-# Build the application with optimizations
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gemfactory main.go
-
-# Stage 2: Create the final image
+# Финальный образ
 FROM alpine:latest
-
-WORKDIR /root/
-
-# Copy the binary from the builder stage
+WORKDIR /app
 COPY --from=builder /app/gemfactory .
+# Копируем начальные файлы вайтлистов в образ
+COPY internal/features/releasesbot/data/ /app/internal/features/releasesbot/data/
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates
+# Создаём entrypoint скрипт для инициализации вайтлистов
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
-# Run the application
-CMD ["./gemfactory"]
+# Запускаем через entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"]

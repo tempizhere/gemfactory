@@ -1,4 +1,4 @@
-package models
+package release
 
 import "time"
 
@@ -37,8 +37,17 @@ var MonthToNumber = map[string]string{
 // DateFormat is the output format for dates
 const DateFormat = "02.01.06"
 
+// DateParseFormat is the format for parsing dates from the website
+const DateParseFormat = "January 2, 2006"
+
 // TimeFormat is the output format for times
 const TimeFormat = "15:04"
+
+// TimeParseFormat is the format for parsing times from the website
+const TimeParseFormat = "3 PM"
+
+// KSTToMSKDiff is the time difference between KST and MSK (KST is 6 hours ahead)
+const KSTToMSKDiff = -6 * time.Hour
 
 // CurrentYear returns the current year
 func CurrentYear() string {

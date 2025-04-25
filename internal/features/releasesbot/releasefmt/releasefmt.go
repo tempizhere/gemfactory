@@ -1,13 +1,12 @@
-package formatter
+package releasefmt
 
 import (
 	"fmt"
-	"html"
 	"strings"
 	"time"
 
-	"gemfactory/models"
-
+	"gemfactory/internal/features/releasesbot/html"
+	"gemfactory/internal/features/releasesbot/release"
 	"go.uber.org/zap"
 )
 
@@ -22,7 +21,7 @@ func FormatDate(dateStr string, logger *zap.Logger) (string, error) {
 	dateStr = strings.TrimSpace(dateStr)
 
 	isDate := false
-	for _, month := range models.Months {
+	for _, month := range release.Months {
 		if strings.HasPrefix(strings.ToLower(dateStr), month) {
 			isDate = true
 			break
@@ -36,7 +35,7 @@ func FormatDate(dateStr string, logger *zap.Logger) (string, error) {
 	var parsedDate time.Time
 	var err error
 	if strings.Contains(dateStr, ",") {
-		parsedDate, err = time.Parse("January 2, 2006", dateStr)
+		parsedDate, err = time.Parse(release.DateParseFormat, dateStr)
 	} else {
 		parts := strings.Fields(dateStr)
 		if len(parts) < 2 {
@@ -47,7 +46,7 @@ func FormatDate(dateStr string, logger *zap.Logger) (string, error) {
 			dateStr = strings.Join(parts, " ")
 			parsedDate, err = time.Parse("January 2 2006", dateStr)
 		} else {
-			dateStr = strings.Join(parts[:2], " ") + " " + models.CurrentYear()
+			dateStr = strings.Join(parts[:2], " ") + " " + release.CurrentYear()
 			parsedDate, err = time.Parse("January 2 2006", dateStr)
 		}
 	}
@@ -56,7 +55,7 @@ func FormatDate(dateStr string, logger *zap.Logger) (string, error) {
 		return "", fmt.Errorf("failed to parse date '%s': %v", dateStr, err)
 	}
 
-	return parsedDate.Format(models.DateFormat), nil
+	return parsedDate.Format(release.DateFormat), nil
 }
 
 // FormatTimeKST parses KST time and returns it in 24-hour format
@@ -78,7 +77,7 @@ func FormatTimeKST(rawTime string, logger *zap.Logger) (string, error) {
 		}
 	}
 
-	parsedTime, err := time.Parse("3 PM", rawTime)
+	parsedTime, err := time.Parse(release.TimeParseFormat, rawTime)
 	if err != nil {
 		parsedTime, err = time.Parse("3:04 PM", rawTime)
 		if err != nil {
@@ -87,7 +86,7 @@ func FormatTimeKST(rawTime string, logger *zap.Logger) (string, error) {
 		}
 	}
 
-	return parsedTime.Format(models.TimeFormat), nil
+	return parsedTime.Format(release.TimeFormat), nil
 }
 
 // ConvertKSTtoMSK converts KST time to MSK
@@ -97,14 +96,14 @@ func ConvertKSTtoMSK(kstTime string, logger *zap.Logger) (string, error) {
 		return "", fmt.Errorf("empty KST time")
 	}
 
-	parsedTime, err := time.Parse(models.TimeFormat, kstTime)
+	parsedTime, err := time.Parse(release.TimeFormat, kstTime)
 	if err != nil {
 		logger.Debug("Failed to parse KST time", zap.String("time", kstTime), zap.Error(err))
 		return "", fmt.Errorf("failed to parse KST time '%s': %v", kstTime, err)
 	}
 
-	mskTime := parsedTime.Add(-6 * time.Hour)
-	return mskTime.Format(models.TimeFormat), nil
+	mskTime := parsedTime.Add(release.KSTToMSKDiff)
+	return mskTime.Format(release.TimeFormat), nil
 }
 
 // CleanLink cleans a YouTube link
@@ -123,14 +122,14 @@ func CleanLink(link string, logger *zap.Logger) string {
 }
 
 // FormatReleaseForTelegram formats a release for Telegram
-func FormatReleaseForTelegram(release models.Release) string {
-	artist := html.EscapeString(release.Artist)
-	albumName := html.EscapeString(release.AlbumName)
+func FormatReleaseForTelegram(release release.Release, logger *zap.Logger) string {
+	artist := html.Escape(release.Artist)
+	albumName := html.Escape(release.AlbumName)
 	albumName = strings.TrimPrefix(albumName, "Album: ")
 	albumName = strings.TrimPrefix(albumName, "OST: ")
 	cleanedTitleTrack := strings.ReplaceAll(release.TitleTrack, "Title Track:", "")
 	cleanedTitleTrack = strings.TrimSpace(cleanedTitleTrack)
-	trackName := html.EscapeString(cleanedTitleTrack)
+	trackName := html.Escape(cleanedTitleTrack)
 
 	result := fmt.Sprintf("%s | <b>%s</b>", release.Date, artist)
 	if albumName != "N/A" { // Отображаем альбом, если он есть
@@ -145,5 +144,6 @@ func FormatReleaseForTelegram(release models.Release) string {
 	} else if trackName != "N/A" {
 		result += fmt.Sprintf(" | %s", trackName)
 	}
+	logger.Debug("Formatted release for Telegram", zap.String("release", result))
 	return result
 }

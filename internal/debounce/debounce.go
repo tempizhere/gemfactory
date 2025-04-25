@@ -1,4 +1,4 @@
-package bot
+package debounce
 
 import (
 	"sync"

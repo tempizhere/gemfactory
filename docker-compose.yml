@@ -1,21 +1,14 @@
-version: '3.8'
-
 services:
-  gemfactory:
-    image: tempizhere/gemfactory:latest
-    container_name: gemfactory
-    pull_policy: always  # Всегда подтягивать последнюю версию образа
-    environment:
-      # Required: Telegram Bot Token (get it from @BotFather)
-      - BOT_TOKEN=${BOT_TOKEN}
-      # Admin username for restricted commands
-      - ADMIN_USERNAME=your_telegram_username
-      # Whitelists for filtering releases
-      - female_whitelist="artist1,artist2,artist3"
-      - male_whitelist="artist4,artist5,artist6"
-      # Cache settings
-      - CACHE_DURATION=8h
-      # Parser settings
-      - MAX_RETRIES=3
-      - REQUEST_DELAY=5s
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - whitelist_data:/app/internal/features/releasesbot/data
     restart: unless-stopped
+
+volumes:
+  whitelist_data:
+    name: whitelist_data

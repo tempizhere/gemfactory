@@ -1,6 +1,7 @@
-package parser
+package cache
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sort"
@@ -8,24 +9,21 @@ import (
 	"sync"
 	"time"
 
-	"gemfactory/models"
-	"gemfactory/utils"
-
+	"gemfactory/internal/features/releasesbot/artistlist"
+	"gemfactory/internal/features/releasesbot/release"
+	"gemfactory/internal/features/releasesbot/scraper"
+	"gemfactory/pkg/config"
 	"go.uber.org/zap"
 )
 
 // CacheEntry holds cached releases
 type CacheEntry struct {
-	Releases  []models.Release
+	Releases  []release.Release
 	Timestamp time.Time
 }
 
 var cache = make(map[string]CacheEntry)
 var cacheMu sync.RWMutex
-
-// lastFullUpdate tracks the time of the last full cache update
-var lastFullUpdate time.Time
-var lastFullUpdateMu sync.RWMutex
 
 // cacheDuration holds the parsed CACHE_DURATION value
 var cacheDuration time.Duration
@@ -41,15 +39,10 @@ func init() {
 	if err != nil || cacheDuration <= 0 {
 		cacheDuration = 24 * time.Hour // Значение по умолчанию
 	}
-
-	// Инициализируем lastFullUpdate текущим временем
-	lastFullUpdateMu.Lock()
-	lastFullUpdate = time.Now()
-	lastFullUpdateMu.Unlock()
 }
 
 // InitializeCache initializes the cache for all months asynchronously
-func InitializeCache(logger *zap.Logger) {
+func InitializeCache(config *config.Config, logger *zap.Logger, al *artistlist.ArtistList) {
 	isUpdatingCacheMu.Lock()
 	if isUpdatingCache {
 		logger.Warn("Cache update already in progress, skipping...")
@@ -70,9 +63,6 @@ func InitializeCache(logger *zap.Logger) {
 		"july", "august", "september", "october", "november", "december",
 	}
 
-	maxRetries := utils.GetMaxRetries()
-	delay := utils.GetRequestDelay()
-
 	logger.Info("Starting cache initialization for all months", zap.Int("month_count", len(months)))
 	var wg sync.WaitGroup
 	totalReleases := 0
@@ -83,12 +73,12 @@ func InitializeCache(logger *zap.Logger) {
 		go func(month string) {
 			defer wg.Done()
 			var err error
-			for retries := 0; retries < maxRetries; retries++ {
-				fullWhitelist := utils.LoadWhitelist(false)
-				releases, err := GetReleasesForMonths([]string{month}, fullWhitelist, false, false, fullWhitelist, logger)
+			for retries := 0; retries < config.MaxRetries; retries++ {
+				fullWhitelist := al.GetUnitedWhitelist()
+				releases, err := GetReleasesForMonths([]string{month}, fullWhitelist, false, false, fullWhitelist, config, logger)
 				if err != nil {
-					if retries < maxRetries-1 {
-						time.Sleep(delay)
+					if retries < config.MaxRetries-1 {
+						time.Sleep(config.RequestDelay)
 						continue
 					}
 					logger.Error("Max retries reached for cache initialization", zap.String("month", month), zap.Error(err))
@@ -107,11 +97,6 @@ func InitializeCache(logger *zap.Logger) {
 
 	wg.Wait()
 
-	// Обновляем время последнего полного обновления
-	lastFullUpdateMu.Lock()
-	lastFullUpdate = time.Now()
-	lastFullUpdateMu.Unlock()
-
 	// Логируем результат
 	if totalReleases == 0 {
 		logger.Warn("Cache initialization completed, but no releases were added")
@@ -121,12 +106,12 @@ func InitializeCache(logger *zap.Logger) {
 }
 
 // FilterReleasesByWhitelist filters releases by the provided whitelist
-func FilterReleasesByWhitelist(releases []models.Release, whitelist map[string]struct{}) []models.Release {
-	var filtered []models.Release
-	for _, release := range releases {
-		artistKey := strings.ToLower(release.Artist)
+func FilterReleasesByWhitelist(releases []release.Release, whitelist map[string]struct{}) []release.Release {
+	var filtered []release.Release
+	for _, rel := range releases {
+		artistKey := strings.ToLower(rel.Artist)
 		if _, ok := whitelist[artistKey]; ok {
-			filtered = append(filtered, release)
+			filtered = append(filtered, rel)
 		}
 	}
 	return filtered
@@ -140,7 +125,7 @@ func ClearCache() {
 }
 
 // GetReleasesForMonths retrieves releases for multiple months
-func GetReleasesForMonths(months []string, whitelist map[string]struct{}, femaleOnly, maleOnly bool, fullWhitelist map[string]struct{}, logger *zap.Logger) ([]models.Release, error) {
+func GetReleasesForMonths(months []string, whitelist map[string]struct{}, femaleOnly, maleOnly bool, fullWhitelist map[string]struct{}, config *config.Config, logger *zap.Logger) ([]release.Release, error) {
 	if len(whitelist) == 0 {
 		logger.Error("Whitelist is empty")
 		return nil, fmt.Errorf("whitelist is empty")
@@ -175,13 +160,15 @@ func GetReleasesForMonths(months []string, whitelist map[string]struct{}, female
 	}
 
 	// Если кэш не найден, парсим сайт
-	monthlyLinks, err := GetMonthlyLinks(months, logger)
+	monthlyLinks, err := scraper.GetMonthlyLinks(months, config, logger)
 	if err != nil {
 		// Проверяем, есть ли устаревшие данные в кэше
 		cacheMu.RLock()
 		if entry, ok := cache[cacheKey]; ok {
 			cacheMu.RUnlock()
-			logger.Warn("Returning stale cache data due to fetch error", zap.String("months", strings.Join(months, ",")), zap.Int("whitelist_size", len(whitelist)))
+			logger.Warn("Returning stale cache data due to fetch error",
+				zap.String("months", strings.Join(months, ",")),
+				zap.Int("whitelist_size", len(whitelist)))
 			return entry.Releases, nil
 		}
 		cacheMu.RUnlock()
@@ -190,14 +177,14 @@ func GetReleasesForMonths(months []string, whitelist map[string]struct{}, female
 	}
 
 	// Используем канал для сбора релизов из горутин
-	releaseChan := make(chan []models.Release, len(monthlyLinks))
+	releaseChan := make(chan []release.Release, len(monthlyLinks))
 	var wg sync.WaitGroup
 
 	for _, link := range monthlyLinks {
 		wg.Add(1)
 		go func(link string) {
 			defer wg.Done()
-			releases, err := ParseMonthlyPage(link, whitelist, months[0], logger)
+			releases, err := scraper.ParseMonthlyPage(link, whitelist, months[0], config, logger)
 			if err != nil {
 				logger.Error("Failed to parse page", zap.String("url", link), zap.Error(err))
 				releaseChan <- nil
@@ -214,7 +201,7 @@ func GetReleasesForMonths(months []string, whitelist map[string]struct{}, female
 	}()
 
 	// Собираем релизы из канала
-	var allReleases []models.Release
+	var allReleases []release.Release
 	for releases := range releaseChan {
 		if releases != nil {
 			allReleases = append(allReleases, releases...)
@@ -222,8 +209,8 @@ func GetReleasesForMonths(months []string, whitelist map[string]struct{}, female
 	}
 
 	sort.Slice(allReleases, func(i, j int) bool {
-		dateI, _ := time.Parse(models.DateFormat, allReleases[i].Date)
-		dateJ, _ := time.Parse(models.DateFormat, allReleases[j].Date)
+		dateI, _ := time.Parse(release.DateFormat, allReleases[i].Date)
+		dateJ, _ := time.Parse(release.DateFormat, allReleases[j].Date)
 		return dateI.Before(dateJ)
 	})
 
@@ -246,7 +233,7 @@ func CleanupOldCacheEntries() {
 	}
 }
 
-// Добавьте вспомогательную функцию для получения CACHE_DURATION
+// GetCacheDuration returns the cache duration
 func GetCacheDuration() time.Duration {
 	return cacheDuration
 }
@@ -261,4 +248,24 @@ func GetCacheKeys() []string {
 		keys = append(keys, key)
 	}
 	return keys
+}
+
+// StartUpdater periodically updates the cache
+func StartUpdater(ctx context.Context, config *config.Config, logger *zap.Logger, al *artistlist.ArtistList) {
+	go func() {
+		ticker := time.NewTicker(cacheDuration)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				logger.Info("Stopping cache updater")
+				return
+			case <-ticker.C:
+				logger.Info("Updating cache")
+				CleanupOldCacheEntries() // Очищаем устаревшие записи перед обновлением
+				InitializeCache(config, logger, al)
+			}
+		}
+	}()
 }
