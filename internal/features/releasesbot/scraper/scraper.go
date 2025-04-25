@@ -259,6 +259,7 @@ func ParseMonthlyPage(url string, whitelist map[string]struct{}, targetMonth str
                 if strings.HasPrefix(lowerLine, "album:") ||
                     strings.HasPrefix(lowerLine, "ost:") ||
                     strings.Contains(lowerLine, "pre-release") ||
+                    strings.HasPrefix(lowerLine, "title track:") ||
                     strings.Contains(lowerLine, "release") ||
                     strings.Contains(lowerLine, "mv release") {
                     hasEvent = true

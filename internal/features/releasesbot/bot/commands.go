@@ -2,6 +2,7 @@ package bot
 
 import (
     "fmt"
+    "sort"
     "strings"
 
     "gemfactory/internal/debounce"
@@ -44,9 +45,6 @@ func (h *CommandHandlers) SetBotCommands() error {
         {Command: "/help", Description: "Show help message"},
         {Command: "/month", Description: "Get releases for a specific month"},
         {Command: "/whitelists", Description: "Show whitelists"},
-        {Command: "/clearcache", Description: "Clear cache (admin only)"},
-        {Command: "/add_artist", Description: "Add an artist to whitelist (admin only)"},
-        {Command: "/remove_artist", Description: "Remove an artist from whitelist (admin only)"},
     }
 
     _, err := h.api.Request(tgbotapi.NewSetMyCommands(commands...))
@@ -96,6 +94,12 @@ func (h *CommandHandlers) HandleCommand(update tgbotapi.Update) {
             return
         }
         h.handleRemoveArtist(msg, args)
+    case "clearwhitelists":
+        if !isAdmin {
+            h.sendMessage(msg.Chat.ID, "This command is available only to admins.")
+            return
+        }
+        h.handleClearWhitelists(msg)
     default:
         h.sendMessage(msg.Chat.ID, "Unknown command. Use /help to see available commands.")
     }
@@ -137,10 +141,7 @@ func (h *CommandHandlers) handleHelp(msg *tgbotapi.Message) {
         "/start - Начать работу с ботом\n" +
         "/help - Показать это сообщение\n" +
         "/month [месяц] - Получить релизы за указанный месяц\n" +
-        "/whitelists - Показать списки артистов\n" +
-        "/clearcache - Очистить кэш (только для админа)\n" +
-        "/add_artist <female|male> <имя> - Добавить артиста (только для админа)\n" +
-        "/remove_artist <имя> - Удалить артиста (только для админа)"
+        "/whitelists - Показать списки артистов"
     reply := tgbotapi.NewMessage(msg.Chat.ID, text)
     reply.ReplyMarkup = h.keyboard.GetMainKeyboard()
     h.sendMessageWithMarkup(msg.Chat.ID, text, reply.ReplyMarkup)
@@ -200,13 +201,28 @@ func (h *CommandHandlers) handleWhitelists(msg *tgbotapi.Message) {
     male := h.al.GetMaleWhitelist()
 
     var response strings.Builder
-    response.WriteString("<b>Женские артисты:</b>\n")
+    response.WriteString("<b>Женские артисты:</b> ")
+    femaleArtists := make([]string, 0, len(female))
     for artist := range female {
-        response.WriteString(artist + "\n")
+        femaleArtists = append(femaleArtists, artist)
     }
-    response.WriteString("\n<b>Мужские артисты:</b>\n")
+    sort.Strings(femaleArtists) // Сортируем для упорядоченного вывода
+    if len(femaleArtists) == 0 {
+        response.WriteString("пусто")
+    } else {
+        response.WriteString(strings.Join(femaleArtists, ", "))
+    }
+
+    response.WriteString("\n<b>Мужские артисты:</b> ")
+    maleArtists := make([]string, 0, len(male))
     for artist := range male {
-        response.WriteString(artist + "\n")
+        maleArtists = append(maleArtists, artist)
+    }
+    sort.Strings(maleArtists) // Сортируем для упорядоченного вывода
+    if len(maleArtists) == 0 {
+        response.WriteString("пусто")
+    } else {
+        response.WriteString(strings.Join(maleArtists, ", "))
     }
 
     reply := tgbotapi.NewMessage(msg.Chat.ID, response.String())
@@ -225,40 +241,108 @@ func (h *CommandHandlers) handleClearCache(msg *tgbotapi.Message) {
 // handleAddArtist processes the /add_artist command
 func (h *CommandHandlers) handleAddArtist(msg *tgbotapi.Message, args []string) {
     if len(args) < 2 {
-        h.sendMessage(msg.Chat.ID, "Использование: /add_artist <female|male> <имя>")
+        h.sendMessage(msg.Chat.ID, "Использование: /add_artist <female|male> <artist1,artist2,...>")
         return
     }
 
     gender := strings.ToLower(args[0])
     isFemale := gender == "female"
     if gender != "female" && gender != "male" {
-        h.sendMessage(msg.Chat.ID, "Первый аргумент должен быть 'female' или 'male'")
+        h.sendMessage(msg.Chat.ID, "Первый аргумент должен быть 'female' или 'male'. Пример: /add_artist female ITZY,aespa,IVE")
         return
     }
 
-    artist := strings.Join(args[1:], " ")
-    if err := h.al.AddArtist(artist, isFemale); err != nil {
-        h.sendMessage(msg.Chat.ID, fmt.Sprintf("Ошибка при добавлении артиста: %v", err))
+    // Объединяем аргументы, начиная со второго, и парсим список артистов
+    artistsInput := strings.Join(args[1:], " ")
+    artists := parseArtists(artistsInput)
+    if len(artists) == 0 {
+        h.sendMessage(msg.Chat.ID, "Не указаны артисты для добавления")
         return
     }
 
-    h.sendMessage(msg.Chat.ID, fmt.Sprintf("Артист %s добавлен в %s whitelist", artist, gender))
+    addedCount, err := h.al.AddArtists(artists, isFemale)
+    if err != nil {
+        h.sendMessage(msg.Chat.ID, fmt.Sprintf("Ошибка при добавлении артистов: %v", err))
+        return
+    }
+
+    if addedCount == 0 {
+        h.sendMessage(msg.Chat.ID, "Ни один артист не добавлен, так как все указанные артисты уже в whitelist")
+        return
+    }
+
+    artistWord := "артист"
+    if addedCount > 1 && addedCount < 5 {
+        artistWord = "артиста"
+    } else if addedCount >= 5 {
+        artistWord = "артистов"
+    }
+    h.sendMessage(msg.Chat.ID, fmt.Sprintf("Добавлено %d %s в %s whitelist", addedCount, artistWord, gender))
+    
+    // Запускаем обновление кэша асинхронно
+    go cache.InitializeCache(h.config, h.logger, h.al)
 }
 
 // handleRemoveArtist processes the /remove_artist command
 func (h *CommandHandlers) handleRemoveArtist(msg *tgbotapi.Message, args []string) {
     if len(args) < 1 {
-        h.sendMessage(msg.Chat.ID, "Использование: /remove_artist <имя>")
+        h.sendMessage(msg.Chat.ID, "Использование: /remove_artist <artist1,artist2,...>")
         return
     }
 
-    artist := strings.Join(args, " ")
-    if err := h.al.RemoveArtist(artist); err != nil {
-        h.sendMessage(msg.Chat.ID, fmt.Sprintf("Ошибка при удалении артиста: %v", err))
+    // Объединяем аргументы и парсим список артистов
+    artistsInput := strings.Join(args, " ")
+    artists := parseArtists(artistsInput)
+    if len(artists) == 0 {
+        h.sendMessage(msg.Chat.ID, "Не указаны артисты для удаления")
         return
     }
 
-    h.sendMessage(msg.Chat.ID, fmt.Sprintf("Артист %s удалён из whitelist", artist))
+    removedCount, err := h.al.RemoveArtists(artists)
+    if err != nil {
+        h.sendMessage(msg.Chat.ID, fmt.Sprintf("Ошибка при удалении артистов: %v", err))
+        return
+    }
+
+    if removedCount == 0 {
+        h.sendMessage(msg.Chat.ID, "Ни один артист не удалён, так как указанные артисты отсутствуют в whitelist")
+        return
+    }
+
+    artistWord := "артист"
+    if removedCount > 1 && removedCount < 5 {
+        artistWord = "артиста"
+    } else if removedCount >= 5 {
+        artistWord = "артистов"
+    }
+    h.sendMessage(msg.Chat.ID, fmt.Sprintf("Удалено %d %s из whitelist", removedCount, artistWord))
+    
+    // Запускаем обновление кэша асинхронно
+    go cache.InitializeCache(h.config, h.logger, h.al)
+}
+
+// handleClearWhitelists processes the /clearwhitelists command
+func (h *CommandHandlers) handleClearWhitelists(msg *tgbotapi.Message) {
+    if err := h.al.ClearWhitelists(); err != nil {
+        h.sendMessage(msg.Chat.ID, fmt.Sprintf("Ошибка при очистке вайтлистов: %v", err))
+        return
+    }
+    h.sendMessage(msg.Chat.ID, "Вайтлисты очищены")
+}
+
+// parseArtists parses a comma-separated list of artists, handling spaces and special characters
+func parseArtists(input string) []string {
+    // Разделяем по запятым, учитывая пробелы
+    rawArtists := strings.Split(input, ",")
+    var artists []string
+    for _, artist := range rawArtists {
+        // Очищаем от пробелов
+        cleaned := strings.TrimSpace(artist)
+        if cleaned != "" {
+            artists = append(artists, cleaned)
+        }
+    }
+    return artists
 }
 
 // sendMessage sends a simple text message

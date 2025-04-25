@@ -171,6 +171,47 @@ func (al *ArtistList) AddArtist(artist string, isFemale bool) error {
     return nil
 }
 
+// AddArtists adds multiple artists to the specified whitelist and saves to JSON
+func (al *ArtistList) AddArtists(artists []string, isFemale bool) (int, error) {
+    al.mu.Lock()
+    defer al.mu.Unlock()
+
+    addedCount := 0
+    for _, artist := range artists {
+        artist = strings.ToLower(strings.TrimSpace(artist))
+        if artist == "" {
+            continue
+        }
+
+        if isFemale {
+            if _, exists := al.female[artist]; !exists {
+                al.female[artist] = struct{}{}
+                al.united[artist] = struct{}{}
+                addedCount++
+            }
+        } else {
+            if _, exists := al.male[artist]; !exists {
+                al.male[artist] = struct{}{}
+                al.united[artist] = struct{}{}
+                addedCount++
+            }
+        }
+    }
+
+    if addedCount == 0 {
+        return 0, nil
+    }
+
+    if err := al.saveFemaleWhitelist(); err != nil {
+        return addedCount, err
+    }
+    if err := al.saveMaleWhitelist(); err != nil {
+        return addedCount, err
+    }
+    al.logger.Info("Added artists", zap.Int("count", addedCount), zap.Bool("isFemale", isFemale))
+    return addedCount, nil
+}
+
 // RemoveArtist removes an artist from both whitelists and saves to JSON
 func (al *ArtistList) RemoveArtist(artist string) error {
     artist = strings.ToLower(strings.TrimSpace(artist))
@@ -205,6 +246,69 @@ func (al *ArtistList) RemoveArtist(artist string) error {
         }
     }
     al.logger.Info("Removed artist", zap.String("artist", artist))
+    return nil
+}
+
+// RemoveArtists removes multiple artists from both whitelists and saves to JSON
+func (al *ArtistList) RemoveArtists(artists []string) (int, error) {
+    al.mu.Lock()
+    defer al.mu.Unlock()
+
+    removedCount := 0
+    for _, artist := range artists {
+        artist = strings.ToLower(strings.TrimSpace(artist))
+        if artist == "" {
+            continue
+        }
+
+        deletedFemale := false
+        deletedMale := false
+
+        if _, exists := al.female[artist]; exists {
+            delete(al.female, artist)
+            deletedFemale = true
+            removedCount++
+        }
+        if _, exists := al.male[artist]; exists {
+            delete(al.male, artist)
+            deletedMale = true
+            removedCount++
+        }
+        if deletedFemale || deletedMale {
+            delete(al.united, artist)
+        }
+    }
+
+    if removedCount == 0 {
+        return 0, nil
+    }
+
+    if err := al.saveFemaleWhitelist(); err != nil {
+        return removedCount, err
+    }
+    if err := al.saveMaleWhitelist(); err != nil {
+        return removedCount, err
+    }
+    al.logger.Info("Removed artists", zap.Int("count", removedCount))
+    return removedCount, nil
+}
+
+// ClearWhitelists clears both whitelists and saves to JSON
+func (al *ArtistList) ClearWhitelists() error {
+    al.mu.Lock()
+    defer al.mu.Unlock()
+
+    al.female = make(map[string]struct{})
+    al.male = make(map[string]struct{})
+    al.united = make(map[string]struct{})
+
+    if err := al.saveFemaleWhitelist(); err != nil {
+        return err
+    }
+    if err := al.saveMaleWhitelist(); err != nil {
+        return err
+    }
+    al.logger.Info("Cleared whitelists")
     return nil
 }
 
