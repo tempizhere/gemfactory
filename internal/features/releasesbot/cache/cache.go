@@ -25,9 +25,6 @@ type CacheEntry struct {
 var cache = make(map[string]CacheEntry)
 var cacheMu sync.RWMutex
 
-// lastFullUpdateMu protects access to lastFullUpdate
-var lastFullUpdateMu sync.RWMutex
-
 // cacheDuration holds the parsed CACHE_DURATION value
 var cacheDuration time.Duration
 
@@ -99,10 +96,6 @@ func InitializeCache(config *config.Config, logger *zap.Logger, al *artistlist.A
 	}
 
 	wg.Wait()
-
-	// Обновляем время последнего полного обновления
-	lastFullUpdateMu.Lock()
-	lastFullUpdateMu.Unlock()
 
 	// Логируем результат
 	if totalReleases == 0 {
