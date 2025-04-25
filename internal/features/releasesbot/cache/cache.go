@@ -275,6 +275,7 @@ func StartUpdater(ctx context.Context, config *config.Config, logger *zap.Logger
                 return
             case <-ticker.C:
                 logger.Info("Updating cache")
+                CleanupOldCacheEntries() // Очищаем устаревшие записи перед обновлением
                 InitializeCache(config, logger, al)
             }
         }
