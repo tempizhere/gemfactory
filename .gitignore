@@ -1,19 +1,24 @@
-Go-specific ignores
+# Go-specific ignores
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 
-*.exe *.exe~ *.dll *.so *.dylib
-
-Dependency directories
-
+# Dependency directories
 vendor/
 
-Environment files with sensitive data
-
+# Environment files with sensitive data
 .env
 
-Logs and temporary files
+# Logs and temporary files
+*.log
+tmp/
 
-*.log tmp/
+# IDE-specific files
+.vscode/
+.idea/
 
-IDE-specific files
-
-.vscode/ .idea/
+# Build artifacts
+gemfactory
+OLD
