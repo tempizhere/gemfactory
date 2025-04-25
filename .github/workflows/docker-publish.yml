@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24' # Обновлено до 1.24
+          go-version: '1.24'
       - name: Run tests
         run: go test ./...
 
@@ -29,13 +29,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24' # Обновлено до 1.24
+          go-version: '1.24'
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
 
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
     needs: [test, lint]
     steps:
@@ -48,15 +48,15 @@ jobs:
           echo "WHITELIST_DIR=internal/features/releasesbot/data"
           echo "BOT_TOKEN=[REDACTED]"
           echo "ADMIN_USERNAME=[REDACTED]"
-      - name: Build Docker image
-        run: docker build -t gemfactory:latest .
-      # Опционально: публикуем образ в Docker Hub (раскомментируйте, если нужно)
-      # - name: Log in to Docker Hub
-      #   uses: docker/login-action@v3
-      #   with:
-      #     username: ${{ secrets.DOCKERHUB_USERNAME }}
-      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
-      # - name: Tag and push Docker image
-      #   run: |
-      #     docker tag gemfactory:latest <your-dockerhub-username>/gemfactory:latest
-      #     docker push <your-dockerhub-username>/gemfactory:latest
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: tempizhere/gemfactory:latest
