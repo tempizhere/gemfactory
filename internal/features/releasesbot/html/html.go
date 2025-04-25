@@ -1,10 +1,10 @@
 package html
 
 import (
-    "html"
+	"html"
 )
 
 // Escape escapes special HTML characters in a string.
 func Escape(s string) string {
-    return html.EscapeString(s)
+	return html.EscapeString(s)
 }

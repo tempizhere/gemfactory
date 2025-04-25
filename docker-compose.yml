@@ -1,24 +1,14 @@
-version: '3.8'
-
 services:
-  gemfactory:
-    image: tempizhere/gemfactory:latest
-    container_name: gemfactory
-    pull_policy: always
-    environment:
-      # Required: Telegram Bot Token (get it from @BotFather)
-      - BOT_TOKEN=${BOT_TOKEN}
-      # Admin username for restricted commands
-      - ADMIN_USERNAME=${ADMIN_USERNAME}
-      # Cache settings
-      - CACHE_DURATION=${CACHE_DURATION}
-      # Parser settings
-      - MAX_RETRIES=${MAX_RETRIES}
-      - REQUEST_DELAY=${REQUEST_DELAY}
-      # Whitelist directory (mapped to volume)
-      - WHITELIST_DIR=/app/data
-      # Log level
-      - LOG_LEVEL=info
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
     volumes:
-      - ./internal/features/releasesbot/data:/app/data
+      - whitelist_data:/app/internal/features/releasesbot/data
     restart: unless-stopped
+
+volumes:
+  whitelist_data:
+    name: whitelist_data
