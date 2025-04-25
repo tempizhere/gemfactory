@@ -41,7 +41,6 @@ func NewCommandHandlers(api *tgbotapi.BotAPI, logger *zap.Logger, debouncer *deb
 // SetBotCommands sets the bot's command menu
 func (h *CommandHandlers) SetBotCommands() error {
 	commands := []tgbotapi.BotCommand{
-		{Command: "/start", Description: "Start the bot"},
 		{Command: "/help", Description: "Show help message"},
 		{Command: "/month", Description: "Get releases for a specific month"},
 		{Command: "/whitelists", Description: "Show whitelists"},
@@ -141,6 +140,8 @@ func (h *CommandHandlers) handleHelp(msg *tgbotapi.Message) {
 		"/start - Начать работу с ботом\n" +
 		"/help - Показать это сообщение\n" +
 		"/month [месяц] - Получить релизы за указанный месяц\n" +
+		"/month [месяц] -gg - Получить релизы только для женских групп\n" +
+		"/month [месяц] -mg - Получить релизы только для мужских групп\n" +
 		"/whitelists - Показать списки артистов"
 	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
 	reply.ReplyMarkup = h.keyboard.GetMainKeyboard()
