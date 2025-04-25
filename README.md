@@ -91,22 +91,20 @@ services:
     container_name: gemfactory
     pull_policy: always
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      - BOT_TOKEN=your_bot_token
+      - ADMIN_USERNAME=your_telegram_username
+      - CACHE_DURATION=8h
+      - MAX_RETRIES=3
+      - REQUEST_DELAY=10s
+      - WHITELIST_DIR=data
+      - LOG_LEVEL=info
     volumes:
       - whitelist_data:/app/data
-    networks:
-      - gemfactory_network
-
 volumes:
   whitelist_data:
     name: whitelist_data
-
-networks:
-  gemfactory_network:
-    name: gemfactory_network
 ```
-You can also use the environment section instead of env_file.
 
 2. Start the bot:
 
