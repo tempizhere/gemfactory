@@ -142,7 +142,7 @@ func (h *CommandHandlers) handleHelp(msg *tgbotapi.Message) {
 		"/month [месяц] - Получить релизы за указанный месяц\n" +
 		"/month [месяц] -gg - Получить релизы только для женских групп\n" +
 		"/month [месяц] -mg - Получить релизы только для мужских групп\n" +
-		"/whitelists - Показать списки артистов" +
+		"/whitelists - Показать списки артистов\n" +
 		fmt.Sprintf("По вопросам вайтлистов обращайтесь к @%s", h.config.AdminUsername)
 	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
 	reply.ReplyMarkup = h.keyboard.GetMainKeyboard()
