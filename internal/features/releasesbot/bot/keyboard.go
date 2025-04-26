@@ -138,7 +138,7 @@ func (k *KeyboardManager) HandleCallback(callback *tgbotapi.CallbackQuery) {
 	if strings.HasPrefix(data, "month_") {
 		month := strings.TrimPrefix(data, "month_")
 		whitelist := k.al.GetUnitedWhitelist()
-		releases, err := cache.GetReleasesForMonths([]string{month}, whitelist, false, false, whitelist, k.config, k.logger)
+		releases, err := cache.GetReleasesForMonths([]string{month}, whitelist, false, false, k.al, k.config, k.logger)
 		if err != nil {
 			msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Ошибка при получении релизов: %v", err))
 			if _, err := k.api.Send(msg); err != nil {

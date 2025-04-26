@@ -1,16 +1,42 @@
 package log
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-// Init initializes a new Zap logger with the specified log level
-func Init() *zap.Logger {
-	// Определяем уровень логирования из переменной окружения
-	logLevel := os.Getenv("LOG_LEVEL")
+// Init initializes the global logger with configurable log level
+func Init() (*zap.Logger, error) {
+	cfg := zap.Config{
+		Encoding:         "json",
+		OutputPaths:      []string{"stdout"},
+		ErrorOutputPaths: []string{"stderr"},
+		EncoderConfig: zapcore.EncoderConfig{
+			MessageKey:     "msg",
+			LevelKey:       "level",
+			TimeKey:        "time",
+			CallerKey:      "caller",
+			StacktraceKey:  "stacktrace",
+			LineEnding:     zapcore.DefaultLineEnding,
+			EncodeLevel:    zapcore.LowercaseLevelEncoder,
+			EncodeTime:     zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05"),
+			EncodeDuration: zapcore.SecondsDurationEncoder,
+			EncodeCaller:   zapcore.ShortCallerEncoder,
+		},
+		Development: true, // Включаем режим разработки для отладки
+	}
+
+	// Читаем LOG_LEVEL из окружения
+	logLevelRaw := os.Getenv("LOG_LEVEL")
+	logLevel := strings.ToLower(logLevelRaw)
+	if logLevel == "" {
+		logLevel = "info" // Фаллбэк на info
+	}
+
 	var level zapcore.Level
 	switch logLevel {
 	case "debug":
@@ -22,22 +48,29 @@ func Init() *zap.Logger {
 	case "error":
 		level = zapcore.ErrorLevel
 	default:
-		level = zapcore.InfoLevel // Значение по умолчанию
+		logLevel = "info"
+		level = zapcore.InfoLevel
 	}
 
-	// Настраиваем конфигурацию логгера
-	config := zap.Config{
-		Level:            zap.NewAtomicLevelAt(level),
-		Development:      false,
-		Encoding:         "json", // Для совместимости с Docker
-		EncoderConfig:    zap.NewProductionEncoderConfig(),
-		OutputPaths:      []string{"stdout"},
-		ErrorOutputPaths: []string{"stdout"},
-	}
+	cfg.Level = zap.NewAtomicLevelAt(level)
 
-	logger, err := config.Build()
+	logger, err := cfg.Build(zap.AddCallerSkip(1))
 	if err != nil {
-		panic("Failed to initialize logger: " + err.Error())
+		return nil, fmt.Errorf("failed to initialize logger: %v", err)
 	}
-	return logger
+
+	// Логируем инициализацию логгера с подробной информацией
+	logger.Info("Logger initialized",
+		zap.String("log_level_raw", logLevelRaw),
+		zap.String("log_level_applied", logLevel),
+		zap.String("level", level.String()),
+	)
+	if logLevelRaw == "" {
+		logger.Warn("LOG_LEVEL not set in environment, using default", zap.String("default", logLevel))
+	}
+	if level == zapcore.DebugLevel {
+		logger.Debug("Debug logging enabled")
+	}
+
+	return logger, nil
 }

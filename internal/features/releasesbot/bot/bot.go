@@ -44,13 +44,23 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 	// Создаём CommandHandlers с необходимыми зависимостями
 	handlers := NewCommandHandlers(api, logger, debouncer, config, al)
 
-	return &Bot{
+	bot := &Bot{
 		api:      api,
 		logger:   logger,
 		handlers: handlers,
 		config:   config,
 		al:       al,
-	}, nil
+	}
+
+	// Инициализируем конфигурацию кэша
+	bot.logger.Info("Initializing cache configuration")
+	cache.InitCacheConfig(bot.logger)
+
+	// Запускаем периодическое обновление кэша
+	bot.logger.Info("Starting cache updater")
+	go cache.StartUpdater(bot.config, bot.logger, bot.al)
+
+	return bot, nil
 }
 
 // Start runs the bot
@@ -72,9 +82,6 @@ func (b *Bot) Start() error {
 		b.logger.Error("Failed to set bot commands", zap.Error(err))
 		return fmt.Errorf("failed to set bot commands: %v", err)
 	}
-
-	// Инициализируем кэш асинхронно
-	go cache.InitializeCache(b.config, b.logger, b.al)
 
 	// Настраиваем обновления
 	u := tgbotapi.NewUpdate(0)
