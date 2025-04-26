@@ -32,8 +32,8 @@ var cacheMu sync.RWMutex
 var cacheDuration time.Duration
 var cacheDurationOnce sync.Once
 
-var isUpdatingCache bool
-var isUpdatingCacheMu sync.Mutex
+var activeUpdates int
+var activeUpdatesMu sync.Mutex
 
 // InitCacheConfig initializes the cache configuration
 func InitCacheConfig(logger *zap.Logger) {
@@ -65,27 +65,36 @@ func InitializeCache(config *config.Config, logger *zap.Logger, al *artistlist.A
 		logger.Info("InitializeCache started, debug logging disabled")
 	}
 
-	isUpdatingCacheMu.Lock()
-	if isUpdatingCache {
-		logger.Warn("Cache update already in progress, skipping...")
-		isUpdatingCacheMu.Unlock()
-		return
-	}
-	isUpdatingCache = true
-	isUpdatingCacheMu.Unlock()
+	activeUpdatesMu.Lock()
+	activeUpdates++
+	activeUpdatesMu.Unlock()
 
 	defer func() {
-		isUpdatingCacheMu.Lock()
-		isUpdatingCache = false
-		isUpdatingCacheMu.Unlock()
+		activeUpdatesMu.Lock()
+		activeUpdates--
+		activeUpdatesMu.Unlock()
 		if logger.Core().Enabled(zapcore.DebugLevel) {
-			logger.Debug("Cache update completed, isUpdatingCache reset")
+			logger.Debug("Cache update completed, active updates", zap.Int("active_updates", activeUpdates))
 		}
 	}()
 
 	months := []string{
 		"january", "february", "march", "april", "may", "june",
 		"july", "august", "september", "october", "november", "december",
+	}
+	monthOrder := map[string]int{
+		"january":   1,
+		"february":  2,
+		"march":     3,
+		"april":     4,
+		"may":       5,
+		"june":      6,
+		"july":      7,
+		"august":    8,
+		"september": 9,
+		"october":   10,
+		"november":  11,
+		"december":  12,
 	}
 
 	logger.Info("Starting cache initialization for all months", zap.Int("month_count", len(months)))
@@ -108,7 +117,7 @@ func InitializeCache(config *config.Config, logger *zap.Logger, al *artistlist.A
 	var monthsMu sync.Mutex
 
 	// Ограничиваем количество одновременно обрабатываемых месяцев
-	semaphore := make(chan struct{}, 6) // Максимум 6 месяцев одновременно
+	semaphore := make(chan struct{}, 4) // Максимум 4 месяца одновременно
 
 	for _, month := range months {
 		wg.Add(1)
@@ -241,7 +250,7 @@ func InitializeCache(config *config.Config, logger *zap.Logger, al *artistlist.A
 				successfulMonths = append(successfulMonths, month)
 				monthsMu.Unlock()
 			} else {
-				logger.Debug("No releases found for month, skipping cache update", zap.String("month", month), zap.Duration("duration", duration))
+				logger.Warn("No releases found for month, skipping cache update", zap.String("month", month), zap.Duration("duration", duration))
 
 				// Добавляем месяц в список пустых
 				monthsMu.Lock()
@@ -278,9 +287,13 @@ func InitializeCache(config *config.Config, logger *zap.Logger, al *artistlist.A
 	}
 	cacheMu.RUnlock()
 
-	// Сортируем списки месяцев
-	sort.Strings(successfulMonths)
-	sort.Strings(emptyMonths)
+	// Сортируем списки месяцев по хронологическому порядку
+	sort.Slice(successfulMonths, func(i, j int) bool {
+		return monthOrder[successfulMonths[i]] < monthOrder[successfulMonths[j]]
+	})
+	sort.Slice(emptyMonths, func(i, j int) bool {
+		return monthOrder[emptyMonths[i]] < monthOrder[emptyMonths[j]]
+	})
 
 	// Логируем списки месяцев
 	if len(successfulMonths) > 0 {
@@ -470,20 +483,7 @@ func StartUpdater(config *config.Config, logger *zap.Logger, al *artistlist.Arti
 
 	for t := range ticker.C {
 		logger.Info("Starting periodic cache update", zap.Time("tick_time", t))
-		isUpdatingCacheMu.Lock()
-		if isUpdatingCache {
-			logger.Warn("Cache update already in progress, skipping")
-			isUpdatingCacheMu.Unlock()
-			continue
-		}
-		isUpdatingCache = true
-		isUpdatingCacheMu.Unlock()
-
 		go InitializeCache(config, logger, al)
-
-		isUpdatingCacheMu.Lock()
-		isUpdatingCache = false
-		isUpdatingCacheMu.Unlock()
 		logger.Info("Periodic cache update completed")
 	}
 
