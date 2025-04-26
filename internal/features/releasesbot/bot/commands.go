@@ -196,7 +196,7 @@ func (h *CommandHandlers) handleMonth(msg *tgbotapi.Message, args []string) {
 		whitelist = h.al.GetUnitedWhitelist()
 	}
 
-	releases, err := cache.GetReleasesForMonths([]string{month}, whitelist, femaleOnly, maleOnly, h.al.GetUnitedWhitelist(), h.config, h.logger)
+	releases, err := cache.GetReleasesForMonths([]string{month}, whitelist, femaleOnly, maleOnly, h.al, h.config, h.logger)
 	if err != nil {
 		h.sendMessage(msg.Chat.ID, fmt.Sprintf("Ошибка при получении релизов: %v", err))
 		return

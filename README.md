@@ -30,53 +30,6 @@ For whitelist-related questions, contact the admin (e.g., `@fullofsarang`).
 - **Docker**: For containerized deployment.
 - **Docker Compose**: For orchestrating the bot with persistent storage.
 - **Telegram Bot Token**: Obtain from BotFather in Telegram.
-- **GitHub Account**: For accessing the repository and Docker Hub integration.
-- **Docker Hub Account**: For pulling the pre-built image.
-
-## Installation
-
-### Clone the Repository
-
-```bash
-git clone https://github.com/tempizhere/gemfactory.git
-cd gemfactory
-```
-
-### Set Up Environment Variables
-
-Create a `.env` file in the project root with the following variables:
-
-```env
-BOT_TOKEN=your_telegram_bot_token
-ADMIN_USERNAME=your_admin_username
-CACHE_DURATION=8h
-MAX_RETRIES=3
-REQUEST_DELAY=10s
-WHITELIST_DIR=data
-LOG_LEVEL=info
-```
-
-Replace `your_telegram_bot_token` with your Telegram Bot Token and `your_admin_username` with the Telegram username of the admin (e.g., `fullofsarang`).
-
-### Initialize Whitelists
-
-Create the `data/` directory and add initial whitelist files:
-
-```bash
-mkdir -p data
-```
-
-**data/female_whitelist.json**:
-
-```json
-[]
-```
-
-**data/male_whitelist.json**:
-
-```json
-[]
-```
 
 ## Running the Bot
 
@@ -106,31 +59,6 @@ volumes:
     name: whitelist_data
 ```
 
-2. Start the bot:
-
-```bash
-docker-compose up -d
-```
-
-3. Check the container logs:
-
-```bash
-docker logs gemfactory
-```
-
-### Using Go (Development)
-
-1. Install dependencies:
-
-```bash
-go mod tidy
-```
-
-2. Run the bot:
-
-```bash
-go run cmd/bot/main.go
-```
 
 ## Deployment
 
@@ -156,31 +84,4 @@ The bot is automatically built and published to Docker Hub (`tempizhere/gemfacto
 - **Scraper**: Fetches K-pop release schedules from external sources (e.g., `kpopofficial.com`).
 - **Cache**: Stores release data to reduce API calls, updated every `CACHE_DURATION` (default: 8 hours).
 - **Whitelists**: Managed via `female_whitelist.json` and `male_whitelist.json`, editable by admins.
-- **Commands**: Handled via Telegram Bot API, with support for filtering and formatting.
 
-### Building the Docker Image
-
-```bash
-docker build -t tempizhere/gemfactory:latest 
-```
-
-### Linting and Testing
-
-Run linter:
-
-```bash
-golangci-lint run
-```
-
-Run tests (if available):
-
-```bash
-go test ./...
-```
-
-## Contributing
-
-1. Fork the repository.
-2. Create a feature branch (`git checkout -b feature/your-feature`).
-3. Commit changes (`git commit -m "Add your feature"`).
-4. Push to the branch (`git push origin feature/your-feature`).
