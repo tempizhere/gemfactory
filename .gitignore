@@ -22,3 +22,4 @@ tmp/
 # Build artifacts
 gemfactory
 tree.md
+*.json

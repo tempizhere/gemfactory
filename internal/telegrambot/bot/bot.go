@@ -41,6 +41,11 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 		return nil, fmt.Errorf("failed to initialize artist list: %v", err)
 	}
 
+	// Проверяем, пусты ли вайтлисты
+	if len(al.GetFemaleWhitelist()) == 0 && len(al.GetMaleWhitelist()) == 0 {
+		return nil, fmt.Errorf("both female and male whitelists are empty; populate at least one whitelist to start the bot")
+	}
+
 	// Инициализируем Debouncer для защиты от дабл-клика
 	debouncer := debounce.NewDebouncer()
 
