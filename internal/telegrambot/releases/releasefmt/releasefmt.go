@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"gemfactory/internal/features/releasesbot/html"
-	"gemfactory/internal/features/releasesbot/release"
+	"gemfactory/internal/telegrambot/releases/html"
+	"gemfactory/internal/telegrambot/releases/release"
 	"go.uber.org/zap"
 )
 

@@ -2,20 +2,23 @@ package bot
 
 import (
 	"fmt"
-
 	"gemfactory/internal/debounce"
-	"gemfactory/internal/features/releasesbot/artistlist"
-	"gemfactory/internal/features/releasesbot/cache"
+	"gemfactory/internal/telegrambot/bot/commands/admin"
+	"gemfactory/internal/telegrambot/bot/commands/user"
+	"gemfactory/internal/telegrambot/bot/types"
+	"gemfactory/internal/telegrambot/releases/artistlist"
+	"gemfactory/internal/telegrambot/releases/cache"
 	"gemfactory/pkg/config"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
+	"strings"
 )
 
 // Bot represents the Telegram bot
 type Bot struct {
 	api      *tgbotapi.BotAPI
 	logger   *zap.Logger
-	handlers *CommandHandlers
+	handlers *types.CommandHandlers
 	config   *config.Config
 	al       *artistlist.ArtistList
 }
@@ -36,6 +39,11 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 	al, err := artistlist.NewArtistList(config.WhitelistDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize artist list: %v", err)
+	}
+
+	// Проверяем, пусты ли вайтлисты
+	if len(al.GetFemaleWhitelist()) == 0 && len(al.GetMaleWhitelist()) == 0 {
+		return nil, fmt.Errorf("both female and male whitelists are empty; populate at least one whitelist to start the bot")
 	}
 
 	// Инициализируем Debouncer для защиты от дабл-клика
@@ -65,7 +73,7 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 
 // Start runs the bot
 func (b *Bot) Start() error {
-	defer b.handlers.keyboard.Stop() // Останавливаем тикер при завершении работы бота
+	defer b.handlers.Keyboard.Stop() // Останавливаем тикер при завершении работы бота
 
 	b.logger.Info("Bot started", zap.String("username", b.api.Self.UserName))
 
@@ -111,7 +119,7 @@ func (b *Bot) Start() error {
 
 		// Handle Callback Queries (Inline Keyboard)
 		if update.CallbackQuery != nil {
-			go b.handlers.HandleCallbackQuery(update)
+			go b.handlers.Keyboard.HandleCallbackQuery(update.CallbackQuery)
 			continue
 		}
 
@@ -120,9 +128,70 @@ func (b *Bot) Start() error {
 			continue
 		}
 
-		go b.handlers.HandleCommand(update)
+		go b.handleCommand(update)
 	}
 
 	b.logger.Info("Update channel closed, stopping bot")
 	return nil
+}
+
+// handleCommand processes incoming commands
+func (b *Bot) handleCommand(update tgbotapi.Update) {
+	if update.Message == nil || !update.Message.IsCommand() {
+		return
+	}
+
+	msg := update.Message
+	command := msg.Command()
+	args := strings.Fields(msg.Text)[1:]
+
+	// Проверка на админские команды
+	isAdmin := msg.From.UserName == b.config.AdminUsername
+
+	switch command {
+	case "start":
+		user.HandleStart(b.handlers, msg)
+	case "help":
+		user.HandleHelp(b.handlers, msg)
+	case "month":
+		user.HandleMonth(b.handlers, msg, args)
+	case "whitelists":
+		if isAdmin {
+			admin.HandleWhitelists(b.handlers, msg)
+		} else {
+			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+		}
+	case "add_artist":
+		if isAdmin {
+			admin.HandleAddArtist(b.handlers, msg, args)
+		} else {
+			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+		}
+	case "remove_artist":
+		if isAdmin {
+			admin.HandleRemoveArtist(b.handlers, msg, args)
+		} else {
+			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+		}
+	case "clearcache":
+		if isAdmin {
+			admin.HandleClearCache(b.handlers, msg)
+		} else {
+			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+		}
+	case "clearwhitelists":
+		if isAdmin {
+			admin.HandleClearWhitelists(b.handlers, msg)
+		} else {
+			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+		}
+	case "export":
+		if isAdmin {
+			admin.HandleExport(b.handlers, msg)
+		} else {
+			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+		}
+	default:
+		types.SendMessage(b.handlers, msg.Chat.ID, "Неизвестная команда. Используйте /help для списка команд.")
+	}
 }

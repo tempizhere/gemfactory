@@ -71,7 +71,7 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.WhitelistDir == "" {
-		cfg.WhitelistDir = "internal/features/releasesbot/data" // Значение по умолчанию
+		cfg.WhitelistDir = "internal/telegrambot/releases/data" // Значение по умолчанию
 	}
 	// Проверяем, существует ли директория
 	if _, err := os.Stat(cfg.WhitelistDir); os.IsNotExist(err) {
