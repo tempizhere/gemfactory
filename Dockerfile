@@ -12,7 +12,7 @@ FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /app/gemfactory .
 # Копируем начальные файлы вайтлистов в образ
-COPY internal/features/releasesbot/data/ /app/internal/features/releasesbot/data/
+COPY internal/telegrambot/releases/data/ /app/internal/telegrambot/releases/data/
 
 # Создаём entrypoint скрипт для инициализации вайтлистов
 COPY entrypoint.sh /app/entrypoint.sh
