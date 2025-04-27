@@ -3,10 +3,10 @@ package scraper
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
-	"sort"
 
 	"gemfactory/internal/features/releasesbot/release"
 	"gemfactory/internal/features/releasesbot/releasefmt"

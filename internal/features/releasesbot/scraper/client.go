@@ -2,10 +2,10 @@ package scraper
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
-	"fmt"
 
 	"gemfactory/internal/features/releasesbot/release"
 	"gemfactory/pkg/config"

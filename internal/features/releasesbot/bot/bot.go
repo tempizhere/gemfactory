@@ -2,7 +2,6 @@ package bot
 
 import (
 	"fmt"
-
 	"gemfactory/internal/debounce"
 	"gemfactory/internal/features/releasesbot/artistlist"
 	"gemfactory/internal/features/releasesbot/cache"

@@ -2,9 +2,6 @@ package bot
 
 import (
 	"fmt"
-	"strings"
-	"time"
-
 	"gemfactory/internal/debounce"
 	"gemfactory/internal/features/releasesbot/artistlist"
 	"gemfactory/internal/features/releasesbot/cache"
@@ -15,6 +12,8 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
+	"strings"
+	"time"
 )
 
 // KeyboardManager manages Inline Keyboards for the bot

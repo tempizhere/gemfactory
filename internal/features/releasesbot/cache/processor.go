@@ -232,7 +232,7 @@ func InitializeCache(config *config.Config, logger *zap.Logger, al *artistlist.A
 				successfulMonths = append(successfulMonths, month)
 				monthsMu.Unlock()
 			} else {
-				logger.Warn("No releases found for month, skipping cache update", zap.String("month", month), zap.Duration("duration", duration))
+				logger.Info("No releases found for month, skipping cache update", zap.String("month", month), zap.Duration("duration", duration))
 
 				// Добавляем месяц в список пустых
 				monthsMu.Lock()
