@@ -45,7 +45,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
       - name: Check environment variables
         run: |
-          echo "WHITELIST_DIR=internal/features/releasesbot/data"
+          echo "WHITELIST_DIR=internal/telegrambot/releases/data"
           echo "BOT_TOKEN=[REDACTED]"
           echo "ADMIN_USERNAME=[REDACTED]"
       - name: Login to Docker Hub
