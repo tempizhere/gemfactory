@@ -185,6 +185,12 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 		} else {
 			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
 		}
+	case "export":
+		if isAdmin {
+			admin.HandleExport(b.handlers, msg)
+		} else {
+			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+		}
 	default:
 		types.SendMessage(b.handlers, msg.Chat.ID, "Неизвестная команда. Используйте /help для списка команд.")
 	}

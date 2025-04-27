@@ -49,8 +49,8 @@ func HandleAddArtist(h *types.CommandHandlers, msg *tgbotapi.Message, args []str
 	}
 	types.SendMessage(h, msg.Chat.ID, fmt.Sprintf("Добавлено %d %s в %s whitelist", addedCount, artistWord, gender))
 
-	// Запускаем обновление кэша асинхронно
-	go cache.InitializeCache(h.Config, h.Logger, h.ArtistList)
+	// Запускаем отложенное обновление кэша
+	cache.ScheduleCacheUpdate(h.Config, h.Logger, h.ArtistList)
 }
 
 // HandleRemoveArtist processes the /remove_artist command
@@ -70,7 +70,7 @@ func HandleRemoveArtist(h *types.CommandHandlers, msg *tgbotapi.Message, args []
 
 	removedCount, err := h.ArtistList.RemoveArtists(artists)
 	if err != nil {
-		types.SendMessage(h, msg.Chat.ID, fmt.Sprintf("Ошибка при удаления артистов: %v", err))
+		types.SendMessage(h, msg.Chat.ID, fmt.Sprintf("Ошибка при удалении артистов: %v", err))
 		return
 	}
 
@@ -87,6 +87,6 @@ func HandleRemoveArtist(h *types.CommandHandlers, msg *tgbotapi.Message, args []
 	}
 	types.SendMessage(h, msg.Chat.ID, fmt.Sprintf("Удалено %d %s из whitelist", removedCount, artistWord))
 
-	// Запускаем обновление кэша асинхронно
-	go cache.InitializeCache(h.Config, h.Logger, h.ArtistList)
+	// Запускаем отложенное обновление кэша
+	cache.ScheduleCacheUpdate(h.Config, h.Logger, h.ArtistList)
 }

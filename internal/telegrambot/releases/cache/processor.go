@@ -60,10 +60,7 @@ func InitializeCache(config *config.Config, logger *zap.Logger, al *artistlist.A
 		}
 	}()
 
-	months := []string{
-		"january", "february", "march", "april", "may", "june",
-		"july", "august", "september", "october", "november", "december",
-	}
+	months := release.Months
 	monthOrder := map[string]int{
 		"january":   1,
 		"february":  2,
@@ -256,18 +253,6 @@ func InitializeCache(config *config.Config, logger *zap.Logger, al *artistlist.A
 		close(stop) // Принудительно останавливаем горутины
 		logger.Warn("Cache initialization cancelled", zap.Error(ctx.Err()))
 	}
-
-	// Логируем содержимое кэша
-	cacheMu.RLock()
-	if len(cache) == 0 {
-		logger.Warn("Cache is empty after initialization")
-	} else {
-		logger.Info("Cache contents", zap.Int("cache_size", len(cache)))
-		for key, entry := range cache {
-			logger.Info("Cache entry", zap.String("key", key), zap.Int("release_count", len(entry.Releases)), zap.Time("timestamp", entry.Timestamp))
-		}
-	}
-	cacheMu.RUnlock()
 
 	// Сортируем списки месяцев по хронологическому порядку
 	sort.Slice(successfulMonths, func(i, j int) bool {

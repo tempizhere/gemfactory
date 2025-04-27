@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"gemfactory/internal/telegrambot/releases/artistlist"
@@ -15,11 +16,39 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// cacheUpdateMu protects the cache update timer
+var cacheUpdateMu sync.Mutex
+
+// cacheUpdateTimer holds the timer for delayed cache updates
+var cacheUpdateTimer *time.Timer
+
 // ClearCache clears the entire cache
 func ClearCache() {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	cache = make(map[string]CacheEntry)
+}
+
+// ScheduleCacheUpdate schedules a cache update with a 60-second delay, resetting the timer if called again
+func ScheduleCacheUpdate(config *config.Config, logger *zap.Logger, al *artistlist.ArtistList) {
+	cacheUpdateMu.Lock()
+	defer cacheUpdateMu.Unlock()
+
+	// Отменяем существующий таймер, если он есть
+	if cacheUpdateTimer != nil {
+		cacheUpdateTimer.Stop()
+	}
+
+	// Создаём новый таймер на 60 секунд
+	cacheUpdateTimer = time.AfterFunc(60*time.Second, func() {
+		logger.Info("Starting delayed cache update")
+		InitializeCache(config, logger, al)
+		cacheUpdateMu.Lock()
+		cacheUpdateTimer = nil
+		cacheUpdateMu.Unlock()
+	})
+
+	logger.Info("Scheduled cache update in 60 seconds")
 }
 
 // GetReleasesForMonths retrieves releases for multiple months
@@ -162,8 +191,6 @@ func StartUpdater(config *config.Config, logger *zap.Logger, al *artistlist.Arti
 		go InitializeCache(config, logger, al)
 		logger.Info("Periodic cache update completed")
 	}
-
-	logger.Info("Cache updater stopped")
 }
 
 // hashWhitelist creates a compact hash of the whitelist for cache key
