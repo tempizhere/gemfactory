@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"gemfactory/internal/features/releasesbot/release"
+	"gemfactory/internal/telegrambot/releases/release"
 	"gemfactory/pkg/config"
 	"github.com/gocolly/colly/v2"
 	"github.com/gocolly/colly/v2/extensions"

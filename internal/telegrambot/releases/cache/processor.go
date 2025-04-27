@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"gemfactory/internal/features/releasesbot/artistlist"
-	"gemfactory/internal/features/releasesbot/release"
-	"gemfactory/internal/features/releasesbot/scraper"
+	"gemfactory/internal/telegrambot/releases/artistlist"
+	"gemfactory/internal/telegrambot/releases/release"
+	"gemfactory/internal/telegrambot/releases/scraper"
 	"gemfactory/pkg/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"

@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"gemfactory/internal/features/releasesbot/release"
+	"gemfactory/internal/telegrambot/releases/release"
 )
 
 // CacheEntry holds cached releases

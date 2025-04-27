@@ -1,12 +1,12 @@
-package bot
+package keyboard
 
 import (
 	"fmt"
 	"gemfactory/internal/debounce"
-	"gemfactory/internal/features/releasesbot/artistlist"
-	"gemfactory/internal/features/releasesbot/cache"
-	"gemfactory/internal/features/releasesbot/release"
-	"gemfactory/internal/features/releasesbot/releasefmt"
+	"gemfactory/internal/telegrambot/releases/artistlist"
+	"gemfactory/internal/telegrambot/releases/cache"
+	"gemfactory/internal/telegrambot/releases/release"
+	"gemfactory/internal/telegrambot/releases/releasefmt"
 	"gemfactory/pkg/config"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -113,10 +113,15 @@ func (k *KeyboardManager) GetAllMonthsKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return k.allMonthsKeyboard
 }
 
-// HandleCallback processes callback queries from inline keyboards
-func (k *KeyboardManager) HandleCallback(callback *tgbotapi.CallbackQuery) {
+// HandleCallbackQuery processes callback queries from inline keyboards
+func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) {
 	data := callback.Data
 	chatID := callback.Message.Chat.ID
+
+	if !k.debouncer.CanProcessRequest(fmt.Sprint(chatID)) {
+		k.logger.Info("Callback query debounced", zap.Int64("chat_id", chatID), zap.String("data", data))
+		return
+	}
 
 	if data == "show_all_months" {
 		msg := tgbotapi.NewEditMessageReplyMarkup(chatID, callback.Message.MessageID, k.GetAllMonthsKeyboard())
@@ -163,7 +168,7 @@ func (k *KeyboardManager) HandleCallback(callback *tgbotapi.CallbackQuery) {
 		msg := tgbotapi.NewMessage(chatID, response.String())
 		msg.ParseMode = "HTML"
 		msg.ReplyMarkup = k.GetMainKeyboard()
-		msg.DisableWebPagePreview = true // Отключаем превью ссылок
+		msg.DisableWebPagePreview = true
 		if _, err := k.api.Send(msg); err != nil {
 			k.logger.Error("Failed to send message", zap.Error(err))
 		}

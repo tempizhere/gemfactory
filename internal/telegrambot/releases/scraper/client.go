@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"gemfactory/internal/features/releasesbot/release"
+	"gemfactory/internal/telegrambot/releases/release"
 	"gemfactory/pkg/config"
 	"github.com/gocolly/colly/v2"
 	"go.uber.org/zap"

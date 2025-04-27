@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"gemfactory/internal/features/releasesbot/release"
-	"gemfactory/internal/features/releasesbot/releasefmt"
+	"gemfactory/internal/telegrambot/releases/release"
+	"gemfactory/internal/telegrambot/releases/releasefmt"
 	"gemfactory/pkg/config"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"

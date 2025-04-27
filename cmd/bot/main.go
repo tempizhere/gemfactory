@@ -7,7 +7,7 @@ import (
 	"strings"
 	"syscall"
 
-	"gemfactory/internal/features/releasesbot/bot"
+	"gemfactory/internal/telegrambot/bot"
 	"gemfactory/pkg/config"
 	"gemfactory/pkg/log"
 	"github.com/joho/godotenv"

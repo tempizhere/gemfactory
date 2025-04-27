@@ -1,16 +1,17 @@
-package bot
+package admin
 
 import (
 	"fmt"
+	"gemfactory/internal/telegrambot/bot/types"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"sort"
 	"strings"
 )
 
-// handleWhitelists processes the /whitelists command
-func handleWhitelists(h *CommandHandlers, msg *tgbotapi.Message) {
-	female := h.al.GetFemaleWhitelist()
-	male := h.al.GetMaleWhitelist()
+// HandleWhitelists processes the /whitelists command
+func HandleWhitelists(h *types.CommandHandlers, msg *tgbotapi.Message) {
+	female := h.ArtistList.GetFemaleWhitelist()
+	male := h.ArtistList.GetMaleWhitelist()
 
 	var response strings.Builder
 	response.WriteString("<b>Женские артисты:</b><code>\n")
@@ -93,6 +94,6 @@ func handleWhitelists(h *CommandHandlers, msg *tgbotapi.Message) {
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, response.String())
 	reply.ParseMode = "HTML"
-	reply.ReplyMarkup = h.keyboard.GetMainKeyboard()
-	sendMessageWithMarkup(h, msg.Chat.ID, response.String(), reply.ReplyMarkup)
+	reply.ReplyMarkup = h.Keyboard.GetMainKeyboard()
+	types.SendMessageWithMarkup(h, msg.Chat.ID, response.String(), reply.ReplyMarkup)
 }
