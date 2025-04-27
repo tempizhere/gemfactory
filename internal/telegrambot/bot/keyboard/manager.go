@@ -118,9 +118,13 @@ func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) 
 	data := callback.Data
 	chatID := callback.Message.Chat.ID
 
-	if !k.debouncer.CanProcessRequest(fmt.Sprint(chatID)) {
-		k.logger.Info("Callback query debounced", zap.Int64("chat_id", chatID), zap.String("data", data))
-		return
+	// Применяем дебouncing только для callback-запросов с префиксом "month_"
+	if strings.HasPrefix(data, "month_") {
+		debounceKey := fmt.Sprintf("%d:%s", chatID, data)
+		if !k.debouncer.CanProcessRequest(debounceKey) {
+			k.logger.Info("Callback query debounced", zap.Int64("chat_id", chatID), zap.String("data", data))
+			return
+		}
 	}
 
 	if data == "show_all_months" {

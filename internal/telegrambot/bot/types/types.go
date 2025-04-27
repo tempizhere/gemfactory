@@ -55,14 +55,9 @@ func SendMessageWithMarkup(h *CommandHandlers, chatID int64, text string, markup
 // SetBotCommands sets the bot's command menu
 func (h *CommandHandlers) SetBotCommands() error {
 	commands := []tgbotapi.BotCommand{
-		{Command: "/start", Description: "Начать работу с ботом"},
 		{Command: "/help", Description: "Показать справку"},
 		{Command: "/month", Description: "Получить релизы за месяц"},
 		{Command: "/whitelists", Description: "Показать списки артистов"},
-		{Command: "/add_artist", Description: "Добавить артистов в whitelist"},
-		{Command: "/remove_artist", Description: "Удалить артистов из whitelist"},
-		{Command: "/clearcache", Description: "Очистить кэш"},
-		{Command: "/clearwhitelists", Description: "Очистить вайтлисты"},
 	}
 
 	config := tgbotapi.NewSetMyCommands(commands...)
