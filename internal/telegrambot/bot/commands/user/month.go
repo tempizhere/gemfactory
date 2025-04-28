@@ -1,22 +1,21 @@
 package user
 
 import (
-	"fmt"
+	"errors"
+	"gemfactory/internal/telegrambot/bot/service"
 	"gemfactory/internal/telegrambot/bot/types"
 	"gemfactory/internal/telegrambot/releases/cache"
-	"gemfactory/internal/telegrambot/releases/release"
-	"gemfactory/internal/telegrambot/releases/releasefmt"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
 	"strings"
 )
 
 // HandleMonth processes the /month command
 func HandleMonth(h *types.CommandHandlers, msg *tgbotapi.Message, args []string) {
 	if len(args) == 0 {
-		text := "Пожалуйста, выберите месяц:"
-		reply := tgbotapi.NewMessage(msg.Chat.ID, text)
-		reply.ReplyMarkup = h.Keyboard.GetMainKeyboard()
-		types.SendMessageWithMarkup(h, msg.Chat.ID, text, reply.ReplyMarkup)
+		if err := h.API.SendMessageWithMarkup(msg.Chat.ID, "Пожалуйста, выберите месяц:", h.Keyboard.GetMainKeyboard()); err != nil {
+			h.Logger.Error("Failed to send message with markup", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", "Пожалуйста, выберите месяц:"), zap.Error(err))
+		}
 		return
 	}
 
@@ -24,7 +23,6 @@ func HandleMonth(h *types.CommandHandlers, msg *tgbotapi.Message, args []string)
 	femaleOnly := false
 	maleOnly := false
 
-	// Проверяем флаги -gg и -mg
 	for _, arg := range args[1:] {
 		if arg == "-gg" {
 			femaleOnly = true
@@ -33,49 +31,20 @@ func HandleMonth(h *types.CommandHandlers, msg *tgbotapi.Message, args []string)
 		}
 	}
 
-	// Проверяем корректность месяца
-	validMonth := false
-	for _, m := range release.Months {
-		if month == m {
-			validMonth = true
-			break
-		}
-	}
-	if !validMonth {
-		types.SendMessage(h, msg.Chat.ID, "Неверный месяц. Используйте /month [january, february, ...]")
-		return
-	}
-
-	// Получаем вайтлист в зависимости от флагов
-	var whitelist map[string]struct{}
-	if femaleOnly && !maleOnly {
-		whitelist = h.ArtistList.GetFemaleWhitelist()
-	} else if maleOnly && !femaleOnly {
-		whitelist = h.ArtistList.GetMaleWhitelist()
-	} else {
-		whitelist = h.ArtistList.GetUnitedWhitelist()
-	}
-
-	releases, err := cache.GetReleasesForMonths([]string{month}, whitelist, femaleOnly, maleOnly, h.ArtistList, h.Config, h.Logger)
+	svc := service.NewReleaseService(h.ArtistList, h.Config, h.Logger, h.Cache)
+	response, err := svc.GetReleasesForMonth(month, femaleOnly, maleOnly)
 	if err != nil {
-		types.SendMessage(h, msg.Chat.ID, fmt.Sprintf("Ошибка при получении релизов: %v", err))
+		msgText := err.Error()
+		if errors.Is(err, cache.ErrNoCache) {
+			msgText = "Релизы для этого месяца пока недоступны. Попробуйте позже!"
+		}
+		if err := h.API.SendMessage(msg.Chat.ID, msgText); err != nil {
+			h.Logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", msgText), zap.Error(err))
+		}
 		return
 	}
 
-	if len(releases) == 0 {
-		types.SendMessage(h, msg.Chat.ID, "Релизы не найдены.")
-		return
+	if err := h.API.SendMessageWithMarkup(msg.Chat.ID, response, h.Keyboard.GetMainKeyboard()); err != nil {
+		h.Logger.Error("Failed to send message with markup", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", response), zap.Error(err))
 	}
-
-	var response strings.Builder
-	for _, rel := range releases {
-		formatted := releasefmt.FormatReleaseForTelegram(rel, h.Logger)
-		response.WriteString(formatted + "\n")
-	}
-
-	reply := tgbotapi.NewMessage(msg.Chat.ID, response.String())
-	reply.ParseMode = "HTML"
-	reply.ReplyMarkup = h.Keyboard.GetMainKeyboard()
-	reply.DisableWebPagePreview = true
-	types.SendMessageWithMarkup(h, msg.Chat.ID, response.String(), reply.ReplyMarkup)
 }

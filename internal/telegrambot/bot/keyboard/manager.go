@@ -1,8 +1,10 @@
 package keyboard
 
 import (
+	"errors"
 	"fmt"
 	"gemfactory/internal/debounce"
+	"gemfactory/internal/telegrambot/bot/botapi"
 	"gemfactory/internal/telegrambot/releases/artistlist"
 	"gemfactory/internal/telegrambot/releases/cache"
 	"gemfactory/internal/telegrambot/releases/release"
@@ -20,24 +22,25 @@ import (
 type KeyboardManager struct {
 	mainMonthKeyboard tgbotapi.InlineKeyboardMarkup
 	allMonthsKeyboard tgbotapi.InlineKeyboardMarkup
-	api               *tgbotapi.BotAPI
+	api               botapi.BotAPI // Используем интерфейс BotAPI
 	logger            *zap.Logger
 	debouncer         *debounce.Debouncer
 	al                *artistlist.ArtistList
 	config            *config.Config
+	cache             cache.Cache
 }
 
 // NewKeyboardManager creates a new KeyboardManager instance with cached keyboards
-func NewKeyboardManager(api *tgbotapi.BotAPI, logger *zap.Logger, al *artistlist.ArtistList, config *config.Config) *KeyboardManager {
+func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al *artistlist.ArtistList, config *config.Config, cache cache.Cache) *KeyboardManager {
 	k := &KeyboardManager{
 		api:       api,
 		logger:    logger,
 		debouncer: debounce.NewDebouncer(),
 		al:        al,
 		config:    config,
+		cache:     cache,
 	}
 
-	// Создаём статическую клавиатуру для всех месяцев
 	var rows [][]tgbotapi.InlineKeyboardButton
 	for i := 0; i < len(release.Months); i += 3 {
 		var row []tgbotapi.InlineKeyboardButton
@@ -47,29 +50,18 @@ func NewKeyboardManager(api *tgbotapi.BotAPI, logger *zap.Logger, al *artistlist
 		}
 		rows = append(rows, row)
 	}
-	// Добавляем кнопку "Back"
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Back", "back_to_main")))
 	k.allMonthsKeyboard = tgbotapi.NewInlineKeyboardMarkup(rows...)
 
-	// Инициализируем mainMonthKeyboard
 	k.updateMainMonthKeyboard()
 
-	// Запускаем периодическое обновление mainMonthKeyboard 1-го числа каждого месяца
 	go func() {
 		for {
-			// Вычисляем время до следующего 1-го числа
 			now := time.Now()
-			// Получаем начало следующего месяца
 			nextMonth := now.AddDate(0, 1, 0)
-			// Устанавливаем 1-е число следующего месяца, 00:00:00
 			firstOfNextMonth := time.Date(nextMonth.Year(), nextMonth.Month(), 1, 0, 0, 0, 0, now.Location())
-			// Вычисляем время ожидания
 			durationUntilFirst := firstOfNextMonth.Sub(now)
-
-			// Ждём до 1-го числа
 			time.Sleep(durationUntilFirst)
-
-			// Обновляем клавиатуру
 			k.updateMainMonthKeyboard()
 		}
 	}()
@@ -79,7 +71,6 @@ func NewKeyboardManager(api *tgbotapi.BotAPI, logger *zap.Logger, al *artistlist
 
 // updateMainMonthKeyboard updates the main month keyboard with the current, previous, and next months
 func (k *KeyboardManager) updateMainMonthKeyboard() {
-	// Main Month Keyboard: текущий, предыдущий и следующий месяц
 	currentMonth := int(time.Now().Month())
 	prevMonth := currentMonth - 1
 	if prevMonth < 1 {
@@ -118,7 +109,6 @@ func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) 
 	data := callback.Data
 	chatID := callback.Message.Chat.ID
 
-	// Применяем дебouncing только для callback-запросов с префиксом "month_"
 	if strings.HasPrefix(data, "month_") {
 		debounceKey := fmt.Sprintf("%d:%s", chatID, data)
 		if !k.debouncer.CanProcessRequest(debounceKey) {
@@ -128,16 +118,14 @@ func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) 
 	}
 
 	if data == "show_all_months" {
-		msg := tgbotapi.NewEditMessageReplyMarkup(chatID, callback.Message.MessageID, k.GetAllMonthsKeyboard())
-		if _, err := k.api.Request(msg); err != nil {
+		if err := k.api.EditMessageReplyMarkup(chatID, callback.Message.MessageID, k.GetAllMonthsKeyboard()); err != nil {
 			k.logger.Error("Failed to edit message markup", zap.Error(err))
 		}
 		return
 	}
 
 	if data == "back_to_main" {
-		msg := tgbotapi.NewEditMessageReplyMarkup(chatID, callback.Message.MessageID, k.GetMainKeyboard())
-		if _, err := k.api.Request(msg); err != nil {
+		if err := k.api.EditMessageReplyMarkup(chatID, callback.Message.MessageID, k.GetMainKeyboard()); err != nil {
 			k.logger.Error("Failed to edit message markup", zap.Error(err))
 		}
 		return
@@ -146,18 +134,20 @@ func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) 
 	if strings.HasPrefix(data, "month_") {
 		month := strings.TrimPrefix(data, "month_")
 		whitelist := k.al.GetUnitedWhitelist()
-		releases, err := cache.GetReleasesForMonths([]string{month}, whitelist, false, false, k.al, k.config, k.logger)
+		releases, err := k.cache.GetReleasesForMonths([]string{month}, whitelist, false, false)
 		if err != nil {
-			msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Ошибка при получении релизов: %v", err))
-			if _, err := k.api.Send(msg); err != nil {
+			msgText := fmt.Sprintf("Ошибка при получении релизов: %v", err)
+			if errors.Is(err, cache.ErrNoCache) {
+				msgText = "Релизы для этого месяца пока недоступны. Попробуйте позже!"
+			}
+			if err := k.api.SendMessage(chatID, msgText); err != nil {
 				k.logger.Error("Failed to send message", zap.Error(err))
 			}
 			return
 		}
 
 		if len(releases) == 0 {
-			msg := tgbotapi.NewMessage(chatID, "Релизы не найдены.")
-			if _, err := k.api.Send(msg); err != nil {
+			if err := k.api.SendMessage(chatID, "Релизы не найдены."); err != nil {
 				k.logger.Error("Failed to send message", zap.Error(err))
 			}
 			return
@@ -169,17 +159,11 @@ func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) 
 			response.WriteString(formatted + "\n")
 		}
 
-		msg := tgbotapi.NewMessage(chatID, response.String())
-		msg.ParseMode = "HTML"
-		msg.ReplyMarkup = k.GetMainKeyboard()
-		msg.DisableWebPagePreview = true
-		if _, err := k.api.Send(msg); err != nil {
+		if err := k.api.SendMessageWithMarkup(chatID, response.String(), k.GetMainKeyboard()); err != nil {
 			k.logger.Error("Failed to send message", zap.Error(err))
 		}
 	}
 }
 
 // Stop is a no-op since periodic updates are managed with a simple sleep loop
-func (k *KeyboardManager) Stop() {
-	// Ничего не делаем, так как бесконечный цикл завершится при остановке бота
-}
+func (k *KeyboardManager) Stop() {}

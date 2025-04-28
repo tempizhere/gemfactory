@@ -19,8 +19,10 @@ Gemfactory is a Telegram bot designed to provide users with schedules of K-pop c
 - `/month [month] -mg`: Show releases only for male artists.
 - `/whitelists`: Display lists of female and male artists in a multi-column format.
 - `/add_artist [female/male] [artists]`: Add artists to the female or male whitelist (admin only).
-- `/remove_artist [female/male] [artists]`: Remove artists from the whitelist (admin only).
+- `/remove_artist [artists]`: Remove artists from the whitelist (admin only).
 - `/clearwhitelists`: Clear all whitelists (admin only).
+- `/clearcache`: Clears the cache and reinitializes it (admin only).
+- `/export`: Exports whitelists (admin only).
 
 For whitelist-related questions, contact the admin (e.g., `@fullofsarang`).
 
@@ -75,13 +77,13 @@ The bot is automatically built and published to Docker Hub (`tempizhere/gemfacto
 ### Project Structure
 
 - `cmd/bot/main.go`: Entry point for the bot.
-- `internal/features/releasesbot/`: Core bot logic, including scraping, caching, and command handling.
+- `internal/telegrambot/`: Core bot logic, including scraping, caching, and command handling.
 - `pkg/`: Shared utilities (logging, configuration).
 - `data/`: Directory for whitelist JSON files.
 
 ### Key Components
 
 - **Scraper**: Fetches K-pop release schedules from external sources (e.g., `kpopofficial.com`).
-- **Cache**: Stores release data to reduce API calls, updated every `CACHE_DURATION` (default: 8 hours).
+- **Cache**: Stores release data to reduce API calls, updated every `CACHE_DURATION` (default: 24 hours).
 - **Whitelists**: Managed via `female_whitelist.json` and `male_whitelist.json`, editable by admins.
 

@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"gemfactory/internal/telegrambot/bot/types"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
 )
 
 // HandleStart processes the /start command
 func HandleStart(h *types.CommandHandlers, msg *tgbotapi.Message) {
 	text := "Добро пожаловать! Выберите месяц:"
-	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
-	reply.ReplyMarkup = h.Keyboard.GetMainKeyboard()
-	types.SendMessageWithMarkup(h, msg.Chat.ID, text, reply.ReplyMarkup)
+	if err := h.API.SendMessageWithMarkup(msg.Chat.ID, text, h.Keyboard.GetMainKeyboard()); err != nil {
+		h.Logger.Error("Failed to send message with markup", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", text), zap.Error(err))
+	}
 }
 
 // HandleHelp processes the /help command
@@ -25,7 +26,7 @@ func HandleHelp(h *types.CommandHandlers, msg *tgbotapi.Message) {
 		"/whitelists - Показать списки артистов\n" +
 		"\n" +
 		fmt.Sprintf("По вопросам вайтлистов обращайтесь к @%s", h.Config.AdminUsername)
-	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
-	reply.ReplyMarkup = h.Keyboard.GetMainKeyboard()
-	types.SendMessageWithMarkup(h, msg.Chat.ID, text, reply.ReplyMarkup)
+	if err := h.API.SendMessageWithMarkup(msg.Chat.ID, text, h.Keyboard.GetMainKeyboard()); err != nil {
+		h.Logger.Error("Failed to send message with markup", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", text), zap.Error(err))
+	}
 }
