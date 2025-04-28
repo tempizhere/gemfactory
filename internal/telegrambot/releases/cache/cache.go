@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -14,9 +13,6 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
-
-// ErrNoCache indicates that no releases are available in the cache
-var ErrNoCache = errors.New("no releases available in cache")
 
 // GetReleasesForMonths retrieves releases for multiple months from the cache
 func (cm *CacheManager) GetReleasesForMonths(months []string, whitelist map[string]struct{}, femaleOnly, maleOnly bool) ([]release.Release, error) {
@@ -64,19 +60,16 @@ func (cm *CacheManager) GetReleasesForMonths(months []string, whitelist map[stri
 
 	// Если есть отсутствующие месяцы, планируем асинхронное обновление
 	if len(missingMonths) > 0 {
-		cm.logger.Warn("No cache for months, scheduling update", zap.Strings("months", missingMonths))
+		if cm.logger.Core().Enabled(zapcore.DebugLevel) {
+			cm.logger.Debug("No cache for months, scheduling update", zap.Strings("months", missingMonths))
+		}
 		go cm.ScheduleUpdate()
-	}
-
-	if len(allReleases) == 0 {
-		cm.logger.Warn("No releases found for requested months", zap.Strings("months", months))
-		return nil, ErrNoCache
 	}
 
 	if cm.logger.Core().Enabled(zapcore.DebugLevel) {
 		cm.logger.Debug("Returning releases", zap.Int("release_count", len(allReleases)))
 	}
-	return allReleases, nil
+	return allReleases, nil // Возвращаем пустой список вместо ErrNoCache
 }
 
 // ScheduleUpdate schedules a cache update with a 60-second delay

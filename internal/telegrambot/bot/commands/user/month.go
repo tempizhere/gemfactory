@@ -1,10 +1,9 @@
 package user
 
 import (
-	"errors"
+	"fmt"
 	"gemfactory/internal/telegrambot/bot/service"
 	"gemfactory/internal/telegrambot/bot/types"
-	"gemfactory/internal/telegrambot/releases/cache"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
 	"strings"
@@ -34,12 +33,8 @@ func HandleMonth(h *types.CommandHandlers, msg *tgbotapi.Message, args []string)
 	svc := service.NewReleaseService(h.ArtistList, h.Config, h.Logger, h.Cache)
 	response, err := svc.GetReleasesForMonth(month, femaleOnly, maleOnly)
 	if err != nil {
-		msgText := err.Error()
-		if errors.Is(err, cache.ErrNoCache) {
-			msgText = "Релизы для этого месяца пока недоступны. Попробуйте позже!"
-		}
-		if err := h.API.SendMessage(msg.Chat.ID, msgText); err != nil {
-			h.Logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", msgText), zap.Error(err))
+		if err := h.API.SendMessage(msg.Chat.ID, fmt.Sprintf("Ошибка: %v", err)); err != nil {
+			h.Logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", fmt.Sprintf("Ошибка: %v", err)), zap.Error(err))
 		}
 		return
 	}

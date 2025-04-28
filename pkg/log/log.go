@@ -19,15 +19,13 @@ func Init() (*zap.Logger, error) {
 			MessageKey:     "msg",
 			LevelKey:       "level",
 			TimeKey:        "time",
-			CallerKey:      "caller",
 			StacktraceKey:  "stacktrace",
 			LineEnding:     zapcore.DefaultLineEnding,
 			EncodeLevel:    zapcore.LowercaseLevelEncoder,
 			EncodeTime:     zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05"),
 			EncodeDuration: zapcore.SecondsDurationEncoder,
-			EncodeCaller:   zapcore.ShortCallerEncoder,
 		},
-		Development: true, // Включаем режим разработки для отладки
+		Development: false, // Отключаем режим разработки
 	}
 
 	// Читаем LOG_LEVEL из окружения
@@ -54,7 +52,7 @@ func Init() (*zap.Logger, error) {
 
 	cfg.Level = zap.NewAtomicLevelAt(level)
 
-	logger, err := cfg.Build(zap.AddCallerSkip(1))
+	logger, err := cfg.Build()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize logger: %v", err)
 	}

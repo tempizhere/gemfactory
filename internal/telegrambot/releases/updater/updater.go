@@ -110,7 +110,7 @@ func (u *UpdaterImpl) InitializeCache(ctx context.Context) error {
 		u.logger.Warn("No successful cache updates for any months")
 	}
 	if len(emptyMonths) > 0 {
-		u.logger.Info("No releases found for months", zap.String("months", strings.Join(emptyMonths, ",")))
+		u.logger.Debug("No releases found for months", zap.String("months", strings.Join(emptyMonths, ",")))
 	} else {
 		u.logger.Info("Releases found for all months")
 	}
@@ -243,7 +243,7 @@ func (u *UpdaterImpl) processMonth(ctx context.Context, month string, wg *sync.W
 		*successfulMonths = append(*successfulMonths, month)
 		monthsMu.Unlock()
 	} else {
-		u.logger.Info("No releases found for month, skipping cache update", zap.String("month", month), zap.Duration("duration", duration))
+		u.logger.Debug("No releases found for month, skipping cache update", zap.String("month", month), zap.Duration("duration", duration))
 
 		// Добавляем месяц в список пустых
 		monthsMu.Lock()
