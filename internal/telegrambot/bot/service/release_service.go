@@ -9,7 +9,6 @@ import (
 	"gemfactory/pkg/config"
 	"go.uber.org/zap"
 	"strings"
-	"time"
 )
 
 // ReleaseService handles business logic for release-related operations
@@ -48,29 +47,6 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 		return "", fmt.Errorf("whitelist is empty, please add artists")
 	}
 
-	// Проверяем, является ли месяц будущим
-	currentTime := time.Now()
-	currentMonth := strings.ToLower(currentTime.Month().String())
-	monthOrder := map[string]int{
-		"january":   1,
-		"february":  2,
-		"march":     3,
-		"april":     4,
-		"may":       5,
-		"june":      6,
-		"july":      7,
-		"august":    8,
-		"september": 9,
-		"october":   10,
-		"november":  11,
-		"december":  12,
-	}
-	currentMonthNum := monthOrder[currentMonth]
-	requestedMonthNum := monthOrder[month]
-	if requestedMonthNum > currentMonthNum {
-		return "Релизы для этого месяца еще не анонсированы.", nil
-	}
-
 	var whitelist map[string]struct{}
 	if femaleOnly && !maleOnly {
 		whitelist = s.artistList.GetFemaleWhitelist()
@@ -83,6 +59,12 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 	releases, err := s.cache.GetReleasesForMonths([]string{month}, whitelist, femaleOnly, maleOnly)
 	if err != nil {
 		return "", fmt.Errorf("failed to get releases: %v", err)
+	}
+
+	// Проверяем, спарсен ли месяц (есть ли ссылки в кэше)
+	links, err := s.cache.GetCachedLinks(month)
+	if err != nil || len(links) == 0 {
+		return "Релизы для этого месяца еще не анонсированы.", nil
 	}
 
 	if len(releases) == 0 {
