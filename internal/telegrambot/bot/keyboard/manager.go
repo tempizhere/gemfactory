@@ -1,6 +1,7 @@
 package keyboard
 
 import (
+	"errors"
 	"fmt"
 	"gemfactory/internal/debounce"
 	"gemfactory/internal/telegrambot/bot/botapi"
@@ -26,16 +27,18 @@ type KeyboardManager struct {
 	debouncer         *debounce.Debouncer
 	al                *artistlist.ArtistList
 	config            *config.Config
+	cache             cache.Cache
 }
 
 // NewKeyboardManager creates a new KeyboardManager instance with cached keyboards
-func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al *artistlist.ArtistList, config *config.Config) *KeyboardManager {
+func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al *artistlist.ArtistList, config *config.Config, cache cache.Cache) *KeyboardManager {
 	k := &KeyboardManager{
 		api:       api,
 		logger:    logger,
 		debouncer: debounce.NewDebouncer(),
 		al:        al,
 		config:    config,
+		cache:     cache,
 	}
 
 	var rows [][]tgbotapi.InlineKeyboardButton
@@ -131,9 +134,13 @@ func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) 
 	if strings.HasPrefix(data, "month_") {
 		month := strings.TrimPrefix(data, "month_")
 		whitelist := k.al.GetUnitedWhitelist()
-		releases, err := cache.GetReleasesForMonths([]string{month}, whitelist, false, false, k.al, k.config, k.logger)
+		releases, err := k.cache.GetReleasesForMonths([]string{month}, whitelist, false, false)
 		if err != nil {
-			if err := k.api.SendMessage(chatID, fmt.Sprintf("Ошибка при получении релизов: %v", err)); err != nil {
+			msgText := fmt.Sprintf("Ошибка при получении релизов: %v", err)
+			if errors.Is(err, cache.ErrNoCache) {
+				msgText = "Релизы для этого месяца пока недоступны. Попробуйте позже!"
+			}
+			if err := k.api.SendMessage(chatID, msgText); err != nil {
 				k.logger.Error("Failed to send message", zap.Error(err))
 			}
 			return

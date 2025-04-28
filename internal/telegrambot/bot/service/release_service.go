@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"gemfactory/internal/telegrambot/releases/artistlist"
 	"gemfactory/internal/telegrambot/releases/cache"
@@ -16,14 +17,16 @@ type ReleaseService struct {
 	artistList *artistlist.ArtistList
 	config     *config.Config
 	logger     *zap.Logger
+	cache      cache.Cache
 }
 
 // NewReleaseService creates a new ReleaseService instance
-func NewReleaseService(artistList *artistlist.ArtistList, config *config.Config, logger *zap.Logger) *ReleaseService {
+func NewReleaseService(artistList *artistlist.ArtistList, config *config.Config, logger *zap.Logger, cache cache.Cache) *ReleaseService {
 	return &ReleaseService{
 		artistList: artistList,
 		config:     config,
 		logger:     logger,
+		cache:      cache,
 	}
 }
 
@@ -41,6 +44,10 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 		return "", fmt.Errorf("invalid month: %s", month)
 	}
 
+	if len(s.artistList.GetUnitedWhitelist()) == 0 {
+		return "", fmt.Errorf("whitelist is empty, please add artists")
+	}
+
 	var whitelist map[string]struct{}
 	if femaleOnly && !maleOnly {
 		whitelist = s.artistList.GetFemaleWhitelist()
@@ -50,8 +57,11 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 		whitelist = s.artistList.GetUnitedWhitelist()
 	}
 
-	releases, err := cache.GetReleasesForMonths([]string{month}, whitelist, femaleOnly, maleOnly, s.artistList, s.config, s.logger)
+	releases, err := s.cache.GetReleasesForMonths([]string{month}, whitelist, femaleOnly, maleOnly)
 	if err != nil {
+		if errors.Is(err, cache.ErrNoCache) {
+			return "Релизы для этого месяца пока недоступны. Попробуйте позже!", nil
+		}
 		return "", fmt.Errorf("failed to get releases: %v", err)
 	}
 
@@ -69,6 +79,6 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 
 // ClearCache clears the release cache and reinitializes it
 func (s *ReleaseService) ClearCache() {
-	cache.ClearCache()
-	go cache.InitializeCache(s.config, s.logger, s.artistList)
+	s.cache.Clear()
+	go s.cache.ScheduleUpdate()
 }

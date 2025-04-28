@@ -9,7 +9,7 @@ import (
 
 // HandleClearCache processes the /clearcache command
 func HandleClearCache(h *types.CommandHandlers, msg *tgbotapi.Message) {
-	svc := service.NewReleaseService(h.ArtistList, h.Config, h.Logger)
+	svc := service.NewReleaseService(h.ArtistList, h.Config, h.Logger, h.Cache)
 	svc.ClearCache()
 	if err := h.API.SendMessage(msg.Chat.ID, "Кэш очищен, обновление запущено."); err != nil {
 		h.Logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", "Кэш очищен, обновление запущено."), zap.Error(err))

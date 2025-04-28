@@ -9,6 +9,8 @@ import (
 	"gemfactory/internal/telegrambot/bot/types"
 	"gemfactory/internal/telegrambot/releases/artistlist"
 	"gemfactory/internal/telegrambot/releases/cache"
+	"gemfactory/internal/telegrambot/releases/scraper"
+	"gemfactory/internal/telegrambot/releases/updater"
 	"gemfactory/pkg/config"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -50,11 +52,19 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 		return nil, fmt.Errorf("both female and male whitelists are empty; populate at least one whitelist to start the bot")
 	}
 
+	// Инициализируем Scraper
+	scraper := scraper.NewScraper(config, logger)
+
+	// Инициализируем Cache и Updater
+	cacheManager := cache.NewCacheManager(config, logger, al, scraper, nil)
+	updater := updater.NewUpdater(config, logger, al, cacheManager, scraper)
+	cacheManager.SetUpdater(updater)
+
 	// Инициализируем Debouncer для защиты от дабл-клика
 	debouncer := debounce.NewDebouncer()
 
 	// Создаём CommandHandlers с необходимыми зависимостями
-	handlers := NewCommandHandlers(api, logger, debouncer, config, al)
+	handlers := NewCommandHandlers(api, logger, debouncer, config, al, cacheManager)
 
 	bot := &Bot{
 		api:      api,
@@ -64,13 +74,9 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 		al:       al,
 	}
 
-	// Инициализируем конфигурацию кэша
-	bot.logger.Info("Initializing cache configuration")
-	cache.InitCacheConfig(bot.logger)
-
 	// Запускаем периодическое обновление кэша
 	bot.logger.Info("Starting cache updater")
-	go cache.StartUpdater(bot.config, bot.logger, bot.al)
+	go cacheManager.StartUpdater()
 
 	return bot, nil
 }

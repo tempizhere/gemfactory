@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"gemfactory/internal/telegrambot/bot/service"
 	"gemfactory/internal/telegrambot/bot/types"
-	"gemfactory/internal/telegrambot/releases/cache"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"go.uber.org/zap" // Добавлен импорт
+	"go.uber.org/zap"
 	"strings"
 )
 
@@ -63,7 +62,7 @@ func HandleAddArtist(h *types.CommandHandlers, msg *tgbotapi.Message, args []str
 		h.Logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", fmt.Sprintf("Добавлено %d %s в %s whitelist", addedCount, artistWord, gender)), zap.Error(err))
 	}
 
-	cache.ScheduleCacheUpdate(h.Config, h.Logger, h.ArtistList)
+	h.Cache.ScheduleUpdate()
 }
 
 // HandleRemoveArtist processes the /remove_artist command
@@ -110,5 +109,5 @@ func HandleRemoveArtist(h *types.CommandHandlers, msg *tgbotapi.Message, args []
 		h.Logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", fmt.Sprintf("Удалено %d %s из whitelist", removedCount, artistWord)), zap.Error(err))
 	}
 
-	cache.ScheduleCacheUpdate(h.Config, h.Logger, h.ArtistList)
+	h.Cache.ScheduleUpdate()
 }

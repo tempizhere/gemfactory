@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"gemfactory/internal/telegrambot/releases/parser"
 	"gemfactory/internal/telegrambot/releases/release"
 	"gemfactory/pkg/config"
 	"github.com/gocolly/colly/v2"
@@ -33,7 +34,7 @@ func GetMonthlyLinksWithContext(ctx context.Context, months []string, config *co
 			if logger.Core().Enabled(zapcore.DebugLevel) {
 				logger.Debug("GetMonthlyLinks attempt", zap.Int("attempt", attempt+1))
 			}
-			collector := NewCollector(config, logger)
+			collector := parser.NewCollector(config, logger)
 			var mu sync.Mutex
 			collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
 				select {

@@ -5,6 +5,7 @@ import (
 	"gemfactory/internal/telegrambot/bot/botapi"
 	"gemfactory/internal/telegrambot/bot/keyboard"
 	"gemfactory/internal/telegrambot/releases/artistlist"
+	"gemfactory/internal/telegrambot/releases/cache"
 	"gemfactory/pkg/config"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -19,6 +20,7 @@ type CommandHandlers struct {
 	ArtistList *artistlist.ArtistList
 	Keyboard   *keyboard.KeyboardManager
 	Debouncer  *debounce.Debouncer
+	Cache      cache.Cache
 }
 
 // ParseArtists parses a comma-separated list of artists

@@ -1,8 +1,9 @@
-package scraper
+package parser
 
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -13,9 +14,59 @@ import (
 	"gemfactory/pkg/config"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
+	"github.com/gocolly/colly/v2/extensions"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
+
+// NewCollector creates a new Colly collector with configured settings
+func NewCollector(config *config.Config, logger *zap.Logger) *colly.Collector {
+	collector := colly.NewCollector(
+		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"),
+		colly.MaxDepth(1),
+	)
+
+	// Устанавливаем HTTP-клиент с таймаутом
+	collector.WithTransport(&http.Transport{
+		ResponseHeaderTimeout: 60 * time.Second,
+		DisableKeepAlives:     true,
+	})
+
+	if err := collector.Limit(&colly.LimitRule{
+		DomainGlob:  "*",
+		Delay:       config.RequestDelay * 2, // Задержка 6s при REQUEST_DELAY=3s
+		RandomDelay: config.RequestDelay,
+	}); err != nil {
+		logger.Error("Failed to set collector limit", zap.Error(err))
+	}
+
+	// Реализуем повторы вручную через OnError
+	collector.OnError(func(r *colly.Response, err error) {
+		maxRetries := config.MaxRetries
+		retries := r.Request.Ctx.GetAny("retries")
+		retryCount, ok := retries.(int)
+		if !ok {
+			retryCount = 0
+		}
+
+		if retryCount < maxRetries {
+			retryCount++
+			r.Request.Ctx.Put("retries", retryCount)
+			logger.Warn("Retrying request", zap.String("url", r.Request.URL.String()), zap.Int("retry", retryCount), zap.Error(err))
+			if err := r.Request.Retry(); err != nil {
+				logger.Error("Failed to retry request", zap.String("url", r.Request.URL.String()), zap.Int("retry", retryCount), zap.Error(err))
+			}
+			return
+		}
+
+		logger.Error("Request failed after max retries", zap.String("url", r.Request.URL.String()), zap.Int("retries", retryCount), zap.Error(err))
+	})
+
+	// Добавляем случайный User-Agent
+	extensions.RandomUserAgent(collector)
+
+	return collector
+}
 
 // ParseMonthlyPageWithContext parses a monthly schedule page with context
 func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[string]struct{}, targetMonth string, config *config.Config, logger *zap.Logger) ([]release.Release, error) {
@@ -58,6 +109,9 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 
 					dateText := e.ChildText("td.has-text-align-right mark")
 					if dateText == "" {
+						if logger.Core().Enabled(zapcore.DebugLevel) {
+							logger.Debug("No date found in row", zap.Int("row", rowCount))
+						}
 						return
 					}
 
@@ -79,12 +133,18 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 					if artist == "" {
 						artist = e.ChildText("td.has-text-align-left strong")
 						if artist == "" {
+							if logger.Core().Enabled(zapcore.DebugLevel) {
+								logger.Debug("No artist found in row", zap.Int("row", rowCount))
+							}
 							return
 						}
 					}
 					artist = strings.TrimSpace(artist)
 					artistKey := strings.ToLower(artist)
 					if _, ok := whitelist[artistKey]; !ok {
+						if logger.Core().Enabled(zapcore.DebugLevel) {
+							logger.Debug("Artist not in whitelist", zap.String("artist", artist), zap.Int("row", rowCount))
+						}
 						return
 					}
 
@@ -112,7 +172,7 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 
 					if len(detailsLines) < 1 {
 						if logger.Core().Enabled(zapcore.DebugLevel) {
-							logger.Debug("No details extracted for artist", zap.String("artist", artist))
+							logger.Debug("No details extracted for artist", zap.String("artist", artist), zap.Int("row", rowCount))
 						}
 						return
 					}
@@ -194,6 +254,9 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 
 						partsDate := strings.Split(parsedDate, ".")
 						if len(partsDate) != 3 || partsDate[1] != monthNum {
+							if logger.Core().Enabled(zapcore.DebugLevel) {
+								logger.Debug("Date does not match target month", zap.String("parsedDate", parsedDate), zap.String("monthNum", monthNum))
+							}
 							continue
 						}
 
@@ -245,7 +308,20 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 					for _, releases := range artistReleases {
 						totalReleases += len(releases)
 					}
+					if logger.Core().Enabled(zapcore.DebugLevel) {
+						logger.Debug("Processed row", zap.Int("row", rowCount), zap.String("artist", artist), zap.Int("releases", totalReleases))
+					}
 					mu.Unlock()
+				}
+			})
+
+			collector.OnError(func(r *colly.Response, err error) {
+				select {
+				case <-ctx.Done():
+					logger.Warn("Error processing stopped due to context cancellation", zap.String("url", r.Request.URL.String()), zap.Error(ctx.Err()))
+					return
+				default:
+					logger.Error("Failed to scrape page", zap.String("url", r.Request.URL.String()), zap.Error(err))
 				}
 			})
 
@@ -272,16 +348,6 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 					if logger.Core().Enabled(zapcore.DebugLevel) {
 						logger.Debug("Received response", zap.String("url", r.Request.URL.String()), zap.Duration("duration", time.Since(startTime)))
 					}
-				}
-			})
-
-			collector.OnError(func(r *colly.Response, err error) {
-				select {
-				case <-ctx.Done():
-					logger.Warn("Error processing stopped due to context cancellation", zap.String("url", r.Request.URL.String()), zap.Error(ctx.Err()))
-					return
-				default:
-					logger.Error("Failed to scrape page", zap.String("url", r.Request.URL.String()), zap.Error(err))
 				}
 			})
 
@@ -313,7 +379,7 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 					return nil, fmt.Errorf("failed to visit page: %v", err)
 				}
 				if logger.Core().Enabled(zapcore.DebugLevel) {
-					logger.Debug("Completed scraping page", zap.String("url", url), zap.Int("release_count", len(artistReleases)))
+					logger.Debug("Completed scraping page", zap.String("url", url), zap.Int("release_count", len(artistReleases)), zap.Int("total_rows", rowCount))
 				}
 			}
 
@@ -356,112 +422,4 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 	}
 
 	return allReleases, nil
-}
-
-// ExtractYouTubeLinkFromEvent extracts YouTube link from an event
-func ExtractYouTubeLinkFromEvent(e *colly.HTMLElement, startIndex, endIndex int, logger *zap.Logger) string {
-	var lastLink string
-	var currentIndex int
-	var allLinks []string
-
-	if startIndex < 0 {
-		startIndex = 0
-	}
-
-	e.ForEach("td.has-text-align-left", func(_ int, s *colly.HTMLElement) {
-		s.DOM.Contents().Each(func(i int, node *goquery.Selection) {
-			if node.Is("br") {
-				currentIndex++
-			} else if currentIndex >= startIndex && currentIndex < endIndex {
-				if node.Is("a[href^='https://youtu']") {
-					link := node.AttrOr("href", "")
-					if !strings.HasPrefix(link, "https://www.youtube.com/@") && !strings.HasPrefix(link, "https://youtube.com/@") {
-						allLinks = append(allLinks, link)
-						lastLink = link
-					}
-				}
-			}
-		})
-	})
-
-	if len(allLinks) > 0 {
-		return releasefmt.CleanLink(lastLink, logger)
-	}
-	return ""
-}
-
-// ExtractAlbumName extracts album name from lines
-func ExtractAlbumName(lines []string, startIndex, endIndex int, logger *zap.Logger) string {
-	for i := startIndex; i < endIndex && i < len(lines); i++ {
-		line := strings.TrimSpace(lines[i])
-		if strings.HasPrefix(strings.ToLower(line), "album:") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "album:"))
-		} else if strings.HasPrefix(strings.ToLower(line), "ost:") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "ost:"))
-		}
-	}
-	return "N/A"
-}
-
-// ExtractTrackName extracts track name from lines
-func ExtractTrackName(lines []string, startIndex, endIndex int, logger *zap.Logger) string {
-	for i := startIndex; i < endIndex && i < len(lines); i++ {
-		line := strings.TrimSpace(lines[i])
-		line = strings.ReplaceAll(line, "‘", "'")
-		line = strings.ReplaceAll(line, "’", "'")
-		line = strings.ReplaceAll(line, "“", "\"")
-		line = strings.ReplaceAll(line, "”", "\"")
-
-		lowerLine := strings.ToLower(line)
-		var trackName string
-		if strings.HasPrefix(lowerLine, "title track:") {
-			trackName = strings.TrimSpace(strings.TrimPrefix(line, "title track:"))
-		} else if strings.Contains(lowerLine, "release") || strings.Contains(lowerLine, "pre-release") || strings.Contains(lowerLine, "mv release") {
-			trackName = line
-		} else {
-			continue
-		}
-
-		startDouble := strings.Index(trackName, "\"")
-		endDouble := strings.LastIndex(trackName, "\"")
-		startSingle := strings.Index(trackName, "'")
-		endSingle := strings.LastIndex(trackName, "'")
-
-		if startDouble != -1 && endDouble != -1 && startDouble < endDouble {
-			cleaned := trackName[startDouble+1 : endDouble]
-			trackParts := strings.Fields(cleaned)
-			cleaned = ""
-			for _, part := range trackParts {
-				if strings.ToLower(part) == "mv" || strings.ToLower(part) == "release" {
-					continue
-				}
-				if cleaned == "" {
-					cleaned = part
-				} else {
-					cleaned += " " + part
-				}
-			}
-			if cleaned != "" {
-				return cleaned
-			}
-		} else if startSingle != -1 && endSingle != -1 && startSingle < endSingle {
-			cleaned := trackName[startSingle+1 : endSingle]
-			trackParts := strings.Fields(cleaned)
-			cleaned = ""
-			for _, part := range trackParts {
-				if strings.ToLower(part) == "mv" || strings.ToLower(part) == "release" {
-					continue
-				}
-				if cleaned == "" {
-					cleaned = part
-				} else {
-					cleaned += " " + part
-				}
-			}
-			if cleaned != "" {
-				return cleaned
-			}
-		}
-	}
-	return "N/A"
 }

@@ -1,200 +1,177 @@
 package cache
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
-	"gemfactory/internal/telegrambot/releases/artistlist"
 	"gemfactory/internal/telegrambot/releases/release"
-	"gemfactory/pkg/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-// cacheUpdateMu protects the cache update timer
-var cacheUpdateMu sync.Mutex
+// ErrNoCache indicates that no releases are available in the cache
+var ErrNoCache = errors.New("no releases available in cache")
 
-// cacheUpdateTimer holds the timer for delayed cache updates
-var cacheUpdateTimer *time.Timer
-
-// ClearCache clears the entire cache
-func ClearCache() {
-	cacheMu.Lock()
-	defer cacheMu.Unlock()
-	cache = make(map[string]CacheEntry)
-}
-
-// ScheduleCacheUpdate schedules a cache update with a 60-second delay, resetting the timer if called again
-func ScheduleCacheUpdate(config *config.Config, logger *zap.Logger, al *artistlist.ArtistList) {
-	cacheUpdateMu.Lock()
-	defer cacheUpdateMu.Unlock()
-
-	// Отменяем существующий таймер, если он есть
-	if cacheUpdateTimer != nil {
-		cacheUpdateTimer.Stop()
-	}
-
-	// Создаём новый таймер на 60 секунд
-	cacheUpdateTimer = time.AfterFunc(60*time.Second, func() {
-		logger.Info("Starting delayed cache update")
-		InitializeCache(config, logger, al)
-		cacheUpdateMu.Lock()
-		cacheUpdateTimer = nil
-		cacheUpdateMu.Unlock()
-	})
-
-	logger.Info("Scheduled cache update in 60 seconds")
-}
-
-// GetReleasesForMonths retrieves releases for multiple months
-func GetReleasesForMonths(months []string, whitelist map[string]struct{}, femaleOnly, maleOnly bool, al *artistlist.ArtistList, config *config.Config, logger *zap.Logger) ([]release.Release, error) {
-	if logger.Core().Enabled(zapcore.DebugLevel) {
-		logger.Debug("Entering GetReleasesForMonths", zap.Strings("months", months), zap.Bool("femaleOnly", femaleOnly), zap.Bool("maleOnly", maleOnly))
+// GetReleasesForMonths retrieves releases for multiple months from the cache
+func (cm *CacheManager) GetReleasesForMonths(months []string, whitelist map[string]struct{}, femaleOnly, maleOnly bool) ([]release.Release, error) {
+	if cm.logger.Core().Enabled(zapcore.DebugLevel) {
+		cm.logger.Debug("Entering GetReleasesForMonths", zap.Strings("months", months), zap.Bool("femaleOnly", femaleOnly), zap.Bool("maleOnly", maleOnly))
 	}
 	if len(whitelist) == 0 {
-		logger.Error("Whitelist is empty")
+		cm.logger.Error("Whitelist is empty")
 		return nil, fmt.Errorf("whitelist is empty")
 	}
 
 	// Если months пустой, используем текущий месяц
 	if len(months) == 0 {
 		months = []string{strings.ToLower(time.Now().Format("January"))}
-		if logger.Core().Enabled(zapcore.DebugLevel) {
-			logger.Debug("No months specified, using current month", zap.Strings("months", months))
+		if cm.logger.Core().Enabled(zapcore.DebugLevel) {
+			cm.logger.Debug("No months specified, using current month", zap.Strings("months", months))
 		}
 	}
 
-	// Собираем релизы для каждого месяца отдельно
+	// Собираем релизы из кэша
 	var allReleases []release.Release
-	fullWhitelist := al.GetUnitedWhitelist()
-	if logger.Core().Enabled(zapcore.DebugLevel) {
-		logger.Debug("Comparing whitelists", zap.Int("input_whitelist_size", len(whitelist)), zap.Int("full_whitelist_size", len(fullWhitelist)))
+	missingMonths := make([]string, 0)
+	fullWhitelist := cm.artistList.GetUnitedWhitelist()
+	if cm.logger.Core().Enabled(zapcore.DebugLevel) {
+		cm.logger.Debug("Comparing whitelists", zap.Int("input_whitelist_size", len(whitelist)), zap.Int("full_whitelist_size", len(fullWhitelist)))
 	}
 
+	cm.mu.RLock()
 	for _, month := range months {
-		cacheKey := fmt.Sprintf("%s-%s", month, hashWhitelist(fullWhitelist))
-		if logger.Core().Enabled(zapcore.DebugLevel) {
-			logger.Debug("Checking cache", zap.String("cache_key", cacheKey), zap.String("month", month))
+		cacheKey := fmt.Sprintf("%s-%s", month, HashWhitelist(fullWhitelist))
+		if cm.logger.Core().Enabled(zapcore.DebugLevel) {
+			cm.logger.Debug("Checking cache", zap.String("cache_key", cacheKey), zap.String("month", month))
 		}
 
-		cacheMu.RLock()
-		entry, ok := cache[cacheKey]
-		cacheMu.RUnlock()
-
-		// Используем кэш, если данные существуют
-		if ok {
-			if logger.Core().Enabled(zapcore.DebugLevel) {
-				logger.Debug("Using cached releases", zap.String("cache_key", cacheKey), zap.Int("release_count", len(entry.Releases)), zap.Time("cache_timestamp", entry.Timestamp))
+		if entry, ok := cm.cache[cacheKey]; ok {
+			if cm.logger.Core().Enabled(zapcore.DebugLevel) {
+				cm.logger.Debug("Using cached releases", zap.String("cache_key", cacheKey), zap.Int("release_count", len(entry.Releases)), zap.Time("cache_timestamp", entry.Timestamp))
 			}
 			allReleases = append(allReleases, FilterReleasesByWhitelist(entry.Releases, whitelist)...)
-			continue
-		}
-
-		if logger.Core().Enabled(zapcore.DebugLevel) {
-			logger.Debug("Cache entry missing", zap.String("cache_key", cacheKey))
-		}
-
-		// Если кэш отсутствует, пробуем обновить кэш до двух раз
-		for attempt := 0; attempt < 2; attempt++ {
-			logger.Info("Cache missing, initializing full cache update", zap.String("cache_key", cacheKey), zap.Int("attempt", attempt+1))
-			InitializeCache(config, logger, al)
-			cacheMu.RLock()
-			entry, ok = cache[cacheKey]
-			cacheMu.RUnlock()
-
-			if ok {
-				if logger.Core().Enabled(zapcore.DebugLevel) {
-					logger.Debug("Using freshly updated cache", zap.String("cache_key", cacheKey), zap.Int("release_count", len(entry.Releases)), zap.Time("cache_timestamp", entry.Timestamp))
-				}
-				allReleases = append(allReleases, FilterReleasesByWhitelist(entry.Releases, whitelist)...)
-				break
-			}
-			logger.Warn("No releases available after cache update for month", zap.String("month", month), zap.Int("attempt", attempt+1), zap.String("cache_key", cacheKey))
-		}
-
-		if !ok {
-			logger.Warn("No releases available after retries for month", zap.String("month", month), zap.String("cache_key", cacheKey))
-		}
-
-		// Логируем содержимое кэша после попытки
-		cacheMu.RLock()
-		if len(cache) == 0 {
-			logger.Warn("Cache is empty after GetReleasesForMonths attempt")
 		} else {
-			if logger.Core().Enabled(zapcore.DebugLevel) {
-				logger.Debug("Cache contents after attempt", zap.Int("cache_size", len(cache)))
-				for key, entry := range cache {
-					logger.Debug("Cache entry", zap.String("key", key), zap.Int("release_count", len(entry.Releases)), zap.Time("timestamp", entry.Timestamp))
-				}
-			}
+			missingMonths = append(missingMonths, month)
 		}
-		cacheMu.RUnlock()
+	}
+	cm.mu.RUnlock()
+
+	// Если есть отсутствующие месяцы, планируем асинхронное обновление
+	if len(missingMonths) > 0 {
+		cm.logger.Warn("No cache for months, scheduling update", zap.Strings("months", missingMonths))
+		go cm.ScheduleUpdate()
 	}
 
 	if len(allReleases) == 0 {
-		logger.Warn("No releases found for requested months", zap.Strings("months", months))
-		return []release.Release{}, nil
+		cm.logger.Warn("No releases found for requested months", zap.Strings("months", months))
+		return nil, ErrNoCache
 	}
 
-	if logger.Core().Enabled(zapcore.DebugLevel) {
-		logger.Debug("Returning releases", zap.Int("release_count", len(allReleases)))
+	if cm.logger.Core().Enabled(zapcore.DebugLevel) {
+		cm.logger.Debug("Returning releases", zap.Int("release_count", len(allReleases)))
 	}
 	return allReleases, nil
 }
 
-// CleanupOldCacheEntries removes old cache entries
-func CleanupOldCacheEntries() {
-	cacheMu.Lock()
-	defer cacheMu.Unlock()
+// ScheduleUpdate schedules a cache update with a 60-second delay
+func (cm *CacheManager) ScheduleUpdate() {
+	cm.updateTimerMu.Lock()
+	defer cm.updateTimerMu.Unlock()
 
-	for key, entry := range cache {
-		if time.Since(entry.Timestamp) > cacheDuration {
-			delete(cache, key)
+	if cm.updateTimer != nil {
+		cm.updateTimer.Stop()
+	}
+
+	cm.updateTimer = time.AfterFunc(60*time.Second, func() {
+		cm.logger.Info("Starting delayed cache update")
+		if err := cm.updater.InitializeCache(context.Background()); err != nil {
+			cm.logger.Error("Failed to initialize cache", zap.Error(err))
+		}
+		cm.updateTimerMu.Lock()
+		cm.updateTimer = nil
+		cm.updateTimerMu.Unlock()
+	})
+
+	cm.logger.Info("Scheduled cache update in 60 seconds")
+}
+
+// Clear clears the entire cache
+func (cm *CacheManager) Clear() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.cache = make(map[string]CacheEntry)
+}
+
+// CleanupOldCacheEntries removes old cache entries
+func (cm *CacheManager) CleanupOldCacheEntries() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	for key, entry := range cm.cache {
+		if time.Since(entry.Timestamp) > cm.getCacheDuration(key) {
+			delete(cm.cache, key)
 		}
 	}
 }
 
-// GetCacheDuration returns the cache duration
-func GetCacheDuration() time.Duration {
-	return cacheDuration
-}
-
-// GetCacheKeys returns all cache keys
-func GetCacheKeys() []string {
-	cacheMu.RLock()
-	defer cacheMu.RUnlock()
-
-	keys := make([]string, 0, len(cache))
-	for key := range cache {
-		keys = append(keys, key)
+// getCacheDuration returns the cache duration based on the month
+func (cm *CacheManager) getCacheDuration(cacheKey string) time.Duration {
+	for _, month := range GetActiveMonths() {
+		if strings.HasPrefix(cacheKey, month+"-") {
+			return cm.duration // 8 hours for active months
+		}
 	}
-	return keys
+	return 24 * time.Hour // 24 hours for inactive months
 }
 
-// StartUpdater periodically updates the cache
-func StartUpdater(config *config.Config, logger *zap.Logger, al *artistlist.ArtistList) {
-	logger.Info("Starting cache updater", zap.Duration("cache_duration", cacheDuration))
-	ticker := time.NewTicker(cacheDuration)
-	defer ticker.Stop()
+// StartUpdater starts periodic cache updates
+func (cm *CacheManager) StartUpdater() {
+	cm.updater.StartUpdater()
+}
 
-	// Немедленное синхронное обновление кэша при старте
-	logger.Info("Starting initial cache update")
-	InitializeCache(config, logger, al)
-
-	for t := range ticker.C {
-		logger.Info("Starting periodic cache update", zap.Time("tick_time", t))
-		go InitializeCache(config, logger, al)
-		logger.Info("Periodic cache update completed")
+// GetCachedLinks retrieves cached links for a month
+func (cm *CacheManager) GetCachedLinks(month string) ([]string, error) {
+	cacheKey := fmt.Sprintf("links-%s", month)
+	cm.mu.RLock()
+	entry, ok := cm.cache[cacheKey]
+	cm.mu.RUnlock()
+	if ok && time.Since(entry.Timestamp) < cm.duration {
+		cm.logger.Debug("Using cached links", zap.String("month", month), zap.Int("link_count", len(entry.Links)))
+		return entry.Links, nil
 	}
+
+	links, err := cm.scraper.GetMonthlyLinksWithContext(context.Background(), []string{month}, cm.config, cm.logger)
+	if err != nil {
+		cm.logger.Error("Failed to fetch links", zap.String("month", month), zap.Error(err))
+		return nil, err
+	}
+
+	cm.mu.Lock()
+	cm.cache[cacheKey] = CacheEntry{Links: links, Timestamp: time.Now()}
+	cm.mu.Unlock()
+	cm.logger.Info("Cached links", zap.String("month", month), zap.Int("link_count", len(links)))
+	return links, nil
 }
 
-// hashWhitelist creates a compact hash of the whitelist for cache key
-func hashWhitelist(whitelist map[string]struct{}) string {
+// StoreReleases stores releases in the cache
+func (cm *CacheManager) StoreReleases(month string, releases []release.Release) {
+	cacheKey := fmt.Sprintf("%s-%s", month, HashWhitelist(cm.artistList.GetUnitedWhitelist()))
+	cm.mu.Lock()
+	cm.cache[cacheKey] = CacheEntry{
+		Releases:  releases,
+		Timestamp: time.Now(),
+	}
+	cm.mu.Unlock()
+}
+
+// HashWhitelist creates a compact hash of the whitelist for cache key
+func HashWhitelist(whitelist map[string]struct{}) string {
 	var keys []string
 	for key := range whitelist {
 		keys = append(keys, key)
@@ -215,4 +192,14 @@ func FilterReleasesByWhitelist(releases []release.Release, whitelist map[string]
 		}
 	}
 	return filtered
+}
+
+// GetActiveMonths returns the list of active months (previous, current, next)
+func GetActiveMonths() []string {
+	now := time.Now()
+	return []string{
+		strings.ToLower(now.AddDate(0, -1, 0).Format("January")),
+		strings.ToLower(now.Format("January")),
+		strings.ToLower(now.AddDate(0, 1, 0).Format("January")),
+	}
 }
