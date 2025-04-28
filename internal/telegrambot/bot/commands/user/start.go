@@ -9,9 +9,7 @@ import (
 // HandleStart processes the /start command
 func HandleStart(h *types.CommandHandlers, msg *tgbotapi.Message) {
 	text := "Добро пожаловать! Выберите месяц:"
-	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
-	reply.ReplyMarkup = h.Keyboard.GetMainKeyboard()
-	types.SendMessageWithMarkup(h, msg.Chat.ID, text, reply.ReplyMarkup)
+	h.API.SendMessageWithMarkup(msg.Chat.ID, text, h.Keyboard.GetMainKeyboard())
 }
 
 // HandleHelp processes the /help command
@@ -25,7 +23,5 @@ func HandleHelp(h *types.CommandHandlers, msg *tgbotapi.Message) {
 		"/whitelists - Показать списки артистов\n" +
 		"\n" +
 		fmt.Sprintf("По вопросам вайтлистов обращайтесь к @%s", h.Config.AdminUsername)
-	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
-	reply.ReplyMarkup = h.Keyboard.GetMainKeyboard()
-	types.SendMessageWithMarkup(h, msg.Chat.ID, text, reply.ReplyMarkup)
+	h.API.SendMessageWithMarkup(msg.Chat.ID, text, h.Keyboard.GetMainKeyboard())
 }

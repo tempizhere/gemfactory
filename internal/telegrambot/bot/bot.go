@@ -3,6 +3,7 @@ package bot
 import (
 	"fmt"
 	"gemfactory/internal/debounce"
+	"gemfactory/internal/telegrambot/bot/botapi"
 	"gemfactory/internal/telegrambot/bot/commands/admin"
 	"gemfactory/internal/telegrambot/bot/commands/user"
 	"gemfactory/internal/telegrambot/bot/types"
@@ -16,7 +17,7 @@ import (
 
 // Bot represents the Telegram bot
 type Bot struct {
-	api      *tgbotapi.BotAPI
+	api      botapi.BotAPI
 	logger   *zap.Logger
 	handlers *types.CommandHandlers
 	config   *config.Config
@@ -30,10 +31,13 @@ func NewConfig() (*config.Config, error) {
 
 // NewBot creates a new bot instance
 func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
-	api, err := tgbotapi.NewBotAPI(config.BotToken)
+	tgApi, err := tgbotapi.NewBotAPI(config.BotToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Telegram bot: %v", err)
 	}
+
+	// Оборачиваем tgbotapi.BotAPI в TelegramBotAPI
+	api := NewTelegramBotAPI(tgApi)
 
 	// Инициализируем ArtistList
 	al, err := artistlist.NewArtistList(config.WhitelistDir, logger)
@@ -75,10 +79,12 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 func (b *Bot) Start() error {
 	defer b.handlers.Keyboard.Stop() // Останавливаем тикер при завершении работы бота
 
-	b.logger.Info("Bot started", zap.String("username", b.api.Self.UserName))
+	// Получаем имя бота через Telegram API
+	tgApi := b.api.(*TelegramBotAPI).api
+	b.logger.Info("Bot started", zap.String("username", tgApi.Self.UserName))
 
 	// Отключаем вебхук и очищаем очередь обновлений
-	_, err := b.api.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: true})
+	_, err := tgApi.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: true})
 	if err != nil {
 		b.logger.Error("Failed to delete webhook", zap.Error(err))
 		return fmt.Errorf("failed to delete webhook: %v", err)
@@ -94,36 +100,32 @@ func (b *Bot) Start() error {
 	// Настраиваем обновления
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
-	u.AllowedUpdates = []string{"message", "callback_query"} // Явно указываем типы обновлений
+	u.AllowedUpdates = []string{"message", "callback_query"}
 
 	b.logger.Info("Starting to fetch updates from Telegram API")
-	updatesChan := b.api.GetUpdatesChan(u)
-	if updatesChan == nil {
+	updatesChan := tgApi.GetUpdatesChan(u)
+	if err != nil {
 		b.logger.Error("Failed to create updates channel")
 		return fmt.Errorf("failed to create updates channel")
 	}
 
 	b.logger.Info("Listening for updates")
 	for update := range updatesChan {
-		// Логируем получение обновления с минимальными деталями
 		if update.Message != nil {
 			b.logger.Info("Received command", zap.String("text", update.Message.Text))
 		} else if update.CallbackQuery != nil {
 			b.logger.Info("Received callback", zap.String("data", update.CallbackQuery.Data))
 		}
 
-		// Handle Commands and Callback Queries
 		if update.Message == nil && update.CallbackQuery == nil {
 			continue
 		}
 
-		// Handle Callback Queries (Inline Keyboard)
 		if update.CallbackQuery != nil {
 			go b.handlers.Keyboard.HandleCallbackQuery(update.CallbackQuery)
 			continue
 		}
 
-		// Обработка команд
 		if !update.Message.IsCommand() {
 			continue
 		}
@@ -145,7 +147,6 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 	command := msg.Command()
 	args := strings.Fields(msg.Text)[1:]
 
-	// Проверка на админские команды
 	isAdmin := msg.From.UserName == b.config.AdminUsername
 
 	switch command {
@@ -159,39 +160,39 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 		if isAdmin {
 			admin.HandleWhitelists(b.handlers, msg)
 		} else {
-			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
 		}
 	case "add_artist":
 		if isAdmin {
 			admin.HandleAddArtist(b.handlers, msg, args)
 		} else {
-			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
 		}
 	case "remove_artist":
 		if isAdmin {
 			admin.HandleRemoveArtist(b.handlers, msg, args)
 		} else {
-			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
 		}
 	case "clearcache":
 		if isAdmin {
 			admin.HandleClearCache(b.handlers, msg)
 		} else {
-			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
 		}
 	case "clearwhitelists":
 		if isAdmin {
 			admin.HandleClearWhitelists(b.handlers, msg)
 		} else {
-			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
 		}
 	case "export":
 		if isAdmin {
 			admin.HandleExport(b.handlers, msg)
 		} else {
-			types.SendMessage(b.handlers, msg.Chat.ID, "Эта команда доступна только администратору.")
+			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
 		}
 	default:
-		types.SendMessage(b.handlers, msg.Chat.ID, "Неизвестная команда. Используйте /help для списка команд.")
+		b.handlers.API.SendMessage(msg.Chat.ID, "Неизвестная команда. Используйте /help для списка команд.")
 	}
 }
