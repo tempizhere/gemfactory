@@ -4,13 +4,16 @@ import (
 	"gemfactory/internal/telegrambot/bot/service"
 	"gemfactory/internal/telegrambot/bot/types"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
 	"strings"
 )
 
 // HandleMonth processes the /month command
 func HandleMonth(h *types.CommandHandlers, msg *tgbotapi.Message, args []string) {
 	if len(args) == 0 {
-		h.API.SendMessageWithMarkup(msg.Chat.ID, "Пожалуйста, выберите месяц:", h.Keyboard.GetMainKeyboard())
+		if err := h.API.SendMessageWithMarkup(msg.Chat.ID, "Пожалуйста, выберите месяц:", h.Keyboard.GetMainKeyboard()); err != nil {
+			h.Logger.Error("Failed to send message with markup", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", "Пожалуйста, выберите месяц:"), zap.Error(err))
+		}
 		return
 	}
 
@@ -29,9 +32,13 @@ func HandleMonth(h *types.CommandHandlers, msg *tgbotapi.Message, args []string)
 	svc := service.NewReleaseService(h.ArtistList, h.Config, h.Logger)
 	response, err := svc.GetReleasesForMonth(month, femaleOnly, maleOnly)
 	if err != nil {
-		h.API.SendMessage(msg.Chat.ID, err.Error())
+		if err := h.API.SendMessage(msg.Chat.ID, err.Error()); err != nil {
+			h.Logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", err.Error()), zap.Error(err))
+		}
 		return
 	}
 
-	h.API.SendMessageWithMarkup(msg.Chat.ID, response, h.Keyboard.GetMainKeyboard())
+	if err := h.API.SendMessageWithMarkup(msg.Chat.ID, response, h.Keyboard.GetMainKeyboard()); err != nil {
+		h.Logger.Error("Failed to send message with markup", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", response), zap.Error(err))
+	}
 }

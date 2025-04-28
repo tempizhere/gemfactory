@@ -104,7 +104,7 @@ func (b *Bot) Start() error {
 
 	b.logger.Info("Starting to fetch updates from Telegram API")
 	updatesChan := tgApi.GetUpdatesChan(u)
-	if err != nil {
+	if updatesChan == nil {
 		b.logger.Error("Failed to create updates channel")
 		return fmt.Errorf("failed to create updates channel")
 	}
@@ -160,39 +160,53 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 		if isAdmin {
 			admin.HandleWhitelists(b.handlers, msg)
 		} else {
-			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
+			if err := b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору."); err != nil {
+				b.logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", "Эта команда доступна только администратору."), zap.Error(err))
+			}
 		}
 	case "add_artist":
 		if isAdmin {
 			admin.HandleAddArtist(b.handlers, msg, args)
 		} else {
-			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
+			if err := b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору."); err != nil {
+				b.logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", "Эта команда доступна только администратору."), zap.Error(err))
+			}
 		}
 	case "remove_artist":
 		if isAdmin {
 			admin.HandleRemoveArtist(b.handlers, msg, args)
 		} else {
-			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
+			if err := b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору."); err != nil {
+				b.logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", "Эта команда доступна только администратору."), zap.Error(err))
+			}
 		}
 	case "clearcache":
 		if isAdmin {
 			admin.HandleClearCache(b.handlers, msg)
 		} else {
-			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
+			if err := b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору."); err != nil {
+				b.logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", "Эта команда доступна только администратору."), zap.Error(err))
+			}
 		}
 	case "clearwhitelists":
 		if isAdmin {
 			admin.HandleClearWhitelists(b.handlers, msg)
 		} else {
-			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
+			if err := b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору."); err != nil {
+				b.logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", "Эта команда доступна только администратору."), zap.Error(err))
+			}
 		}
 	case "export":
 		if isAdmin {
 			admin.HandleExport(b.handlers, msg)
 		} else {
-			b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору.")
+			if err := b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору."); err != nil {
+				b.logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", "Эта команда доступна только администратору."), zap.Error(err))
+			}
 		}
 	default:
-		b.handlers.API.SendMessage(msg.Chat.ID, "Неизвестная команда. Используйте /help для списка команд.")
+		if err := b.handlers.API.SendMessage(msg.Chat.ID, "Неизвестная команда. Используйте /help для списка команд."); err != nil {
+			b.logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", "Неизвестная команда. Используйте /help для списка команд."), zap.Error(err))
+		}
 	}
 }
