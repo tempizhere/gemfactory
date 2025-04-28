@@ -1,14 +1,13 @@
 package keyboard
 
 import (
-	"errors"
 	"fmt"
 	"gemfactory/internal/debounce"
 	"gemfactory/internal/telegrambot/bot/botapi"
+	"gemfactory/internal/telegrambot/bot/service"
 	"gemfactory/internal/telegrambot/releases/artistlist"
 	"gemfactory/internal/telegrambot/releases/cache"
 	"gemfactory/internal/telegrambot/releases/release"
-	"gemfactory/internal/telegrambot/releases/releasefmt"
 	"gemfactory/pkg/config"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -25,9 +24,8 @@ type KeyboardManager struct {
 	api               botapi.BotAPI // Используем интерфейс BotAPI
 	logger            *zap.Logger
 	debouncer         *debounce.Debouncer
-	al                *artistlist.ArtistList
+	svc               *service.ReleaseService
 	config            *config.Config
-	cache             cache.Cache
 }
 
 // NewKeyboardManager creates a new KeyboardManager instance with cached keyboards
@@ -36,9 +34,8 @@ func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al *artistlist.Ar
 		api:       api,
 		logger:    logger,
 		debouncer: debounce.NewDebouncer(),
-		al:        al,
+		svc:       service.NewReleaseService(al, config, logger, cache),
 		config:    config,
-		cache:     cache,
 	}
 
 	var rows [][]tgbotapi.InlineKeyboardButton
@@ -133,35 +130,23 @@ func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) 
 
 	if strings.HasPrefix(data, "month_") {
 		month := strings.TrimPrefix(data, "month_")
-		whitelist := k.al.GetUnitedWhitelist()
-		releases, err := k.cache.GetReleasesForMonths([]string{month}, whitelist, false, false)
+		response, err := k.svc.GetReleasesForMonth(month, false, false)
 		if err != nil {
-			msgText := fmt.Sprintf("Ошибка при получении релизов: %v", err)
-			if errors.Is(err, cache.ErrNoCache) {
-				msgText = "Релизы для этого месяца пока недоступны. Попробуйте позже!"
-			}
-			if err := k.api.SendMessage(chatID, msgText); err != nil {
-				k.logger.Error("Failed to send message", zap.Error(err))
+			k.logger.Error("Failed to get releases for month", zap.String("month", month), zap.Error(err))
+			if err := k.api.SendMessage(chatID, fmt.Sprintf("Ошибка: %v", err)); err != nil {
+				k.logger.Error("Failed to send error message", zap.Int64("chat_id", chatID), zap.Error(err))
 			}
 			return
 		}
-
-		if len(releases) == 0 {
-			if err := k.api.SendMessage(chatID, "Релизы не найдены."); err != nil {
-				k.logger.Error("Failed to send message", zap.Error(err))
-			}
-			return
+		if err := k.api.SendMessageWithMarkup(chatID, response, k.GetMainKeyboard()); err != nil {
+			k.logger.Error("Failed to send message", zap.Int64("chat_id", chatID), zap.String("text", response), zap.Error(err))
 		}
+		return
+	}
 
-		var response strings.Builder
-		for _, rel := range releases {
-			formatted := releasefmt.FormatReleaseForTelegram(rel, k.logger)
-			response.WriteString(formatted + "\n")
-		}
-
-		if err := k.api.SendMessageWithMarkup(chatID, response.String(), k.GetMainKeyboard()); err != nil {
-			k.logger.Error("Failed to send message", zap.Error(err))
-		}
+	k.logger.Warn("Unknown callback query", zap.String("data", data))
+	if err := k.api.SendMessage(chatID, "Неизвестный запрос."); err != nil {
+		k.logger.Error("Failed to send message", zap.Int64("chat_id", chatID), zap.String("text", "Неизвестный запрос."), zap.Error(err))
 	}
 }
 
