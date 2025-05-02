@@ -26,11 +26,6 @@ type Bot struct {
 	al       *artistlist.ArtistList
 }
 
-// NewConfig creates a new Config instance by reading environment variables
-func NewConfig() (*config.Config, error) {
-	return config.Load()
-}
-
 // NewBot creates a new bot instance
 func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 	tgApi, err := tgbotapi.NewBotAPI(config.BotToken)
