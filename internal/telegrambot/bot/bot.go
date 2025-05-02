@@ -163,7 +163,7 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 	case "month":
 		user.HandleMonth(b.handlers, msg, args)
 	case "whitelists":
-		admin.HandleWhitelists(b.handlers, msg)
+		user.HandleWhitelists(b.handlers, msg)
 	case "add_artist":
 		if isAdmin {
 			admin.HandleAddArtist(b.handlers, msg, args)
