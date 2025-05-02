@@ -163,13 +163,7 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 	case "month":
 		user.HandleMonth(b.handlers, msg, args)
 	case "whitelists":
-		if isAdmin {
-			admin.HandleWhitelists(b.handlers, msg)
-		} else {
-			if err := b.handlers.API.SendMessage(msg.Chat.ID, "Эта команда доступна только администратору."); err != nil {
-				b.logger.Error("Failed to send message", zap.Int64("chat_id", msg.Chat.ID), zap.String("text", "Эта команда доступна только администратору."), zap.Error(err))
-			}
-		}
+		admin.HandleWhitelists(b.handlers, msg)
 	case "add_artist":
 		if isAdmin {
 			admin.HandleAddArtist(b.handlers, msg, args)

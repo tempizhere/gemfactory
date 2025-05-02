@@ -21,7 +21,7 @@ import (
 type KeyboardManager struct {
 	mainMonthKeyboard tgbotapi.InlineKeyboardMarkup
 	allMonthsKeyboard tgbotapi.InlineKeyboardMarkup
-	api               botapi.BotAPI // Используем интерфейс BotAPI
+	api               botapi.BotAPI
 	logger            *zap.Logger
 	debouncer         *debounce.Debouncer
 	svc               *service.ReleaseService
@@ -54,9 +54,15 @@ func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al *artistlist.Ar
 
 	go func() {
 		for {
-			now := time.Now()
+			// Загружаем таймзону из конфигурации
+			loc, err := time.LoadLocation(k.config.Timezone)
+			if err != nil {
+				k.logger.Error("Failed to load timezone", zap.String("timezone", k.config.Timezone), zap.Error(err))
+				loc = time.UTC // Запасная таймзона
+			}
+			now := time.Now().In(loc)
 			nextMonth := now.AddDate(0, 1, 0)
-			firstOfNextMonth := time.Date(nextMonth.Year(), nextMonth.Month(), 1, 0, 0, 0, 0, now.Location())
+			firstOfNextMonth := time.Date(nextMonth.Year(), nextMonth.Month(), 1, 0, 0, 0, 0, loc)
 			durationUntilFirst := firstOfNextMonth.Sub(now)
 			time.Sleep(durationUntilFirst)
 			k.updateMainMonthKeyboard()
@@ -68,7 +74,13 @@ func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al *artistlist.Ar
 
 // updateMainMonthKeyboard updates the main month keyboard with the current, previous, and next months
 func (k *KeyboardManager) updateMainMonthKeyboard() {
-	currentMonth := int(time.Now().Month())
+	// Загружаем таймзону из конфигурации
+	loc, err := time.LoadLocation(k.config.Timezone)
+	if err != nil {
+		k.logger.Error("Failed to load timezone", zap.String("timezone", k.config.Timezone), zap.Error(err))
+		loc = time.UTC // Запасная таймзона
+	}
+	currentMonth := int(time.Now().In(loc).Month())
 	prevMonth := currentMonth - 1
 	if prevMonth < 1 {
 		prevMonth = 12
@@ -88,7 +100,7 @@ func (k *KeyboardManager) updateMainMonthKeyboard() {
 	k.mainMonthKeyboard = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(buttons...),
 	)
-	k.logger.Info("Updated main month keyboard", zap.String("current_month", release.Months[currentMonth-1]))
+	k.logger.Info("Updated main month keyboard", zap.String("current_month", release.Months[currentMonth-1]), zap.String("timezone", k.config.Timezone))
 }
 
 // GetMainKeyboard returns the cached main month keyboard
