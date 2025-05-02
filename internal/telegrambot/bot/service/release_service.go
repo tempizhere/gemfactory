@@ -56,7 +56,7 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 		whitelist = s.artistList.GetUnitedWhitelist()
 	}
 
-	releases, err := s.cache.GetReleasesForMonths([]string{month}, whitelist, femaleOnly, maleOnly)
+	releases, missingMonths, err := s.cache.GetReleasesForMonths([]string{month}, whitelist, femaleOnly, maleOnly)
 	if err != nil {
 		return "", fmt.Errorf("failed to get releases: %v", err)
 	}
@@ -67,8 +67,17 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 		return "Релизы для этого месяца еще не анонсированы.", nil
 	}
 
+	// Если месяц отсутствует в кэше
+	if len(missingMonths) > 0 {
+		if s.cache.IsUpdating(month) {
+			return fmt.Sprintf("Данные для %s обновляются. Попробуйте снова через минуту.", month), nil
+		}
+		// Если кэш не обновляется, но ссылки есть, значит релизов нет
+		return fmt.Sprintf("Релизы для %s не найдены.", month), nil
+	}
+
 	if len(releases) == 0 {
-		return "Релизы не найдены.", nil
+		return fmt.Sprintf("Релизы для %s не найдены.", month), nil
 	}
 
 	var response strings.Builder

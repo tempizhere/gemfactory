@@ -13,11 +13,12 @@ import (
 
 // Cache defines the interface for cache operations
 type Cache interface {
-	GetReleasesForMonths(months []string, whitelist map[string]struct{}, femaleOnly, maleOnly bool) ([]release.Release, error)
+	GetReleasesForMonths(months []string, whitelist map[string]struct{}, femaleOnly, maleOnly bool) ([]release.Release, []string, error)
 	ScheduleUpdate()
 	Clear()
 	StartUpdater()
 	GetCachedLinks(month string) ([]string, error)
+	IsUpdating(month string) bool
 }
 
 // CacheEntry holds cached releases or links
@@ -29,16 +30,19 @@ type CacheEntry struct {
 
 // CacheManager manages the cache
 type CacheManager struct {
-	cache         map[string]CacheEntry
-	mu            sync.RWMutex
-	duration      time.Duration
-	updateTimer   *time.Timer
-	updateTimerMu sync.Mutex
-	logger        *zap.Logger
-	config        *config.Config
-	artistList    *artistlist.ArtistList
-	scraper       Scraper
-	updater       Updater
+	cache                    map[string]CacheEntry
+	mu                       sync.RWMutex
+	duration                 time.Duration
+	updateTimer              *time.Timer
+	updateTimerMu            sync.Mutex
+	isUpdating               bool
+	pendingUpdates           map[string]struct{}
+	pendingUpdatesTimestamps map[string]time.Time
+	logger                   *zap.Logger
+	config                   *config.Config
+	artistList               *artistlist.ArtistList
+	scraper                  Scraper
+	updater                  Updater
 }
 
 // Scraper defines the interface for scraping operations
@@ -57,13 +61,16 @@ type Updater interface {
 func NewCacheManager(config *config.Config, logger *zap.Logger, al *artistlist.ArtistList, scraper Scraper, updater Updater) *CacheManager {
 	cacheDuration := parseCacheDuration(logger, config)
 	return &CacheManager{
-		cache:      make(map[string]CacheEntry),
-		duration:   cacheDuration,
-		logger:     logger,
-		config:     config,
-		artistList: al,
-		scraper:    scraper,
-		updater:    updater,
+		cache:                    make(map[string]CacheEntry),
+		duration:                 cacheDuration,
+		logger:                   logger,
+		config:                   config,
+		artistList:               al,
+		scraper:                  scraper,
+		updater:                  updater,
+		isUpdating:               false,
+		pendingUpdates:           make(map[string]struct{}),
+		pendingUpdatesTimestamps: make(map[string]time.Time),
 	}
 }
 

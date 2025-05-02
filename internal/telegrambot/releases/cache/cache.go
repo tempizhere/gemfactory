@@ -15,13 +15,13 @@ import (
 )
 
 // GetReleasesForMonths retrieves releases for multiple months from the cache
-func (cm *CacheManager) GetReleasesForMonths(months []string, whitelist map[string]struct{}, femaleOnly, maleOnly bool) ([]release.Release, error) {
+func (cm *CacheManager) GetReleasesForMonths(months []string, whitelist map[string]struct{}, femaleOnly, maleOnly bool) ([]release.Release, []string, error) {
 	if cm.logger.Core().Enabled(zapcore.DebugLevel) {
 		cm.logger.Debug("Entering GetReleasesForMonths", zap.Strings("months", months), zap.Bool("femaleOnly", femaleOnly), zap.Bool("maleOnly", maleOnly))
 	}
 	if len(whitelist) == 0 {
 		cm.logger.Error("Whitelist is empty")
-		return nil, fmt.Errorf("whitelist is empty")
+		return nil, nil, fmt.Errorf("whitelist is empty")
 	}
 
 	// Если months пустой, используем текущий месяц
@@ -63,35 +63,92 @@ func (cm *CacheManager) GetReleasesForMonths(months []string, whitelist map[stri
 		if cm.logger.Core().Enabled(zapcore.DebugLevel) {
 			cm.logger.Debug("No cache for months, scheduling update", zap.Strings("months", missingMonths))
 		}
-		go cm.ScheduleUpdate()
+		go cm.ScheduleUpdateWithMonths(missingMonths)
 	}
 
 	if cm.logger.Core().Enabled(zapcore.DebugLevel) {
 		cm.logger.Debug("Returning releases", zap.Int("release_count", len(allReleases)))
 	}
-	return allReleases, nil // Возвращаем пустой список вместо ErrNoCache
+	return allReleases, missingMonths, nil
 }
 
 // ScheduleUpdate schedules a cache update with a 60-second delay
 func (cm *CacheManager) ScheduleUpdate() {
+	cm.ScheduleUpdateWithMonths(nil)
+}
+
+// ScheduleUpdateWithMonths schedules a cache update for specific months with a 60-second delay
+func (cm *CacheManager) ScheduleUpdateWithMonths(months []string) {
 	cm.updateTimerMu.Lock()
 	defer cm.updateTimerMu.Unlock()
+
+	if cm.isUpdating {
+		cm.logger.Debug("Update already scheduled or in progress, skipping")
+		return
+	}
 
 	if cm.updateTimer != nil {
 		cm.updateTimer.Stop()
 	}
 
+	cm.isUpdating = true
+	// Отмечаем месяцы как обновляемые и сохраняем время
+	now := time.Now()
+	for _, month := range months {
+		cm.pendingUpdates[month] = struct{}{}
+		cm.pendingUpdatesTimestamps[month] = now
+	}
+
 	cm.updateTimer = time.AfterFunc(60*time.Second, func() {
-		cm.logger.Info("Starting delayed cache update")
-		if err := cm.updater.InitializeCache(context.Background()); err != nil {
-			cm.logger.Error("Failed to initialize cache", zap.Error(err))
+		cm.logger.Info("Starting delayed cache update", zap.Strings("months", months))
+		const maxRetries = 3
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if err := cm.updater.InitializeCache(context.Background()); err != nil {
+				cm.logger.Error("Failed to initialize cache", zap.Error(err), zap.Int("attempt", attempt))
+				if attempt < maxRetries {
+					time.Sleep(time.Duration(attempt) * time.Second)
+					continue
+				}
+				cm.logger.Warn("Cache update failed after retries")
+			}
+			break
 		}
 		cm.updateTimerMu.Lock()
 		cm.updateTimer = nil
+		cm.isUpdating = false
+		// Очищаем pendingUpdates и pendingUpdatesTimestamps после обновления
+		for _, month := range months {
+			delete(cm.pendingUpdates, month)
+			delete(cm.pendingUpdatesTimestamps, month)
+		}
 		cm.updateTimerMu.Unlock()
 	})
 
-	cm.logger.Info("Scheduled cache update in 60 seconds")
+	cm.logger.Info("Scheduled cache update", zap.Strings("months", months))
+}
+
+// IsUpdating checks if the cache is being updated for a specific month
+func (cm *CacheManager) IsUpdating(month string) bool {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	// Проверяем, есть ли месяц в pendingUpdates
+	_, updating := cm.pendingUpdates[month]
+	if !updating {
+		return false
+	}
+
+	// Проверяем таймаут (5 минут)
+	timestamp, exists := cm.pendingUpdatesTimestamps[month]
+	if exists && time.Since(timestamp) > 5*time.Minute {
+		// Удаляем устаревшую запись
+		delete(cm.pendingUpdates, month)
+		delete(cm.pendingUpdatesTimestamps, month)
+		cm.logger.Debug("Removed stale pending update", zap.String("month", month))
+		return false
+	}
+
+	return true
 }
 
 // Clear clears the entire cache
@@ -99,12 +156,22 @@ func (cm *CacheManager) Clear() {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.cache = make(map[string]CacheEntry)
+	// Очищаем pendingUpdates и pendingUpdatesTimestamps при очистке кэша
+	for month := range cm.pendingUpdates {
+		delete(cm.pendingUpdates, month)
+		delete(cm.pendingUpdatesTimestamps, month)
+	}
 }
 
 // CleanupOldCacheEntries removes old cache entries
 func (cm *CacheManager) CleanupOldCacheEntries() {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
+
+	if cm.isUpdating {
+		cm.logger.Debug("Cache update in progress, skipping cleanup")
+		return
+	}
 
 	for key, entry := range cm.cache {
 		if time.Since(entry.Timestamp) > cm.getCacheDuration(key) {
