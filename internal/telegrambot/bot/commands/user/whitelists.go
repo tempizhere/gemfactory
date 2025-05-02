@@ -1,4 +1,4 @@
-package admin
+package user
 
 import (
 	"gemfactory/internal/telegrambot/bot/service"

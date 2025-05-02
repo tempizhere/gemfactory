@@ -17,6 +17,7 @@ type Config struct {
 	MaxRetries    int
 	CacheDuration time.Duration
 	WhitelistDir  string
+	Timezone      string // Новое поле для таймзоны
 }
 
 // Load loads the configuration from environment variables
@@ -27,6 +28,7 @@ func Load() (*Config, error) {
 		BotToken:      os.Getenv("BOT_TOKEN"),
 		AdminUsername: os.Getenv("ADMIN_USERNAME"),
 		WhitelistDir:  os.Getenv("WHITELIST_DIR"),
+		Timezone:      os.Getenv("TZ"), // Загружаем TZ
 	}
 
 	if cfg.BotToken == "" {
@@ -35,6 +37,10 @@ func Load() (*Config, error) {
 
 	if cfg.AdminUsername == "" {
 		cfg.AdminUsername = "fullofsarang" // Значение по умолчанию
+	}
+
+	if cfg.Timezone == "" {
+		cfg.Timezone = "Asia/Seoul" // Значение по умолчанию для K-pop релизов
 	}
 
 	requestDelayStr := os.Getenv("REQUEST_DELAY")

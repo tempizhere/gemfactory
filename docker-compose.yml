@@ -12,6 +12,7 @@ services:
       - REQUEST_DELAY=10s
       - WHITELIST_DIR=data
       - LOG_LEVEL=info
+      - TZ=Asia/Seoul
     volumes:
       - whitelist_data:/app/data
 volumes:
