@@ -42,7 +42,7 @@ func (u *UpdaterImpl) InitializeCache(ctx context.Context) error {
 	defer cancel()
 
 	// Таймаут для всего процесса
-	time.AfterFunc(8*time.Minute, func() {
+	time.AfterFunc(15*time.Minute, func() {
 		u.logger.Warn("Cache initialization timed out, cancelling context")
 		cancel()
 	})
