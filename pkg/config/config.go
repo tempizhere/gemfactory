@@ -68,7 +68,7 @@ func Load() (*Config, error) {
 
 	cacheDurationStr := os.Getenv("CACHE_DURATION")
 	if cacheDurationStr == "" {
-		cfg.CacheDuration = 8 * time.Hour
+		cfg.CacheDuration = 24 * time.Hour
 	} else {
 		var err error
 		cfg.CacheDuration, err = time.ParseDuration(cacheDurationStr)
