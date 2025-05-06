@@ -7,11 +7,12 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/joho/godotenv"
+	"go.uber.org/zap"
+
 	"gemfactory/internal/telegrambot/bot"
 	"gemfactory/pkg/config"
 	"gemfactory/pkg/log"
-	"github.com/joho/godotenv"
-	"go.uber.org/zap"
 )
 
 func main() {

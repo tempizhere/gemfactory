@@ -3,10 +3,11 @@ package scraper
 import (
 	"context"
 
+	"go.uber.org/zap"
+
 	"gemfactory/internal/telegrambot/releases/parser"
 	"gemfactory/internal/telegrambot/releases/release"
 	"gemfactory/pkg/config"
-	"go.uber.org/zap"
 )
 
 // ScraperImpl implements the cache.Scraper interface

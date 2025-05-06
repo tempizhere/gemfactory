@@ -2,10 +2,12 @@ package service
 
 import (
 	"fmt"
-	"gemfactory/internal/telegrambot/releases/artistlist"
-	"go.uber.org/zap"
 	"sort"
 	"strings"
+
+	"go.uber.org/zap"
+
+	"gemfactory/internal/telegrambot/releases/artistlist"
 )
 
 // ArtistService handles business logic for artist whitelist operations

@@ -2,9 +2,11 @@ package user
 
 import (
 	"fmt"
-	"gemfactory/internal/telegrambot/bot/types"
-	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
+
+	"gemfactory/internal/telegrambot/bot/types"
 )
 
 // HandleStart processes the /start command

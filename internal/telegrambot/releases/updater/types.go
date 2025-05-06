@@ -3,10 +3,11 @@ package updater
 import (
 	"context"
 
+	"go.uber.org/zap"
+
 	"gemfactory/internal/telegrambot/releases/artistlist"
 	"gemfactory/internal/telegrambot/releases/release"
 	"gemfactory/pkg/config"
-	"go.uber.org/zap"
 )
 
 // Updater defines the interface for cache updating

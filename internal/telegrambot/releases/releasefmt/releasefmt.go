@@ -5,9 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"gemfactory/internal/telegrambot/releases/html"
 	"gemfactory/internal/telegrambot/releases/release"
-	"go.uber.org/zap"
 )
 
 // FormatDate parses and formats a date string

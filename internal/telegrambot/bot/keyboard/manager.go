@@ -2,6 +2,14 @@ package keyboard
 
 import (
 	"fmt"
+	"strings"
+	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+
 	"gemfactory/internal/debounce"
 	"gemfactory/internal/telegrambot/bot/botapi"
 	"gemfactory/internal/telegrambot/bot/service"
@@ -9,12 +17,6 @@ import (
 	"gemfactory/internal/telegrambot/releases/cache"
 	"gemfactory/internal/telegrambot/releases/release"
 	"gemfactory/pkg/config"
-	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"go.uber.org/zap"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
-	"strings"
-	"time"
 )
 
 // KeyboardManager manages Inline Keyboards for the bot

@@ -1,10 +1,11 @@
 package admin
 
 import (
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
+
 	"gemfactory/internal/telegrambot/bot/service"
 	"gemfactory/internal/telegrambot/bot/types"
-	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"go.uber.org/zap"
 )
 
 // HandleClearCache processes the /clearcache command

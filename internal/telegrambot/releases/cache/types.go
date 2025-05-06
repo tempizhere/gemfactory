@@ -5,10 +5,11 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"gemfactory/internal/telegrambot/releases/artistlist"
 	"gemfactory/internal/telegrambot/releases/release"
 	"gemfactory/pkg/config"
-	"go.uber.org/zap"
 )
 
 // Cache defines the interface for cache operations

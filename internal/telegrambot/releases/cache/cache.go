@@ -9,9 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"gemfactory/internal/telegrambot/releases/release"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"gemfactory/internal/telegrambot/releases/release"
 )
 
 // GetReleasesForMonths retrieves releases for multiple months from the cache
