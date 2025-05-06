@@ -3,60 +3,92 @@ name: Docker Publish
 on:
   push:
     branches:
-      - main
+      - main # Запуск workflow при пуше в ветку main
   pull_request:
     branches:
-      - main
+      - main # Запуск workflow при создании pull request в ветку main
+
+permissions:
+  contents: read  # Только чтение содержимого репозитория
+  packages: write # Публикация Docker-образов
+  id-token: write # Для аутентификации через OIDC (если используется)
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Используем виртуальную машину с Ubuntu
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/checkout@v4 # Клонируем репозиторий
+      - name: Cache Go modules
+        uses: actions/cache@v3 # Кэшируем зависимости Go
         with:
-          go-version: "1.24"
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Set up Go
+        uses: actions/setup-go@v5 # Устанавливаем Go
+        with:
+          go-version: "1.24" # Указываем версию Go
       - name: Run tests
-        run: go test ./...
+        run: go test ./... # Запускаем тесты
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Используем виртуальную машину с Ubuntu
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # Клонируем репозиторий
+      - name: Cache Go modules
+        uses: actions/cache@v3 # Кэшируем зависимости Go
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v5 # Устанавливаем Go
         with:
-          go-version: "1.24"
+          go-version: "1.24" # Указываем версию Go
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v6 # Запускаем линтер для Go
         with:
-          version: latest
+          version: latest # Используем последнюю версию линтера
 
   build-and-push:
-    runs-on: ubuntu-latest
-    needs: [test, lint]
+    runs-on: ubuntu-latest # Используем виртуальную машину с Ubuntu
+    needs: [test, lint] # Зависит от успешного выполнения jobs test и lint
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # Клонируем репозиторий
+      - name: Cache Go modules
+        uses: actions/cache@v3 # Кэшируем зависимости Go
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v3 # Настраиваем Docker Buildx для сборки
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v2.0.0 # Проверяем Dockerfile с помощью hadolint
+        with:
+          dockerfile: ./Dockerfile
       - name: Check environment variables
         run: |
-          echo "WHITELIST_DIR=internal/telegrambot/releases/data"
+          echo "WHITELIST_DIR=internal/telegrambot/releases/data" # Проверяем переменные окружения
           echo "BOT_TOKEN=[REDACTED]"
           echo "ADMIN_USERNAME=[REDACTED]"
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' # Логинимся в Docker Hub, если это не pull request
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }} # Используем секреты для логина
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v6 # Сборка и публикация Docker-образа
         with:
-          context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: tempizhere/gemfactory:latest
+          context: . # Указываем контекст сборки
+          push: ${{ github.event_name != 'pull_request' }} # Публикуем образ, если это не pull request
+          tags: tempizhere/gemfactory:latest # Тег для образа
+          cache-from: type=registry,ref=tempizhere/gemfactory:latest # Используем кэш из реестра
+          cache-to: type=inline # Сохраняем кэш в образ

@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"gemfactory/internal/telegrambot/bot"
+	"gemfactory/pkg/config"
+	"gemfactory/pkg/log"
 	"os"
 	"os/signal"
 	"strings"
@@ -9,10 +12,6 @@ import (
 
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
-
-	"gemfactory/internal/telegrambot/bot"
-	"gemfactory/pkg/config"
-	"gemfactory/pkg/log"
 )
 
 func main() {
