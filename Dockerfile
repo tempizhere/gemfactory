@@ -13,6 +13,9 @@ WORKDIR /app
 # Устанавливаем tzdata для поддержки часовых поясов
 RUN apk add --no-cache tzdata=2025b-r0 && \
     rm -rf /var/cache/apk/*
+
+# Создаем non-root пользователя и группу
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 COPY --from=builder /app/gemfactory .
 COPY internal/telegrambot/releases/data/ /app/internal/telegrambot/releases/data/
 COPY entrypoint.sh /app/entrypoint.sh
@@ -21,12 +24,9 @@ RUN chmod +x /app/entrypoint.sh && \
 
 # Добавляем HEALTHCHECK
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 CMD pgrep gemfactory || exit 1
-
-# Создаем non-root пользователя
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 RUN mkdir -p /app/internal/features/releasesbot/data && \
     chown -R appuser:appgroup /app/internal/features/releasesbot/data
-USER appuser
+    USER appuser
 
 # Запускаем через entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]
