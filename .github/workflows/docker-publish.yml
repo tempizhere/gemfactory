@@ -20,12 +20,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4 # Клонируем репозиторий
       - name: Cache Go modules
-        uses: actions/cache@v3 # Кэшируем зависимости Go
+        uses: actions/cache@v4 # Кэшируем зависимости Go (обновлено до v4 для исправления ошибки tar)
         with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          path: | # Указываем пути для кэширования Go-модулей и сборки
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }} # Ключ кэша основан на go.sum
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-go- # Частичные ключи для восстановления кэша
       - name: Set up Go
         uses: actions/setup-go@v5 # Устанавливаем Go
         with:
@@ -39,9 +41,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4 # Клонируем репозиторий
       - name: Cache Go modules
-        uses: actions/cache@v3 # Кэшируем зависимости Go
+        uses: actions/cache@v4 # Кэшируем зависимости Go (обновлено до v4)
         with:
-          path: ~/go/pkg/mod
+          path: | # Указываем пути для кэширования
+            ~/.cache/go-build
+            ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
@@ -52,7 +56,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6 # Запускаем линтер для Go
         with:
-          version: latest # Используем последнюю версию линтера
+          version: v1.64.8 # Явно указываем версию golangci-lint для соответствия проекту
 
   build-and-push:
     runs-on: ubuntu-latest # Используем виртуальную машину с Ubuntu
@@ -61,9 +65,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4 # Клонируем репозиторий
       - name: Cache Go modules
-        uses: actions/cache@v3 # Кэшируем зависимости Go
+        uses: actions/cache@v4 # Кэшируем зависимости Go (обновлено до v4)
         with:
-          path: ~/go/pkg/mod
+          path: | # Указываем пути для кэширования
+            ~/.cache/go-build
+            ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
