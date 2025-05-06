@@ -2,6 +2,11 @@ package bot
 
 import (
 	"fmt"
+	"strings"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
+
 	"gemfactory/internal/debounce"
 	"gemfactory/internal/telegrambot/bot/botapi"
 	"gemfactory/internal/telegrambot/bot/commands/admin"
@@ -12,9 +17,6 @@ import (
 	"gemfactory/internal/telegrambot/releases/scraper"
 	"gemfactory/internal/telegrambot/releases/updater"
 	"gemfactory/pkg/config"
-	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"go.uber.org/zap"
-	"strings"
 )
 
 // Bot represents the Telegram bot

@@ -3,10 +3,11 @@ package parser
 import (
 	"strings"
 
-	"gemfactory/internal/telegrambot/releases/releasefmt"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
 	"go.uber.org/zap"
+
+	"gemfactory/internal/telegrambot/releases/releasefmt"
 )
 
 // ExtractYouTubeLinkFromEvent extracts YouTube link from an event

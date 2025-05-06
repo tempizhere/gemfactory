@@ -2,13 +2,15 @@ package service
 
 import (
 	"fmt"
+	"strings"
+
+	"go.uber.org/zap"
+
 	"gemfactory/internal/telegrambot/releases/artistlist"
 	"gemfactory/internal/telegrambot/releases/cache"
 	"gemfactory/internal/telegrambot/releases/release"
 	"gemfactory/internal/telegrambot/releases/releasefmt"
 	"gemfactory/pkg/config"
-	"go.uber.org/zap"
-	"strings"
 )
 
 // ReleaseService handles business logic for release-related operations

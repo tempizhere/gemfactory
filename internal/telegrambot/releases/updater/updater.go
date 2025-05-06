@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"gemfactory/internal/telegrambot/releases/cache"
-	"gemfactory/internal/telegrambot/releases/release"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"gemfactory/internal/telegrambot/releases/cache"
+	"gemfactory/internal/telegrambot/releases/release"
 )
 
 // InitializeCache initializes the cache for all months asynchronously

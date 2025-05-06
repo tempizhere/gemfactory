@@ -7,12 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"gemfactory/internal/telegrambot/releases/parser"
-	"gemfactory/internal/telegrambot/releases/release"
-	"gemfactory/pkg/config"
 	"github.com/gocolly/colly/v2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"gemfactory/internal/telegrambot/releases/parser"
+	"gemfactory/internal/telegrambot/releases/release"
+	"gemfactory/pkg/config"
 )
 
 // GetMonthlyLinksWithContext retrieves links to monthly schedules with context

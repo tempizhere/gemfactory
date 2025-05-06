@@ -2,8 +2,10 @@ package bot
 
 import (
 	"fmt"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
 	"gemfactory/internal/telegrambot/bot/botapi"
-	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // TelegramBotAPI wraps tgbotapi.BotAPI to implement the BotAPI interface

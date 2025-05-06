@@ -1,6 +1,8 @@
 package bot
 
 import (
+	"go.uber.org/zap"
+
 	"gemfactory/internal/debounce"
 	"gemfactory/internal/telegrambot/bot/botapi"
 	"gemfactory/internal/telegrambot/bot/keyboard"
@@ -8,7 +10,6 @@ import (
 	"gemfactory/internal/telegrambot/releases/artistlist"
 	"gemfactory/internal/telegrambot/releases/cache"
 	"gemfactory/pkg/config"
-	"go.uber.org/zap"
 )
 
 // NewCommandHandlers creates a new CommandHandlers instance

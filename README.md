@@ -62,7 +62,6 @@ volumes:
     name: whitelist_data
 ```
 
-
 ## Deployment
 
 The bot is automatically built and published to Docker Hub (`tempizhere/gemfactory:latest`) via GitHub Actions on every push to the `main` branch. To deploy on your server:
@@ -87,4 +86,3 @@ The bot is automatically built and published to Docker Hub (`tempizhere/gemfacto
 - **Scraper**: Fetches K-pop release schedules from external sources (e.g., `kpopofficial.com`).
 - **Cache**: Stores release data to reduce API calls, updated every `CACHE_DURATION` (default: 24 hours).
 - **Whitelists**: Managed via `female_whitelist.json` and `male_whitelist.json`, editable by admins.
-

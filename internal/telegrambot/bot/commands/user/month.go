@@ -2,11 +2,13 @@ package user
 
 import (
 	"fmt"
+	"strings"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
+
 	"gemfactory/internal/telegrambot/bot/service"
 	"gemfactory/internal/telegrambot/bot/types"
-	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"go.uber.org/zap"
-	"strings"
 )
 
 // HandleMonth processes the /month command
@@ -23,9 +25,10 @@ func HandleMonth(h *types.CommandHandlers, msg *tgbotapi.Message, args []string)
 	maleOnly := false
 
 	for _, arg := range args[1:] {
-		if arg == "-gg" {
+		switch arg {
+		case "-gg":
 			femaleOnly = true
-		} else if arg == "-mg" {
+		case "-mg":
 			maleOnly = true
 		}
 	}

@@ -9,14 +9,15 @@ import (
 	"sync"
 	"time"
 
-	"gemfactory/internal/telegrambot/releases/release"
-	"gemfactory/internal/telegrambot/releases/releasefmt"
-	"gemfactory/pkg/config"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
 	"github.com/gocolly/colly/v2/extensions"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"gemfactory/internal/telegrambot/releases/release"
+	"gemfactory/internal/telegrambot/releases/releasefmt"
+	"gemfactory/pkg/config"
 )
 
 // NewCollector creates a new Colly collector with configured settings
