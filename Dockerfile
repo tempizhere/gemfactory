@@ -11,7 +11,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o gemfactory cmd/bot/main.go
 FROM alpine:3.18
 WORKDIR /app
 # Устанавливаем tzdata для поддержки часовых поясов
-RUN apk add --no-cache tzdata=2023c-r0 && \
+RUN apk add --no-cache tzdata && \
     rm -rf /var/cache/apk/*
 COPY --from=builder /app/gemfactory .
 COPY internal/telegrambot/releases/data/ /app/internal/telegrambot/releases/data/
