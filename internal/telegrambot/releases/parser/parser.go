@@ -3,6 +3,9 @@ package parser
 import (
 	"context"
 	"fmt"
+	"gemfactory/internal/telegrambot/releases/release"
+	"gemfactory/internal/telegrambot/releases/releasefmt"
+	"gemfactory/pkg/config"
 	"net/http"
 	"sort"
 	"strings"
@@ -14,10 +17,6 @@ import (
 	"github.com/gocolly/colly/v2/extensions"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-
-	"gemfactory/internal/telegrambot/releases/release"
-	"gemfactory/internal/telegrambot/releases/releasefmt"
-	"gemfactory/pkg/config"
 )
 
 // NewCollector creates a new Colly collector with configured settings
@@ -180,71 +179,92 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 
 					var events [][]string
 					var eventStartIndices []int
-					firstLineAfterArtist := detailsLines[1]
-					isDate := false
-					for _, month := range release.Months {
-						if strings.HasPrefix(strings.ToLower(firstLineAfterArtist), month) {
-							isDate = true
-							break
+					if len(detailsLines) > 1 {
+						firstLineAfterArtist := detailsLines[1]
+						isDate := false
+						for _, month := range release.Months {
+							if strings.HasPrefix(strings.ToLower(firstLineAfterArtist), month) {
+								isDate = true
+								break
+							}
 						}
-					}
 
-					if isDate {
-						currentEvent := []string{}
-						currentIndex := 1
-						for i := 1; i < len(detailsLines); i++ {
-							line := detailsLines[i]
-							if strings.Contains(line, ":") {
-								parts := strings.SplitN(line, ":", 2)
-								if len(parts) == 2 {
-									datePart := strings.TrimSpace(parts[0])
-									parsedDate, err := releasefmt.FormatDate(datePart, logger)
-									if err == nil && parsedDate != "" {
-										if len(currentEvent) > 0 {
-											events = append(events, currentEvent)
-											startIndex := currentIndex
-											if startIndex < 1 {
-												startIndex = 1
+						if isDate {
+							currentEvent := []string{}
+							currentIndex := 1
+							for i := 1; i < len(detailsLines); i++ {
+								line := detailsLines[i]
+								// Проверяем, является ли строка началом нового события (валидная дата)
+								if strings.Contains(line, ":") {
+									parts := strings.SplitN(line, ":", 2)
+									if len(parts) == 2 {
+										datePart := strings.TrimSpace(parts[0])
+										// Проверяем, начинается ли строка с месяца и является ли она валидной датой
+										for _, month := range release.Months {
+											if strings.HasPrefix(strings.ToLower(datePart), month) {
+												if _, err := releasefmt.FormatDate(datePart, logger); err == nil {
+													if len(currentEvent) > 0 {
+														events = append(events, currentEvent)
+														startIndex := currentIndex
+														if startIndex < 1 {
+															startIndex = 1
+														}
+														eventStartIndices = append(eventStartIndices, startIndex)
+													}
+													currentEvent = []string{line}
+													currentIndex = i
+													break
+												}
 											}
-											eventStartIndices = append(eventStartIndices, startIndex)
 										}
-										currentEvent = []string{line}
-										currentIndex = i
-										continue
+										if i < len(detailsLines)-1 && len(currentEvent) == 0 {
+											continue
+										}
 									}
 								}
+								currentEvent = append(currentEvent, line)
 							}
-							currentEvent = append(currentEvent, line)
-						}
-						if len(currentEvent) > 0 {
-							events = append(events, currentEvent)
-							startIndex := currentIndex
-							if startIndex < 1 {
-								startIndex = 1
+							if len(currentEvent) > 0 {
+								events = append(events, currentEvent)
+								startIndex := currentIndex
+								if startIndex < 1 {
+									startIndex = 1
+								}
+								eventStartIndices = append(eventStartIndices, startIndex)
 							}
-							eventStartIndices = append(eventStartIndices, startIndex)
+						} else {
+							// Если первая строка не дата, считаем все строки одним событием
+							eventLines := detailsLines[1:]
+							events = append(events, eventLines)
+							eventStartIndices = append(eventStartIndices, 1)
 						}
 					} else {
-						eventLines := detailsLines[1:]
-						events = append(events, eventLines)
+						events = append(events, detailsLines[1:])
 						eventStartIndices = append(eventStartIndices, 1)
 					}
 
 					for idx, eventLines := range events {
 						var parsedDate string
-						if isDate {
+						if len(eventLines) > 0 && strings.Contains(eventLines[0], ":") {
 							parts := strings.SplitN(eventLines[0], ":", 2)
-							if len(parts) != 2 {
-								continue
+							if len(parts) == 2 {
+								datePart := strings.TrimSpace(parts[0])
+								// Проверяем, является ли строка валидной датой
+								for _, month := range release.Months {
+									if strings.HasPrefix(strings.ToLower(datePart), month) {
+										var err error
+										parsedDate, err = releasefmt.FormatDate(datePart, logger)
+										if err != nil {
+											logger.Error("Failed to parse date in event", zap.String("dateText", datePart), zap.Error(err))
+											continue
+										}
+										break
+									}
+								}
 							}
-							datePart := strings.TrimSpace(parts[0])
-							var err error
-							parsedDate, err = releasefmt.FormatDate(datePart, logger)
-							if err != nil {
-								logger.Error("Failed to parse date in event", zap.String("dateText", datePart), zap.Error(err))
-								continue
-							}
-						} else {
+						}
+						// Если дата не найдена, используем dateText из столбца
+						if parsedDate == "" {
 							var err error
 							parsedDate, err = releasefmt.FormatDate(dateText, logger)
 							if err != nil {
@@ -271,12 +291,14 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 						hasEvent := false
 						for _, line := range eventLines {
 							lowerLine := strings.ToLower(line)
-							if strings.HasPrefix(lowerLine, "album:") ||
-								strings.HasPrefix(lowerLine, "ost:") ||
-								strings.HasPrefix(lowerLine, "title track:") ||
+							if strings.Contains(lowerLine, "album") ||
+								strings.Contains(lowerLine, "ost") ||
+								strings.Contains(lowerLine, "title track") ||
 								strings.Contains(lowerLine, "pre-release") ||
 								strings.Contains(lowerLine, "release") ||
-								strings.Contains(lowerLine, "mv release") {
+								strings.Contains(lowerLine, "mv release") ||
+								strings.Contains(lowerLine, "mini album") ||
+								strings.Contains(lowerLine, "special mini album") {
 								hasEvent = true
 								break
 							}

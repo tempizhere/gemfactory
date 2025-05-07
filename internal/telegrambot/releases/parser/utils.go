@@ -1,13 +1,12 @@
 package parser
 
 import (
+	"gemfactory/internal/telegrambot/releases/releasefmt"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
 	"go.uber.org/zap"
-
-	"gemfactory/internal/telegrambot/releases/releasefmt"
 )
 
 // ExtractYouTubeLinkFromEvent extracts YouTube link from an event
@@ -46,10 +45,16 @@ func ExtractYouTubeLinkFromEvent(e *colly.HTMLElement, startIndex, endIndex int,
 func ExtractAlbumName(lines []string, startIndex, endIndex int, logger *zap.Logger) string {
 	for i := startIndex; i < endIndex && i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
-		if strings.HasPrefix(strings.ToLower(line), "album:") {
+		lowerLine := strings.ToLower(line)
+		if strings.HasPrefix(lowerLine, "album:") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "album:"))
-		} else if strings.HasPrefix(strings.ToLower(line), "ost:") {
+		} else if strings.HasPrefix(lowerLine, "ost:") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "ost:"))
+		} else if strings.Contains(lowerLine, "mini album") || strings.Contains(lowerLine, "special mini album") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
 		}
 	}
 	return "N/A"
