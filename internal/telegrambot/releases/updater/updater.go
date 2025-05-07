@@ -2,6 +2,8 @@ package updater
 
 import (
 	"context"
+	"gemfactory/internal/telegrambot/releases/cache"
+	"gemfactory/internal/telegrambot/releases/release"
 	"sort"
 	"strings"
 	"sync"
@@ -9,9 +11,6 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-
-	"gemfactory/internal/telegrambot/releases/cache"
-	"gemfactory/internal/telegrambot/releases/release"
 )
 
 // InitializeCache initializes the cache for all months asynchronously
@@ -133,7 +132,7 @@ func (u *UpdaterImpl) processMonth(ctx context.Context, month string, wg *sync.W
 		u.logger.Debug("Started processing month", zap.String("month", month))
 	}
 
-	monthCtx, monthCancel := context.WithTimeout(ctx, 2*time.Minute)
+	monthCtx, monthCancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer monthCancel()
 
 	startTime := time.Now()

@@ -5,14 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"gemfactory/internal/telegrambot/releases/release"
 	"sort"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-
-	"gemfactory/internal/telegrambot/releases/release"
 )
 
 // GetReleasesForMonths retrieves releases for multiple months from the cache
@@ -209,8 +208,8 @@ func (cm *CacheManager) GetCachedLinks(month string) ([]string, error) {
 
 	links, err := cm.scraper.GetMonthlyLinksWithContext(context.Background(), []string{month}, cm.config, cm.logger)
 	if err != nil {
-		cm.logger.Error("Failed to fetch links", zap.String("month", month), zap.Error(err))
-		return nil, err
+		cm.logger.Warn("Failed to fetch links, using fallback", zap.String("month", month), zap.Error(err))
+		links = []string{fmt.Sprintf("https://kpopofficial.com/kpop-comeback-schedule-%s-%s", strings.ToLower(month), release.CurrentYear())}
 	}
 
 	cm.mu.Lock()

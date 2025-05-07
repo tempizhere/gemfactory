@@ -3,6 +3,9 @@ package scraper
 import (
 	"context"
 	"fmt"
+	"gemfactory/internal/telegrambot/releases/parser"
+	"gemfactory/internal/telegrambot/releases/release"
+	"gemfactory/pkg/config"
 	"strings"
 	"sync"
 	"time"
@@ -10,10 +13,6 @@ import (
 	"github.com/gocolly/colly/v2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-
-	"gemfactory/internal/telegrambot/releases/parser"
-	"gemfactory/internal/telegrambot/releases/release"
-	"gemfactory/pkg/config"
 )
 
 // GetMonthlyLinksWithContext retrieves links to monthly schedules with context
@@ -37,6 +36,7 @@ func GetMonthlyLinksWithContext(ctx context.Context, months []string, config *co
 			}
 			collector := parser.NewCollector(config, logger)
 			var mu sync.Mutex
+
 			collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
 				select {
 				case <-ctx.Done():
@@ -97,7 +97,12 @@ func GetMonthlyLinksWithContext(ctx context.Context, months []string, config *co
 				default:
 					startTime, _ := r.Ctx.GetAny("start_time").(time.Time)
 					if logger.Core().Enabled(zapcore.DebugLevel) {
-						logger.Debug("Received response", zap.String("url", r.Request.URL.String()), zap.Duration("duration", time.Since(startTime)))
+						logger.Debug("Received response",
+							zap.String("url", r.Request.URL.String()),
+							zap.Int("status_code", r.StatusCode),
+							zap.Any("headers", r.Headers),
+							zap.Int("body_size", len(r.Body)),
+							zap.Duration("duration", time.Since(startTime)))
 					}
 				}
 			})
@@ -105,16 +110,28 @@ func GetMonthlyLinksWithContext(ctx context.Context, months []string, config *co
 			collector.OnError(func(r *colly.Response, err error) {
 				select {
 				case <-ctx.Done():
-					logger.Warn("Error processing stopped due to context cancellation", zap.String("url", r.Request.URL.String()), zap.Error(ctx.Err()))
+					logger.Warn("Error processing stopped due to context cancellation",
+						zap.String("url", r.Request.URL.String()),
+						zap.Error(ctx.Err()))
 					return
 				default:
-					logger.Error("Failed to scrape links", zap.String("url", r.Request.URL.String()), zap.Error(err))
+					logger.Error("Failed to scrape links",
+						zap.String("url", r.Request.URL.String()),
+						zap.Error(err),
+						zap.Int("status_code", r.StatusCode))
 				}
 			})
 
 			url := "https://kpopofficial.com/category/kpop-comeback-schedule/"
-			requestCtx, requestCancel := context.WithTimeout(ctx, 90*time.Second)
+			requestCtx, requestCancel := context.WithTimeout(ctx, 120*time.Second) // Увеличиваем до 120 секунд
 			defer requestCancel()
+
+			// Добавляем экспоненциальную задержку перед повтором
+			if attempt > 0 {
+				delay := time.Duration(attempt) * config.RequestDelay
+				logger.Debug("Applying retry delay", zap.Duration("delay", delay))
+				time.Sleep(delay)
+			}
 
 			err = collector.Visit(url)
 			collector.Wait()
@@ -128,7 +145,10 @@ func GetMonthlyLinksWithContext(ctx context.Context, months []string, config *co
 					uniqueLinks = make(map[string]struct{})
 					continue
 				}
-				return nil, requestCtx.Err()
+				// Fallback: возвращаем статические ссылки для месяцев
+				logger.Warn("Using fallback links due to repeated timeouts", zap.String("url", url))
+				fallbackLinks := generateFallbackLinks(months, release.CurrentYear())
+				return fallbackLinks, nil
 			default:
 				if err != nil {
 					logger.Error("Failed to visit main page", zap.String("url", url), zap.Error(err))
@@ -138,7 +158,10 @@ func GetMonthlyLinksWithContext(ctx context.Context, months []string, config *co
 						uniqueLinks = make(map[string]struct{})
 						continue
 					}
-					return nil, fmt.Errorf("failed to visit main page: %v", err)
+					// Fallback: возвращаем статические ссылки
+					logger.Warn("Using fallback links due to repeated errors", zap.String("url", url))
+					fallbackLinks := generateFallbackLinks(months, release.CurrentYear())
+					return fallbackLinks, nil
 				}
 				if logger.Core().Enabled(zapcore.DebugLevel) {
 					logger.Debug("Completed scraping links", zap.String("url", url), zap.Int("link_count", len(monthlyLinks)))
@@ -149,4 +172,18 @@ func GetMonthlyLinksWithContext(ctx context.Context, months []string, config *co
 	}
 
 	return monthlyLinks, nil
+}
+
+// generateFallbackLinks creates static links for months as a fallback
+func generateFallbackLinks(months []string, year string) []string {
+	var links []string
+	baseURL := "https://kpopofficial.com/kpop-comeback-schedule-"
+	if len(months) == 0 {
+		months = release.Months
+	}
+	for _, month := range months {
+		link := fmt.Sprintf("%s%s-%s", baseURL, strings.ToLower(month), year)
+		links = append(links, link)
+	}
+	return links
 }

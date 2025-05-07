@@ -22,23 +22,31 @@ import (
 // NewCollector creates a new Colly collector with configured settings
 func NewCollector(config *config.Config, logger *zap.Logger) *colly.Collector {
 	collector := colly.NewCollector(
-		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"),
+		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 		colly.MaxDepth(1),
 	)
 
-	// Устанавливаем HTTP-клиент с таймаутом
+	// Устанавливаем HTTP-клиент с увеличенным таймаутом
 	collector.WithTransport(&http.Transport{
-		ResponseHeaderTimeout: 60 * time.Second,
+		ResponseHeaderTimeout: 180 * time.Second, // Увеличиваем до 180 секунд
 		DisableKeepAlives:     true,
 	})
 
 	if err := collector.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Delay:       config.RequestDelay * 2, // Задержка 6s при REQUEST_DELAY=3s
+		Delay:       config.RequestDelay * 2,
 		RandomDelay: config.RequestDelay,
 	}); err != nil {
 		logger.Error("Failed to set collector limit", zap.Error(err))
 	}
+
+	// Добавляем заголовки для минимизации блокировок
+	collector.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+		r.Headers.Set("Accept-Language", "en-US,en;q=0.5")
+		r.Headers.Set("Connection", "keep-alive")
+		r.Headers.Set("Upgrade-Insecure-Requests", "1")
+	})
 
 	// Реализуем повторы вручную через OnError
 	collector.OnError(func(r *colly.Response, err error) {
@@ -53,6 +61,7 @@ func NewCollector(config *config.Config, logger *zap.Logger) *colly.Collector {
 			retryCount++
 			r.Request.Ctx.Put("retries", retryCount)
 			logger.Warn("Retrying request", zap.String("url", r.Request.URL.String()), zap.Int("retry", retryCount), zap.Error(err))
+			time.Sleep(time.Duration(retryCount) * config.RequestDelay)
 			if err := r.Request.Retry(); err != nil {
 				logger.Error("Failed to retry request", zap.String("url", r.Request.URL.String()), zap.Int("retry", retryCount), zap.Error(err))
 			}
@@ -89,13 +98,15 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 			logger.Warn("ParseMonthlyPage stopped due to context cancellation", zap.Error(ctx.Err()))
 			return nil, ctx.Err()
 		default:
-			if logger.Core().Enabled(zapcore.DebugLevel) {
-				logger.Debug("ParseMonthlyPage attempt", zap.Int("attempt", attempt+1), zap.String("url", url))
+			if attempt > 0 {
+				logger.Debug("Applying retry delay", zap.Duration("delay", time.Duration(attempt)*config.RequestDelay))
+				time.Sleep(time.Duration(attempt) * config.RequestDelay)
 			}
 			artistReleases := make(map[string][]release.Release)
 			collector := NewCollector(config, logger)
-			var rowCount int
+			rowCount := 0 // Убираем mutex для rowCount, так как он только для логов
 			var mu sync.Mutex
+			startTime := time.Now()
 
 			collector.OnHTML("tr", func(e *colly.HTMLElement) {
 				select {
@@ -103,9 +114,8 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 					logger.Warn("OnHTML processing stopped due to context cancellation", zap.String("url", e.Request.URL.String()), zap.Error(ctx.Err()))
 					return
 				default:
-					mu.Lock()
 					rowCount++
-					mu.Unlock()
+					rowStart := time.Now()
 
 					dateText := e.ChildText("td.has-text-align-right mark")
 					if dateText == "" {
@@ -302,17 +312,12 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 						mu.Lock()
 						artistReleases[key] = append(artistReleases[key], release)
 						mu.Unlock()
-					}
 
-					mu.Lock()
-					totalReleases := 0
-					for _, releases := range artistReleases {
-						totalReleases += len(releases)
+						// Логируем время обработки строки
+						if logger.Core().Enabled(zapcore.DebugLevel) {
+							logger.Debug("Processed row", zap.Int("row", rowCount), zap.String("artist", artist), zap.Duration("duration", time.Since(rowStart)))
+						}
 					}
-					if logger.Core().Enabled(zapcore.DebugLevel) {
-						logger.Debug("Processed row", zap.Int("row", rowCount), zap.String("artist", artist), zap.Int("releases", totalReleases))
-					}
-					mu.Unlock()
 				}
 			})
 
@@ -346,13 +351,16 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 					return
 				default:
 					startTime, _ := r.Ctx.GetAny("start_time").(time.Time)
-					if logger.Core().Enabled(zapcore.DebugLevel) {
-						logger.Debug("Received response", zap.String("url", r.Request.URL.String()), zap.Duration("duration", time.Since(startTime)))
-					}
+					logger.Debug("Received response",
+						zap.String("url", r.Request.URL.String()),
+						zap.Int("status_code", r.StatusCode),
+						zap.String("x-ac", r.Headers.Get("X-ac")),
+						zap.Int("body_size", len(r.Body)),
+						zap.Duration("duration", time.Since(startTime)))
 				}
 			})
 
-			requestCtx, requestCancel := context.WithTimeout(ctx, 90*time.Second)
+			requestCtx, requestCancel := context.WithTimeout(ctx, 120*time.Second) // Увеличиваем до 120 секунд
 			defer requestCancel()
 
 			err = collector.Visit(url)
@@ -380,7 +388,11 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 					return nil, fmt.Errorf("failed to visit page: %v", err)
 				}
 				if logger.Core().Enabled(zapcore.DebugLevel) {
-					logger.Debug("Completed scraping page", zap.String("url", url), zap.Int("release_count", len(artistReleases)), zap.Int("total_rows", rowCount))
+					totalReleases := 0
+					for _, releases := range artistReleases {
+						totalReleases += len(releases)
+					}
+					logger.Debug("Completed scraping page", zap.String("url", url), zap.Int("release_count", totalReleases), zap.Int("total_rows", rowCount), zap.Duration("total_duration", time.Since(startTime)))
 				}
 			}
 
