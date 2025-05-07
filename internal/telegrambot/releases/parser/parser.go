@@ -140,6 +140,15 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 						}
 					}
 					artist = strings.TrimSpace(artist)
+					// Проверяем наличие слова POSTPONED
+					detailsText := e.ChildText("td.has-text-align-left")
+					if strings.Contains(strings.ToLower(detailsText), "postponed") {
+						if logger.Core().Enabled(zapcore.DebugLevel) {
+							logger.Debug("Event postponed, skipping", zap.String("artist", artist), zap.Int("row", rowCount))
+						}
+						return
+					}
+
 					artistKey := strings.ToLower(artist)
 					if _, ok := whitelist[artistKey]; !ok {
 						if logger.Core().Enabled(zapcore.DebugLevel) {
@@ -263,7 +272,7 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 								}
 							}
 						}
-						// Если дата не найдена, используем dateText из столбца
+						// Если дата не найдена в строке события, используем dateText из столбца
 						if parsedDate == "" {
 							var err error
 							parsedDate, err = releasefmt.FormatDate(dateText, logger)
@@ -281,22 +290,18 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 							continue
 						}
 
-						// Извлекаем альбом, трек и ссылку
-						albumName := ExtractAlbumName(eventLines, 0, len(eventLines), logger)
-						trackName := ExtractTrackName(eventLines, 0, len(eventLines), logger)
-						startIndex := eventStartIndices[idx]
-						mv := ExtractYouTubeLinkFromEvent(e, startIndex, startIndex+len(eventLines), logger)
-
 						// Проверяем наличие события
 						hasEvent := false
 						for _, line := range eventLines {
 							lowerLine := strings.ToLower(line)
+							if strings.Contains(lowerLine, "teaser") || strings.Contains(lowerLine, "poster") {
+								continue
+							}
 							if strings.Contains(lowerLine, "album") ||
 								strings.Contains(lowerLine, "ost") ||
 								strings.Contains(lowerLine, "title track") ||
 								strings.Contains(lowerLine, "pre-release") ||
-								strings.Contains(lowerLine, "release") ||
-								strings.Contains(lowerLine, "mv release") ||
+								(strings.Contains(lowerLine, "release") && strings.Contains(lowerLine, "mv")) ||
 								strings.Contains(lowerLine, "mini album") ||
 								strings.Contains(lowerLine, "special mini album") {
 								hasEvent = true
@@ -310,6 +315,12 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 							}
 							continue
 						}
+
+						// Извлекаем альбом, трек и ссылку
+						albumName := ExtractAlbumName(eventLines, 0, len(eventLines), logger)
+						trackName := ExtractTrackName(eventLines, 0, len(eventLines), logger)
+						startIndex := eventStartIndices[idx]
+						mv := ExtractYouTubeLinkFromEvent(e, startIndex, startIndex+len(eventLines), logger)
 
 						// Создаём релиз
 						release := release.Release{
