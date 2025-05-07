@@ -2,11 +2,6 @@ package bot
 
 import (
 	"fmt"
-	"strings"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"go.uber.org/zap"
-
 	"gemfactory/internal/debounce"
 	"gemfactory/internal/telegrambot/bot/botapi"
 	"gemfactory/internal/telegrambot/bot/commands/admin"
@@ -17,6 +12,10 @@ import (
 	"gemfactory/internal/telegrambot/releases/scraper"
 	"gemfactory/internal/telegrambot/releases/updater"
 	"gemfactory/pkg/config"
+	"strings"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
 )
 
 // Bot represents the Telegram bot
@@ -46,7 +45,7 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 
 	// Проверяем, пусты ли вайтлисты
 	if len(al.GetFemaleWhitelist()) == 0 && len(al.GetMaleWhitelist()) == 0 {
-		return nil, fmt.Errorf("both female and male whitelists are empty; populate at least one whitelist to start the bot")
+		logger.Warn("Both female and male whitelists are empty; populate at least one whitelist using /add_artist")
 	}
 
 	// Инициализируем Scraper
