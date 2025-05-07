@@ -2,13 +2,12 @@ package releasefmt
 
 import (
 	"fmt"
+	"gemfactory/internal/telegrambot/releases/html"
+	"gemfactory/internal/telegrambot/releases/release"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
-
-	"gemfactory/internal/telegrambot/releases/html"
-	"gemfactory/internal/telegrambot/releases/release"
 )
 
 // FormatDate parses and formats a date string
@@ -107,19 +106,19 @@ func ConvertKSTtoMSK(kstTime string, logger *zap.Logger) (string, error) {
 	return mskTime.Format(release.TimeFormat), nil
 }
 
-// CleanLink cleans a YouTube link
+// CleanLink filters out invalid YouTube links, such as channels
 func CleanLink(link string, logger *zap.Logger) string {
 	if link == "" {
 		logger.Debug("Empty link")
 		return ""
 	}
-	if strings.Contains(link, "youtube.com/@") {
+	lowerLink := strings.ToLower(link)
+	if strings.Contains(lowerLink, "youtube.com/@") || strings.Contains(lowerLink, "youtube.com/channel") {
 		logger.Debug("Link is a channel", zap.String("link", link))
 		return ""
 	}
-	cleaned := strings.Split(link, "?")[0]
-	logger.Debug("Cleaned link", zap.String("original", link), zap.String("cleaned", cleaned))
-	return cleaned
+	logger.Debug("Link passed cleaning", zap.String("link", link))
+	return link
 }
 
 // FormatReleaseForTelegram formats a release for Telegram

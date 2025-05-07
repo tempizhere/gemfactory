@@ -140,15 +140,6 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 						}
 					}
 					artist = strings.TrimSpace(artist)
-					// Проверяем наличие слова POSTPONED
-					detailsText := e.ChildText("td.has-text-align-left")
-					if strings.Contains(strings.ToLower(detailsText), "postponed") {
-						if logger.Core().Enabled(zapcore.DebugLevel) {
-							logger.Debug("Event postponed, skipping", zap.String("artist", artist), zap.Int("row", rowCount))
-						}
-						return
-					}
-
 					artistKey := strings.ToLower(artist)
 					if _, ok := whitelist[artistKey]; !ok {
 						if logger.Core().Enabled(zapcore.DebugLevel) {
@@ -188,92 +179,71 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 
 					var events [][]string
 					var eventStartIndices []int
-					if len(detailsLines) > 1 {
-						firstLineAfterArtist := detailsLines[1]
-						isDate := false
-						for _, month := range release.Months {
-							if strings.HasPrefix(strings.ToLower(firstLineAfterArtist), month) {
-								isDate = true
-								break
-							}
+					firstLineAfterArtist := detailsLines[1]
+					isDate := false
+					for _, month := range release.Months {
+						if strings.HasPrefix(strings.ToLower(firstLineAfterArtist), month) {
+							isDate = true
+							break
 						}
+					}
 
-						if isDate {
-							currentEvent := []string{}
-							currentIndex := 1
-							for i := 1; i < len(detailsLines); i++ {
-								line := detailsLines[i]
-								// Проверяем, является ли строка началом нового события (валидная дата)
-								if strings.Contains(line, ":") {
-									parts := strings.SplitN(line, ":", 2)
-									if len(parts) == 2 {
-										datePart := strings.TrimSpace(parts[0])
-										// Проверяем, начинается ли строка с месяца и является ли она валидной датой
-										for _, month := range release.Months {
-											if strings.HasPrefix(strings.ToLower(datePart), month) {
-												if _, err := releasefmt.FormatDate(datePart, logger); err == nil {
-													if len(currentEvent) > 0 {
-														events = append(events, currentEvent)
-														startIndex := currentIndex
-														if startIndex < 1 {
-															startIndex = 1
-														}
-														eventStartIndices = append(eventStartIndices, startIndex)
-													}
-													currentEvent = []string{line}
-													currentIndex = i
-													break
-												}
+					if isDate {
+						currentEvent := []string{}
+						currentIndex := 1
+						for i := 1; i < len(detailsLines); i++ {
+							line := detailsLines[i]
+							if strings.Contains(line, ":") {
+								parts := strings.SplitN(line, ":", 2)
+								if len(parts) == 2 {
+									datePart := strings.TrimSpace(parts[0])
+									parsedDate, err := releasefmt.FormatDate(datePart, logger)
+									if err == nil && parsedDate != "" {
+										if len(currentEvent) > 0 {
+											events = append(events, currentEvent)
+											startIndex := currentIndex
+											if startIndex < 1 {
+												startIndex = 1
 											}
+											eventStartIndices = append(eventStartIndices, startIndex)
 										}
-										if i < len(detailsLines)-1 && len(currentEvent) == 0 {
-											continue
-										}
+										currentEvent = []string{line}
+										currentIndex = i
+										continue
 									}
 								}
-								currentEvent = append(currentEvent, line)
 							}
-							if len(currentEvent) > 0 {
-								events = append(events, currentEvent)
-								startIndex := currentIndex
-								if startIndex < 1 {
-									startIndex = 1
-								}
-								eventStartIndices = append(eventStartIndices, startIndex)
+							currentEvent = append(currentEvent, line)
+						}
+						if len(currentEvent) > 0 {
+							events = append(events, currentEvent)
+							startIndex := currentIndex
+							if startIndex < 1 {
+								startIndex = 1
 							}
-						} else {
-							// Если первая строка не дата, считаем все строки одним событием
-							eventLines := detailsLines[1:]
-							events = append(events, eventLines)
-							eventStartIndices = append(eventStartIndices, 1)
+							eventStartIndices = append(eventStartIndices, startIndex)
 						}
 					} else {
-						events = append(events, detailsLines[1:])
+						eventLines := detailsLines[1:]
+						events = append(events, eventLines)
 						eventStartIndices = append(eventStartIndices, 1)
 					}
 
 					for idx, eventLines := range events {
 						var parsedDate string
-						if len(eventLines) > 0 && strings.Contains(eventLines[0], ":") {
+						if isDate {
 							parts := strings.SplitN(eventLines[0], ":", 2)
-							if len(parts) == 2 {
-								datePart := strings.TrimSpace(parts[0])
-								// Проверяем, является ли строка валидной датой
-								for _, month := range release.Months {
-									if strings.HasPrefix(strings.ToLower(datePart), month) {
-										var err error
-										parsedDate, err = releasefmt.FormatDate(datePart, logger)
-										if err != nil {
-											logger.Error("Failed to parse date in event", zap.String("dateText", datePart), zap.Error(err))
-											continue
-										}
-										break
-									}
-								}
+							if len(parts) != 2 {
+								continue
 							}
-						}
-						// Если дата не найдена в строке события, используем dateText из столбца
-						if parsedDate == "" {
+							datePart := strings.TrimSpace(parts[0])
+							var err error
+							parsedDate, err = releasefmt.FormatDate(datePart, logger)
+							if err != nil {
+								logger.Error("Failed to parse date in event", zap.String("dateText", datePart), zap.Error(err))
+								continue
+							}
+						} else {
 							var err error
 							parsedDate, err = releasefmt.FormatDate(dateText, logger)
 							if err != nil {
@@ -290,29 +260,23 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 							continue
 						}
 
+						// Извлекаем альбом, трек и ссылку
+						albumName := ExtractAlbumName(eventLines, 0, len(eventLines), logger)
+						trackName := ExtractTrackName(eventLines, 0, len(eventLines), logger)
+						startIndex := eventStartIndices[idx]
+						mv := ExtractYouTubeLinkFromEvent(e, startIndex, startIndex+len(eventLines), logger)
+
 						// Проверяем наличие события
 						hasEvent := false
 						for _, line := range eventLines {
 							lowerLine := strings.ToLower(line)
-							// Проверяем, является ли строка только тизером или постером
-							if (strings.Contains(lowerLine, "teaser") || strings.Contains(lowerLine, "poster")) &&
-								!strings.Contains(lowerLine, "album") &&
-								!strings.Contains(lowerLine, "ost") &&
-								!strings.Contains(lowerLine, "title track") &&
-								!strings.Contains(lowerLine, "pre-release") &&
-								!strings.Contains(lowerLine, "release") &&
-								!strings.Contains(lowerLine, "mv") &&
-								!strings.Contains(lowerLine, "mini album") &&
-								!strings.Contains(lowerLine, "special mini album") {
-								continue
-							}
-							if strings.Contains(lowerLine, "album") ||
-								strings.Contains(lowerLine, "ost") ||
-								strings.Contains(lowerLine, "title track") ||
+							if strings.HasPrefix(lowerLine, "album:") ||
+								strings.HasPrefix(lowerLine, "ost:") ||
+								strings.HasPrefix(lowerLine, "title track:") ||
 								strings.Contains(lowerLine, "pre-release") ||
 								strings.Contains(lowerLine, "release") ||
-								strings.Contains(lowerLine, "mini album") ||
-								strings.Contains(lowerLine, "special mini album") {
+								strings.Contains(lowerLine, "mv release") ||
+								strings.Contains(lowerLine, "album") {
 								hasEvent = true
 								break
 							}
@@ -324,12 +288,6 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 							}
 							continue
 						}
-
-						// Извлекаем альбом, трек и ссылку
-						albumName := ExtractAlbumName(eventLines, 0, len(eventLines), logger)
-						trackName := ExtractTrackName(eventLines, 0, len(eventLines), logger)
-						startIndex := eventStartIndices[idx]
-						mv := ExtractYouTubeLinkFromEvent(e, startIndex, startIndex+len(eventLines), logger)
 
 						// Создаём релиз
 						release := release.Release{
