@@ -294,14 +294,23 @@ func ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[
 						hasEvent := false
 						for _, line := range eventLines {
 							lowerLine := strings.ToLower(line)
-							if strings.Contains(lowerLine, "teaser") || strings.Contains(lowerLine, "poster") {
+							// Проверяем, является ли строка только тизером или постером
+							if (strings.Contains(lowerLine, "teaser") || strings.Contains(lowerLine, "poster")) &&
+								!strings.Contains(lowerLine, "album") &&
+								!strings.Contains(lowerLine, "ost") &&
+								!strings.Contains(lowerLine, "title track") &&
+								!strings.Contains(lowerLine, "pre-release") &&
+								!strings.Contains(lowerLine, "release") &&
+								!strings.Contains(lowerLine, "mv") &&
+								!strings.Contains(lowerLine, "mini album") &&
+								!strings.Contains(lowerLine, "special mini album") {
 								continue
 							}
 							if strings.Contains(lowerLine, "album") ||
 								strings.Contains(lowerLine, "ost") ||
 								strings.Contains(lowerLine, "title track") ||
 								strings.Contains(lowerLine, "pre-release") ||
-								(strings.Contains(lowerLine, "release") && strings.Contains(lowerLine, "mv")) ||
+								strings.Contains(lowerLine, "release") ||
 								strings.Contains(lowerLine, "mini album") ||
 								strings.Contains(lowerLine, "special mini album") {
 								hasEvent = true
