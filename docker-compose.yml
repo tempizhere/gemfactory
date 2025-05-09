@@ -5,8 +5,8 @@ services:
     pull_policy: always
     restart: unless-stopped
     environment:
-      - BOT_TOKEN=your_bot_token
-      - ADMIN_USERNAME=your_telegram_username
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
       - CACHE_DURATION=8h
       - MAX_RETRIES=3
       - REQUEST_DELAY=10s
@@ -15,6 +15,12 @@ services:
       - TZ=Asia/Seoul
     volumes:
       - whitelist_data:/app/data
+    healthcheck:
+      test: [ "CMD", "pgrep", "gemfactory" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 volumes:
   whitelist_data:
     name: whitelist_data

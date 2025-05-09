@@ -12,13 +12,14 @@ import (
 
 // Config holds the bot's configuration
 type Config struct {
-	BotToken      string
-	AdminUsername string
-	RequestDelay  time.Duration
-	MaxRetries    int
-	CacheDuration time.Duration
-	WhitelistDir  string
-	Timezone      string
+	BotToken              string
+	AdminUsername         string
+	RequestDelay          time.Duration
+	MaxRetries            int
+	MaxConcurrentRequests int
+	CacheDuration         time.Duration
+	WhitelistDir          string
+	Timezone              string
 }
 
 // Load loads the configuration from environment variables
@@ -51,7 +52,7 @@ func Load() (*Config, error) {
 		var err error
 		cfg.RequestDelay, err = time.ParseDuration(requestDelayStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid REQUEST_DELAY: %v", err)
+			return nil, fmt.Errorf("invalid REQUEST_DELAY: %w", err)
 		}
 	}
 
@@ -62,7 +63,18 @@ func Load() (*Config, error) {
 		var err error
 		cfg.MaxRetries, err = strconv.Atoi(maxRetriesStr)
 		if err != nil || cfg.MaxRetries <= 0 {
-			return nil, fmt.Errorf("invalid MAX_RETRIES: %v", err)
+			return nil, fmt.Errorf("invalid MAX_RETRIES: %w", err)
+		}
+	}
+
+	maxConcurrentStr := os.Getenv("MAX_CONCURRENT_REQUESTS")
+	if maxConcurrentStr == "" {
+		cfg.MaxConcurrentRequests = 5
+	} else {
+		var err error
+		cfg.MaxConcurrentRequests, err = strconv.Atoi(maxConcurrentStr)
+		if err != nil || cfg.MaxConcurrentRequests <= 0 {
+			return nil, fmt.Errorf("invalid MAX_CONCURRENT_REQUESTS: %w", err)
 		}
 	}
 
@@ -73,7 +85,7 @@ func Load() (*Config, error) {
 		var err error
 		cfg.CacheDuration, err = time.ParseDuration(cacheDurationStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid CACHE_DURATION: %v", err)
+			return nil, fmt.Errorf("invalid CACHE_DURATION: %w", err)
 		}
 	}
 
@@ -94,7 +106,9 @@ func (c *Config) LoadLocation(logger *zap.Logger) *time.Location {
 	}
 	loc, err := time.LoadLocation(c.Timezone)
 	if err != nil {
-		logger.Error("Failed to load timezone, falling back to UTC", zap.String("timezone", c.Timezone), zap.Error(err))
+		logger.Error("Failed to load timezone, falling back to UTC",
+			zap.String("timezone", c.Timezone),
+			zap.Error(err))
 		return time.UTC
 	}
 	logger.Info("Timezone loaded", zap.String("timezone", c.Timezone))

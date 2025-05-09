@@ -2,27 +2,26 @@ package service
 
 import (
 	"fmt"
+	"gemfactory/internal/telegrambot/releases/artist"
+	"gemfactory/internal/telegrambot/releases/cache"
+	"gemfactory/internal/telegrambot/releases/release"
+	"gemfactory/internal/telegrambot/releases/service"
+	"gemfactory/pkg/config"
 	"strings"
 
 	"go.uber.org/zap"
-
-	"gemfactory/internal/telegrambot/releases/artistlist"
-	"gemfactory/internal/telegrambot/releases/cache"
-	"gemfactory/internal/telegrambot/releases/release"
-	"gemfactory/internal/telegrambot/releases/releasefmt"
-	"gemfactory/pkg/config"
 )
 
 // ReleaseService handles business logic for release-related operations
 type ReleaseService struct {
-	artistList *artistlist.ArtistList
+	artistList artist.WhitelistManager
 	config     *config.Config
 	logger     *zap.Logger
 	cache      cache.Cache
 }
 
 // NewReleaseService creates a new ReleaseService instance
-func NewReleaseService(artistList *artistlist.ArtistList, config *config.Config, logger *zap.Logger, cache cache.Cache) *ReleaseService {
+func NewReleaseService(artistList artist.WhitelistManager, config *config.Config, logger *zap.Logger, cache cache.Cache) *ReleaseService {
 	return &ReleaseService{
 		artistList: artistList,
 		config:     config,
@@ -34,8 +33,9 @@ func NewReleaseService(artistList *artistlist.ArtistList, config *config.Config,
 // GetReleasesForMonth retrieves and formats releases for a given month
 func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly bool) (string, error) {
 	month = strings.ToLower(month)
+	cfg := release.NewConfig()
 	validMonth := false
-	for _, m := range release.Months {
+	for _, m := range cfg.Months() {
 		if month == m {
 			validMonth = true
 			break
@@ -45,52 +45,62 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 		return "", fmt.Errorf("invalid month: %s", month)
 	}
 
-	if len(s.artistList.GetUnitedWhitelist()) == 0 {
+	whitelistSlice := s.artistList.GetUnitedWhitelist()
+	if len(whitelistSlice) == 0 {
 		return "", fmt.Errorf("whitelist is empty, please add artists")
 	}
 
-	var whitelist map[string]struct{}
+	whitelist := make(map[string]struct{})
+	for _, artist := range whitelistSlice {
+		whitelist[artist] = struct{}{}
+	}
+
+	var targetWhitelist map[string]struct{}
 	if femaleOnly && !maleOnly {
-		whitelist = s.artistList.GetFemaleWhitelist()
-	} else if maleOnly && !femaleOnly {
-		whitelist = s.artistList.GetMaleWhitelist()
-	} else {
-		whitelist = s.artistList.GetUnitedWhitelist()
-	}
-
-	releases, missingMonths, err := s.cache.GetReleasesForMonths([]string{month}, whitelist, femaleOnly, maleOnly)
-	if err != nil {
-		return "", fmt.Errorf("failed to get releases: %v", err)
-	}
-
-	// Проверяем, спарсен ли месяц (есть ли ссылки в кэше)
-	links, err := s.cache.GetCachedLinks(month)
-	if err != nil || len(links) == 0 {
-		return "Релизы для этого месяца еще не анонсированы.", nil
-	}
-
-	// Если месяц отсутствует в кэше
-	if len(missingMonths) > 0 {
-		if s.cache.IsUpdating(month) {
-			return fmt.Sprintf("Данные для %s обновляются. Попробуйте снова через минуту.", month), nil
+		femaleSlice := s.artistList.GetFemaleWhitelist()
+		targetWhitelist = make(map[string]struct{})
+		for _, artist := range femaleSlice {
+			targetWhitelist[artist] = struct{}{}
 		}
-		// Если кэш не обновляется, но ссылки есть, значит релизов нет
-		return fmt.Sprintf("Релизы для %s не найдены.", month), nil
+	} else if maleOnly && !femaleOnly {
+		maleSlice := s.artistList.GetMaleWhitelist()
+		targetWhitelist = make(map[string]struct{})
+		for _, artist := range maleSlice {
+			targetWhitelist[artist] = struct{}{}
+		}
+	} else {
+		targetWhitelist = whitelist
 	}
 
-	if len(releases) == 0 {
-		return fmt.Sprintf("Релизы для %s не найдены.", month), nil
+	releases, missingMonths, err := s.cache.GetReleasesForMonths([]string{month}, targetWhitelist, femaleOnly, maleOnly)
+	if err != nil {
+		s.logger.Error("Failed to get releases", zap.String("month", month), zap.Error(err))
+		return "", fmt.Errorf("failed to get releases: %w", err)
 	}
 
-	var response strings.Builder
-	for _, rel := range releases {
-		formatted := releasefmt.FormatReleaseForTelegram(rel, s.logger)
-		response.WriteString(formatted + "\n")
+	if len(releases) > 0 {
+		var response strings.Builder
+		for _, rel := range releases {
+			formatted := service.FormatReleaseForTelegram(rel)
+			response.WriteString(formatted + "\n")
+		}
+		s.logger.Debug("Returning releases", zap.String("month", month), zap.Int("response_length", len(response.String())))
+		return strings.TrimSpace(response.String()), nil
 	}
-	return response.String(), nil
+
+	for _, missing := range missingMonths {
+		if strings.ToLower(missing) == month {
+			if s.cache.IsUpdating(month) {
+				return fmt.Sprintf("Данные для %s обновляются. Попробуйте снова через минуту.", month), nil
+			}
+			return fmt.Sprintf("Релизы для %s еще не анонсированы.", month), nil
+		}
+	}
+
+	return fmt.Sprintf("Релизы для %s не найдены.", month), nil
 }
 
-// ClearCache clears the release cache and reinitializes it
+// ClearCache clears the release cache
 func (s *ReleaseService) ClearCache() {
 	s.cache.Clear()
 	go s.cache.ScheduleUpdate()

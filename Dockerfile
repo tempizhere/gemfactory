@@ -12,7 +12,7 @@ FROM alpine:3.18
 WORKDIR /app
 # Устанавливаем tzdata для поддержки часовых поясов
 RUN apk add --no-cache tzdata=2025b-r0 && \
-    rm -rf /var/cache/apk/*
+    rm -rf /var/cache/apk/* /tmp/*
 # Создаем non-root пользователя и группу
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 # Создаем директории и устанавливаем права
