@@ -2,7 +2,8 @@ package updater
 
 import (
 	"context"
-	"gemfactory/internal/telegrambot/releases/cache"
+	"fmt"
+	"gemfactory/internal/telegrambot/releases/middleware"
 	"gemfactory/internal/telegrambot/releases/release"
 	"sort"
 	"strings"
@@ -10,18 +11,19 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
-// InitializeCache initializes the cache for all months asynchronously
+// InitializeCache initializes the cache for all months sequentially
 func (u *UpdaterImpl) InitializeCache(ctx context.Context) error {
-	if u.logger.Core().Enabled(zapcore.DebugLevel) {
-		u.logger.Debug("InitializeCache started", zap.Bool("debug_enabled", true))
-	} else {
-		u.logger.Info("InitializeCache started, debug logging disabled")
-	}
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
+	defer cancel()
 
-	months := release.Months
+	u.logger.Debug("Cache initialization configuration",
+		zap.Int("max_retries", u.config.MaxRetries),
+		zap.Duration("request_delay", u.config.RequestDelay))
+
+	cfg := release.NewConfig()
+	months := cfg.Months()
 	monthOrder := map[string]int{
 		"january":   1,
 		"february":  2,
@@ -37,62 +39,49 @@ func (u *UpdaterImpl) InitializeCache(ctx context.Context) error {
 		"december":  12,
 	}
 
-	u.logger.Info("Starting cache initialization for all months", zap.Int("month_count", len(months)))
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	// Fetch links for all months once
+	monthLinks := make(map[string][]string)
+	requestCount := 0
+	links, err := u.scraper.FetchMonthlyLinks(ctx, months)
+	if err != nil {
+		u.logger.Error("Failed to fetch links for months", zap.Error(err))
+		return fmt.Errorf("failed to fetch links: %w", err)
+	}
+	requestCount++
+	u.logger.Debug("Fetched all links", zap.Strings("links", links), zap.Int("request_count", requestCount))
 
-	// Таймаут для всего процесса
-	time.AfterFunc(15*time.Minute, func() {
-		u.logger.Warn("Cache initialization timed out, cancelling context")
-		cancel()
-	})
+	for _, link := range links {
+		for _, month := range months {
+			if strings.Contains(strings.ToLower(link), strings.ToLower(month)) {
+				monthLinks[strings.ToLower(month)] = append(monthLinks[strings.ToLower(month)], link)
+			}
+		}
+	}
 
-	stop := make(chan struct{})
-	defer close(stop)
-
-	var wg sync.WaitGroup
-	totalReleases := 0
-	var totalReleasesMu sync.Mutex
 	var successfulMonths, emptyMonths []string
 	var monthsMu sync.Mutex
+	totalReleases := 0
+	var totalReleasesMu sync.Mutex
+	var errs []error
+	var errsMu sync.Mutex
 
-	// Обработка активных и неактивных месяцев
-	activeMonths := cache.GetActiveMonths()
-	inactiveMonths := make([]string, 0, len(months))
 	for _, month := range months {
-		if !contains(activeMonths, month) {
-			inactiveMonths = append(inactiveMonths, month)
+		u.logger.Debug("Starting task", zap.String("task", "process month "+month))
+		monthCtx, monthCancel := context.WithCancel(ctx)
+		defer monthCancel()
+
+		err := middleware.WithTaskLogging(u.logger, "process month "+month)(
+			monthCtx, u.logger,
+			func() error {
+				return u.processMonth(monthCtx, month, monthLinks[strings.ToLower(month)], &totalReleases, &totalReleasesMu, &successfulMonths, &emptyMonths, &monthsMu)
+			},
+		)
+		if err != nil {
+			u.logger.Error("Failed to process month", zap.String("month", month), zap.Error(err))
+			errsMu.Lock()
+			errs = append(errs, fmt.Errorf("month %s: %w", month, err))
+			errsMu.Unlock()
 		}
-	}
-
-	// Обновление активных месяцев
-	for _, month := range activeMonths {
-		if !contains(months, month) {
-			continue // Пропускаем месяцы, не входящие в release.Months
-		}
-		wg.Add(1)
-		go u.processMonth(ctx, month, &wg, &totalReleases, &totalReleasesMu, &successfulMonths, &emptyMonths, &monthsMu, stop)
-	}
-
-	// Обновление неактивных месяцев
-	for _, month := range inactiveMonths {
-		wg.Add(1)
-		go u.processMonth(ctx, month, &wg, &totalReleases, &totalReleasesMu, &successfulMonths, &emptyMonths, &monthsMu, stop)
-	}
-
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-		u.logger.Info("All months processed successfully")
-	}()
-
-	select {
-	case <-done:
-		u.logger.Info("Cache initialization completed successfully")
-	case <-ctx.Done():
-		close(stop)
-		u.logger.Warn("Cache initialization cancelled", zap.Error(ctx.Err()))
 	}
 
 	// Сортируем списки месяцев по хронологическому порядку
@@ -103,153 +92,96 @@ func (u *UpdaterImpl) InitializeCache(ctx context.Context) error {
 		return monthOrder[emptyMonths[i]] < monthOrder[emptyMonths[j]]
 	})
 
-	// Логируем списки месяцев
+	// Логируем результаты
 	if len(successfulMonths) > 0 {
-		u.logger.Info("Successful cache updates for months", zap.String("months", strings.Join(successfulMonths, ",")))
+		u.logger.Info("Successful cache updates for months", zap.Strings("months", successfulMonths))
 	} else {
 		u.logger.Warn("No successful cache updates for any months")
 	}
 	if len(emptyMonths) > 0 {
-		u.logger.Debug("No releases found for months", zap.String("months", strings.Join(emptyMonths, ",")))
+		u.logger.Info("No releases found for months", zap.Strings("months", emptyMonths))
 	} else {
 		u.logger.Info("Releases found for all months")
 	}
-
 	if totalReleases == 0 {
 		u.logger.Warn("Cache initialization completed, but no releases were added")
 	} else {
 		u.logger.Info("Cache updated successfully", zap.Int("total_releases", totalReleases))
 	}
 
+	if len(errs) > 0 {
+		return fmt.Errorf("cache initialization completed with %d errors: %v", len(errs), errs)
+	}
+
 	return nil
 }
 
 // processMonth processes a single month
-func (u *UpdaterImpl) processMonth(ctx context.Context, month string, wg *sync.WaitGroup, totalReleases *int, totalReleasesMu *sync.Mutex, successfulMonths, emptyMonths *[]string, monthsMu *sync.Mutex, stop chan struct{}) {
-	defer wg.Done()
-
-	if u.logger.Core().Enabled(zapcore.DebugLevel) {
-		u.logger.Debug("Started processing month", zap.String("month", month))
-	}
-
-	monthCtx, monthCancel := context.WithTimeout(ctx, 3*time.Minute)
-	defer monthCancel()
+func (u *UpdaterImpl) processMonth(ctx context.Context, month string, monthlyLinks []string, totalReleases *int, totalReleasesMu *sync.Mutex, successfulMonths, emptyMonths *[]string, monthsMu *sync.Mutex) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
 
 	startTime := time.Now()
-	var releases []release.Release
-	var err error
-	for retries := 0; retries < u.config.MaxRetries; retries++ {
-		select {
-		case <-monthCtx.Done():
-			u.logger.Warn("Cache initialization cancelled for month", zap.String("month", month), zap.Error(monthCtx.Err()))
-			return
-		case <-stop:
-			u.logger.Warn("Cache initialization stopped for month", zap.String("month", month))
-			return
-		default:
-			if u.logger.Core().Enabled(zapcore.DebugLevel) {
-				u.logger.Debug("Fetching monthly links", zap.String("month", month), zap.Int("retry", retries+1))
-			}
-			monthlyLinks, err := u.cache.GetCachedLinks(month)
-			if err != nil {
-				if retries < u.config.MaxRetries-1 {
-					time.Sleep(u.config.RequestDelay)
-					continue
-				}
-				u.logger.Error("Failed to get monthly links", zap.String("month", month), zap.Error(err))
-				break
-			}
 
-			releaseChan := make(chan []release.Release, len(monthlyLinks))
-			var parseWg sync.WaitGroup
-			for _, link := range monthlyLinks {
-				parseWg.Add(1)
-				go func(link string) {
-					defer func() {
-						parseWg.Done()
-						if u.logger.Core().Enabled(zapcore.DebugLevel) {
-							u.logger.Debug("Completed parsing page", zap.String("url", link))
-						}
-					}()
-					select {
-					case <-monthCtx.Done():
-						u.logger.Warn("Page parsing cancelled", zap.String("url", link), zap.Error(monthCtx.Err()))
-						return
-					case <-stop:
-						u.logger.Warn("Page parsing stopped", zap.String("url", link))
-						return
-					default:
-						rels, err := u.scraper.ParseMonthlyPageWithContext(monthCtx, link, u.artistList.GetUnitedWhitelist(), month, u.config, u.logger)
-						if err != nil {
-							u.logger.Error("Failed to parse page", zap.String("url", link), zap.Error(err))
-							releaseChan <- nil
-							return
-						}
-						releaseChan <- rels
+	var fullWhitelist []string
+	whitelistMap := make(map[string]struct{})
+	for _, artist := range u.artistList.GetUnitedWhitelist() {
+		fullWhitelist = append(fullWhitelist, artist)
+		whitelistMap[artist] = struct{}{}
+	}
+	sort.Strings(fullWhitelist)
+	u.logger.Debug("Whitelist for caching", zap.Strings("whitelist", fullWhitelist), zap.String("month", month))
+
+	var allReleases []release.Release
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, link := range monthlyLinks {
+		link := link // capture range variable
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := middleware.WithRetries(u.config.MaxRetries, u.config.RequestDelay, u.logger)(
+				ctx, u.logger,
+				func() error {
+					rels, err := u.scraper.ParseMonthlyPage(ctx, link, month, whitelistMap)
+					if err != nil {
+						u.logger.Error("Failed to parse page", zap.String("url", link), zap.Error(err))
+						return err
 					}
-				}(link)
-			}
-
-			go func() {
-				parseWg.Wait()
-				close(releaseChan)
-				if u.logger.Core().Enabled(zapcore.DebugLevel) {
-					u.logger.Debug("Closed release channel for month", zap.String("month", month))
-				}
-			}()
-
-			var allReleases []release.Release
-			for rels := range releaseChan {
-				select {
-				case <-monthCtx.Done():
-					u.logger.Warn("Release collection cancelled for month", zap.String("month", month), zap.Error(monthCtx.Err()))
-					return
-				case <-stop:
-					u.logger.Warn("Release collection stopped for month", zap.String("month", month))
-					return
-				default:
-					if rels != nil {
+					if len(rels) > 0 {
+						mu.Lock()
+						totalReleasesMu.Lock()
+						*totalReleases += len(rels)
+						totalReleasesMu.Unlock()
 						allReleases = append(allReleases, rels...)
+						mu.Unlock()
 					}
-				}
+					return nil
+				},
+			)
+			if err != nil {
+				u.logger.Error("Failed to process page", zap.String("url", link), zap.Error(err))
 			}
-
-			if len(allReleases) > 0 {
-				releases = allReleases
-				break
-			}
-			if retries < u.config.MaxRetries-1 {
-				time.Sleep(u.config.RequestDelay)
-			}
-		}
+		}()
 	}
 
+	wg.Wait()
+
 	duration := time.Since(startTime)
-	if err != nil {
-		u.logger.Warn("Cache initialization for month completed with error", zap.String("month", month), zap.Error(err), zap.Duration("duration", duration))
-	} else if len(releases) > 0 {
-		totalReleasesMu.Lock()
-		*totalReleases += len(releases)
-		totalReleasesMu.Unlock()
-
-		// Сохраняем релизы в кэш
-		u.cache.StoreReleases(month, releases)
-		if u.logger.Core().Enabled(zapcore.DebugLevel) {
-			u.logger.Debug("Cached releases for month", zap.String("month", month), zap.Int("release_count", len(releases)), zap.Duration("duration", duration))
-		}
-
-		// Добавляем месяц в список успешных
+	if len(allReleases) > 0 {
+		u.cache.StoreReleases(month, allReleases)
 		monthsMu.Lock()
 		*successfulMonths = append(*successfulMonths, month)
 		monthsMu.Unlock()
+		u.logger.Info("Cached releases for month", zap.String("month", month), zap.Int("release_count", len(allReleases)), zap.Duration("duration", duration))
 	} else {
-		u.logger.Debug("No releases found for month, skipping cache update", zap.String("month", month), zap.Duration("duration", duration))
-
-		// Добавляем месяц в список пустых
 		monthsMu.Lock()
 		*emptyMonths = append(*emptyMonths, month)
 		monthsMu.Unlock()
+		u.logger.Debug("No releases found for month", zap.String("month", month), zap.Duration("duration", duration))
 	}
+
+	return nil
 }
 
 // StartUpdater periodically updates the cache
@@ -271,16 +203,5 @@ func (u *UpdaterImpl) StartUpdater() {
 				u.logger.Error("Periodic cache update failed", zap.Error(err))
 			}
 		}()
-		u.logger.Info("Periodic cache update completed")
 	}
-}
-
-// contains checks if a slice contains a string
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
 }

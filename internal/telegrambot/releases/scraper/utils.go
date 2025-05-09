@@ -1,7 +1,7 @@
-package parser
+package scraper
 
 import (
-	"gemfactory/internal/telegrambot/releases/releasefmt"
+	"gemfactory/internal/telegrambot/releases/service"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -36,7 +36,7 @@ func ExtractYouTubeLinkFromEvent(e *colly.HTMLElement, startIndex, endIndex int,
 	})
 
 	if len(allLinks) > 0 {
-		return releasefmt.CleanLink(lastLink, logger)
+		return service.CleanLink(lastLink, logger)
 	}
 	return ""
 }

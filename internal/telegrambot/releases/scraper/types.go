@@ -2,34 +2,11 @@ package scraper
 
 import (
 	"context"
-
-	"go.uber.org/zap"
-
-	"gemfactory/internal/telegrambot/releases/parser"
 	"gemfactory/internal/telegrambot/releases/release"
-	"gemfactory/pkg/config"
 )
 
-// ScraperImpl implements the cache.Scraper interface
-type ScraperImpl struct {
-	config *config.Config
-	logger *zap.Logger
-}
-
-// NewScraper creates a new ScraperImpl instance
-func NewScraper(config *config.Config, logger *zap.Logger) *ScraperImpl {
-	return &ScraperImpl{
-		config: config,
-		logger: logger,
-	}
-}
-
-// GetMonthlyLinksWithContext retrieves links to monthly schedules with context
-func (s *ScraperImpl) GetMonthlyLinksWithContext(ctx context.Context, months []string, config *config.Config, logger *zap.Logger) ([]string, error) {
-	return GetMonthlyLinksWithContext(ctx, months, config, logger)
-}
-
-// ParseMonthlyPageWithContext parses a monthly schedule page with context
-func (s *ScraperImpl) ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[string]struct{}, month string, config *config.Config, logger *zap.Logger) ([]release.Release, error) {
-	return parser.ParseMonthlyPageWithContext(ctx, url, whitelist, month, config, logger)
+// Fetcher defines the interface for scraping operations
+type Fetcher interface {
+	FetchMonthlyLinks(ctx context.Context, months []string) ([]string, error)
+	ParseMonthlyPage(ctx context.Context, url, month string, whitelist map[string]struct{}) ([]release.Release, error)
 }

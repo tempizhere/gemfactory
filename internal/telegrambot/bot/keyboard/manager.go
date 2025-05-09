@@ -2,6 +2,13 @@ package keyboard
 
 import (
 	"fmt"
+	"gemfactory/internal/debounce"
+	"gemfactory/internal/telegrambot/bot/botapi"
+	"gemfactory/internal/telegrambot/bot/service"
+	"gemfactory/internal/telegrambot/releases/artist"
+	"gemfactory/internal/telegrambot/releases/cache"
+	"gemfactory/internal/telegrambot/releases/release"
+	"gemfactory/pkg/config"
 	"strings"
 	"time"
 
@@ -9,14 +16,6 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
-
-	"gemfactory/internal/debounce"
-	"gemfactory/internal/telegrambot/bot/botapi"
-	"gemfactory/internal/telegrambot/bot/service"
-	"gemfactory/internal/telegrambot/releases/artistlist"
-	"gemfactory/internal/telegrambot/releases/cache"
-	"gemfactory/internal/telegrambot/releases/release"
-	"gemfactory/pkg/config"
 )
 
 // KeyboardManager manages Inline Keyboards for the bot
@@ -31,7 +30,7 @@ type KeyboardManager struct {
 }
 
 // NewKeyboardManager creates a new KeyboardManager instance with cached keyboards
-func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al *artistlist.ArtistList, config *config.Config, cache cache.Cache) *KeyboardManager {
+func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al artist.WhitelistManager, config *config.Config, cache cache.Cache) *KeyboardManager {
 	k := &KeyboardManager{
 		api:       api,
 		logger:    logger,
@@ -40,11 +39,13 @@ func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al *artistlist.Ar
 		config:    config,
 	}
 
+	cfg := release.NewConfig()
+	months := cfg.Months()
 	var rows [][]tgbotapi.InlineKeyboardButton
-	for i := 0; i < len(release.Months); i += 3 {
+	for i := 0; i < len(months); i += 3 {
 		var row []tgbotapi.InlineKeyboardButton
-		for j := 0; j < 3 && i+j < len(release.Months); j++ {
-			month := release.Months[i+j]
+		for j := 0; j < 3 && i+j < len(months); j++ {
+			month := months[i+j]
 			row = append(row, tgbotapi.NewInlineKeyboardButtonData(cases.Title(language.English).String(month), "month_"+month))
 		}
 		rows = append(rows, row)
@@ -56,11 +57,10 @@ func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al *artistlist.Ar
 
 	go func() {
 		for {
-			// Загружаем таймзону из конфигурации
 			loc, err := time.LoadLocation(k.config.Timezone)
 			if err != nil {
 				k.logger.Error("Failed to load timezone", zap.String("timezone", k.config.Timezone), zap.Error(err))
-				loc = time.UTC // Запасная таймзона
+				loc = time.UTC
 			}
 			now := time.Now().In(loc)
 			nextMonth := now.AddDate(0, 1, 0)
@@ -74,13 +74,12 @@ func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al *artistlist.Ar
 	return k
 }
 
-// updateMainMonthKeyboard updates the main month keyboard with the current, previous, and next months
+// updateMainMonthKeyboard updates the main month keyboard
 func (k *KeyboardManager) updateMainMonthKeyboard() {
-	// Загружаем таймзону из конфигурации
 	loc, err := time.LoadLocation(k.config.Timezone)
 	if err != nil {
 		k.logger.Error("Failed to load timezone", zap.String("timezone", k.config.Timezone), zap.Error(err))
-		loc = time.UTC // Запасная таймзона
+		loc = time.UTC
 	}
 	currentMonth := int(time.Now().In(loc).Month())
 	prevMonth := currentMonth - 1
@@ -92,25 +91,27 @@ func (k *KeyboardManager) updateMainMonthKeyboard() {
 		nextMonth = 1
 	}
 
+	cfg := release.NewConfig()
+	months := cfg.Months()
 	buttons := []tgbotapi.InlineKeyboardButton{
-		tgbotapi.NewInlineKeyboardButtonData(cases.Title(language.English).String(release.Months[prevMonth-1]), "month_"+release.Months[prevMonth-1]),
-		tgbotapi.NewInlineKeyboardButtonData(cases.Title(language.English).String(release.Months[currentMonth-1]), "month_"+release.Months[currentMonth-1]),
-		tgbotapi.NewInlineKeyboardButtonData(cases.Title(language.English).String(release.Months[nextMonth-1]), "month_"+release.Months[nextMonth-1]),
+		tgbotapi.NewInlineKeyboardButtonData(cases.Title(language.English).String(months[prevMonth-1]), "month_"+months[prevMonth-1]),
+		tgbotapi.NewInlineKeyboardButtonData(cases.Title(language.English).String(months[currentMonth-1]), "month_"+months[currentMonth-1]),
+		tgbotapi.NewInlineKeyboardButtonData(cases.Title(language.English).String(months[nextMonth-1]), "month_"+months[nextMonth-1]),
 		tgbotapi.NewInlineKeyboardButtonData("...", "show_all_months"),
 	}
 
 	k.mainMonthKeyboard = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(buttons...),
 	)
-	k.logger.Info("Updated main month keyboard", zap.String("current_month", release.Months[currentMonth-1]), zap.String("timezone", k.config.Timezone))
+	k.logger.Info("Updated main month keyboard", zap.String("current_month", months[currentMonth-1]))
 }
 
-// GetMainKeyboard returns the cached main month keyboard
+// GetMainKeyboard returns the main month keyboard
 func (k *KeyboardManager) GetMainKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return k.mainMonthKeyboard
 }
 
-// GetAllMonthsKeyboard returns the cached all months keyboard
+// GetAllMonthsKeyboard returns the all months keyboard
 func (k *KeyboardManager) GetAllMonthsKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return k.allMonthsKeyboard
 }
@@ -120,15 +121,45 @@ func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) 
 	data := callback.Data
 	chatID := callback.Message.Chat.ID
 
+	k.logger.Debug("Received callback query", zap.String("data", data), zap.Int64("chat_id", chatID))
+
 	if strings.HasPrefix(data, "month_") {
 		debounceKey := fmt.Sprintf("%d:%s", chatID, data)
 		if !k.debouncer.CanProcessRequest(debounceKey) {
 			k.logger.Info("Callback query debounced", zap.Int64("chat_id", chatID), zap.String("data", data))
 			return
 		}
+
+		month := strings.TrimPrefix(data, "month_")
+		k.logger.Debug("Processing month callback", zap.String("month", month))
+
+		response, err := k.svc.GetReleasesForMonth(month, false, false)
+		if err != nil {
+			k.logger.Error("Failed to get releases for month", zap.String("month", month), zap.Error(err))
+			// Use the error message directly for user-friendly output
+			if err := k.api.SendMessage(chatID, err.Error()); err != nil {
+				k.logger.Error("Failed to send error message", zap.Int64("chat_id", chatID), zap.Error(err))
+			}
+			return
+		}
+
+		if response == "" {
+			k.logger.Warn("Empty response for month", zap.String("month", month))
+			if err := k.api.SendMessage(chatID, fmt.Sprintf("Релизы для %s не найдены.", month)); err != nil {
+				k.logger.Error("Failed to send message", zap.Int64("chat_id", chatID), zap.Error(err))
+			}
+			return
+		}
+
+		k.logger.Debug("Sending releases for month", zap.String("month", month), zap.String("response", response))
+		if err := k.api.SendMessageWithMarkup(chatID, response, k.GetMainKeyboard()); err != nil {
+			k.logger.Error("Failed to send message", zap.Int64("chat_id", chatID), zap.String("text", response), zap.Error(err))
+		}
+		return
 	}
 
 	if data == "show_all_months" {
+		k.logger.Debug("Showing all months keyboard")
 		if err := k.api.EditMessageReplyMarkup(chatID, callback.Message.MessageID, k.GetAllMonthsKeyboard()); err != nil {
 			k.logger.Error("Failed to edit message markup", zap.Error(err))
 		}
@@ -136,33 +167,18 @@ func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) 
 	}
 
 	if data == "back_to_main" {
+		k.logger.Debug("Returning to main keyboard")
 		if err := k.api.EditMessageReplyMarkup(chatID, callback.Message.MessageID, k.GetMainKeyboard()); err != nil {
 			k.logger.Error("Failed to edit message markup", zap.Error(err))
 		}
 		return
 	}
 
-	if strings.HasPrefix(data, "month_") {
-		month := strings.TrimPrefix(data, "month_")
-		response, err := k.svc.GetReleasesForMonth(month, false, false)
-		if err != nil {
-			k.logger.Error("Failed to get releases for month", zap.String("month", month), zap.Error(err))
-			if err := k.api.SendMessage(chatID, fmt.Sprintf("Ошибка: %v", err)); err != nil {
-				k.logger.Error("Failed to send error message", zap.Int64("chat_id", chatID), zap.Error(err))
-			}
-			return
-		}
-		if err := k.api.SendMessageWithMarkup(chatID, response, k.GetMainKeyboard()); err != nil {
-			k.logger.Error("Failed to send message", zap.Int64("chat_id", chatID), zap.String("text", response), zap.Error(err))
-		}
-		return
-	}
-
 	k.logger.Warn("Unknown callback query", zap.String("data", data))
 	if err := k.api.SendMessage(chatID, "Неизвестный запрос."); err != nil {
-		k.logger.Error("Failed to send message", zap.Int64("chat_id", chatID), zap.String("text", "Неизвестный запрос."), zap.Error(err))
+		k.logger.Error("Failed to send message", zap.Int64("chat_id", chatID), zap.Error(err))
 	}
 }
 
-// Stop is a no-op since periodic updates are managed with a simple sleep loop
+// Stop stops the keyboard manager
 func (k *KeyboardManager) Stop() {}

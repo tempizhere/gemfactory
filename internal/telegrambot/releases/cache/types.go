@@ -2,14 +2,14 @@ package cache
 
 import (
 	"context"
+	"gemfactory/internal/telegrambot/releases/artist"
+	"gemfactory/internal/telegrambot/releases/release"
+	"gemfactory/internal/telegrambot/releases/scraper"
+	"gemfactory/pkg/config"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
-
-	"gemfactory/internal/telegrambot/releases/artistlist"
-	"gemfactory/internal/telegrambot/releases/release"
-	"gemfactory/pkg/config"
 )
 
 // Cache defines the interface for cache operations
@@ -20,6 +20,7 @@ type Cache interface {
 	StartUpdater()
 	GetCachedLinks(month string) ([]string, error)
 	IsUpdating(month string) bool
+	StoreReleases(month string, releases []release.Release)
 }
 
 // CacheEntry holds cached releases or links
@@ -29,49 +30,39 @@ type CacheEntry struct {
 	Timestamp time.Time
 }
 
-// CacheManager manages the cache
-type CacheManager struct {
-	cache                    map[string]CacheEntry
-	mu                       sync.RWMutex
-	duration                 time.Duration
-	updateTimer              *time.Timer
-	updateTimerMu            sync.Mutex
-	isUpdating               bool
-	pendingUpdates           map[string]struct{}
-	pendingUpdatesTimestamps map[string]time.Time
-	logger                   *zap.Logger
-	config                   *config.Config
-	artistList               *artistlist.ArtistList
-	scraper                  Scraper
-	updater                  Updater
-}
-
-// Scraper defines the interface for scraping operations
-type Scraper interface {
-	GetMonthlyLinksWithContext(ctx context.Context, months []string, config *config.Config, logger *zap.Logger) ([]string, error)
-	ParseMonthlyPageWithContext(ctx context.Context, url string, whitelist map[string]struct{}, month string, config *config.Config, logger *zap.Logger) ([]release.Release, error)
-}
-
 // Updater defines the interface for cache updating
 type Updater interface {
 	InitializeCache(ctx context.Context) error
 	StartUpdater()
 }
 
+// CacheManager manages the cache
+type CacheManager struct {
+	cache          map[string]CacheEntry
+	mu             sync.Mutex
+	duration       time.Duration
+	isUpdating     bool
+	pendingUpdates map[string]struct{}
+	logger         *zap.Logger
+	config         *config.Config
+	artistList     artist.WhitelistManager
+	scraper        scraper.Fetcher
+	updater        Updater
+}
+
 // NewCacheManager creates a new CacheManager instance
-func NewCacheManager(config *config.Config, logger *zap.Logger, al *artistlist.ArtistList, scraper Scraper, updater Updater) *CacheManager {
+func NewCacheManager(config *config.Config, logger *zap.Logger, al artist.WhitelistManager, scraper scraper.Fetcher, updater Updater) *CacheManager {
 	cacheDuration := parseCacheDuration(logger, config)
 	return &CacheManager{
-		cache:                    make(map[string]CacheEntry),
-		duration:                 cacheDuration,
-		logger:                   logger,
-		config:                   config,
-		artistList:               al,
-		scraper:                  scraper,
-		updater:                  updater,
-		isUpdating:               false,
-		pendingUpdates:           make(map[string]struct{}),
-		pendingUpdatesTimestamps: make(map[string]time.Time),
+		cache:          make(map[string]CacheEntry),
+		duration:       cacheDuration,
+		logger:         logger,
+		config:         config,
+		artistList:     al,
+		scraper:        scraper,
+		updater:        updater,
+		isUpdating:     false,
+		pendingUpdates: make(map[string]struct{}),
 	}
 }
 
