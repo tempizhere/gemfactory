@@ -2,8 +2,8 @@
 
 Gemfactory is a Telegram bot designed to provide users with schedules of K-pop comebacks and releases for specified months. It fetches data from external sources, filters releases based on predefined whitelists of artists, and presents them in a user-friendly format. The bot is built with Go, containerized using Docker, and deployed via GitHub Actions to Docker Hub.
 
+![2025-06-21_01-05](https://github.com/user-attachments/assets/3f1ba3d7-1084-498b-b8e5-18ce49de32a3)
 
-![2025-06-21_01-03](https://github.com/user-attachments/assets/ffdfdcf2-b818-48f3-a439-b139f5af6855)
 
 ## Features
 
