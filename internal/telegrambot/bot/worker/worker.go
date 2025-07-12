@@ -90,7 +90,7 @@ func (wp *Pool) Submit(job Job) error {
 	defer wp.mu.Unlock()
 
 	if wp.stopped {
-		return ErrQueueFull // Or a more specific error indicating the pool is stopped
+		return ErrPoolStopped // Or a more specific error indicating the pool is stopped
 	}
 
 	select {
@@ -206,7 +206,8 @@ func (wp *Pool) GetQueueSize() int {
 
 // Ошибки
 var (
-	ErrQueueFull = &Error{msg: "job queue is full"}
+	ErrQueueFull   = &Error{msg: "job queue is full"}
+	ErrPoolStopped = &Error{msg: "worker pool is stopped"}
 )
 
 // Error ошибка воркера

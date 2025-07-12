@@ -116,9 +116,9 @@ func TestWorkerPoolContextCancellation(t *testing.T) {
 		},
 	}
 
-	// Ожидаем ErrQueueFull, так как пул остановлен
-	if err := pool.Submit(job); err != ErrQueueFull {
-		t.Errorf("Expected ErrQueueFull when submitting job to stopped pool, got %v", err)
+	// Ожидаем ErrPoolStopped, так как пул остановлен
+	if err := pool.Submit(job); err != ErrPoolStopped {
+		t.Errorf("Expected ErrPoolStopped when submitting job to stopped pool, got %v", err)
 	}
 }
 
