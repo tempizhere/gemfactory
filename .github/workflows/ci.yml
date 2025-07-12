@@ -3,6 +3,8 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main, develop ]
+    tags:
+      - 'v*.*.*'
   pull_request:
     branches: [ main, develop ]
 
@@ -11,141 +13,190 @@ env:
   DOCKER_IMAGE: tempizhere/gemfactory
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          args: --timeout=5m
+
   test:
     name: Test
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: ${{ env.GO_VERSION }}
-        cache: true
-
-    - name: Install dependencies
-      run: go mod download
-
-    - name: Run linter
-      uses: golangci/golangci-lint-action@v4
-      with:
-        version: v1.64.8
-        args: --timeout=5m
-
-    - name: Run tests
-      run: go test -v -race -coverprofile=coverage.out ./...
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.out
-        flags: unittests
-        name: codecov-umbrella
-
-    - name: Run security scan
-      run: |
-        go install github.com/sonatype-nexus-community/nancy@latest
-        go list -json -deps ./... | nancy sleuth
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Install dependencies
+        run: go mod download
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+      - name: Run security scan
+        run: |
+          go install github.com/sonatype-nexus-community/nancy@latest
+          go list -json -deps ./... | nancy sleuth
 
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: test
-
+    needs: [lint, test]
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: ${{ env.GO_VERSION }}
-        cache: true
-
-    - name: Build for multiple platforms
-      run: |
-        GOOS=linux GOARCH=amd64 go build -o build/gemfactory-linux-amd64 cmd/bot/main.go
-        GOOS=linux GOARCH=arm64 go build -o build/gemfactory-linux-arm64 cmd/bot/main.go
-        GOOS=darwin GOARCH=amd64 go build -o build/gemfactory-darwin-amd64 cmd/bot/main.go
-        GOOS=darwin GOARCH=arm64 go build -o build/gemfactory-darwin-arm64 cmd/bot/main.go
-        GOOS=windows GOARCH=amd64 go build -o build/gemfactory-windows-amd64.exe cmd/bot/main.go
-
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-binaries
-        path: build/
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Build for multiple platforms
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o build/gemfactory-linux-amd64 cmd/bot/main.go
+          GOOS=linux GOARCH=arm64 go build -o build/gemfactory-linux-arm64 cmd/bot/main.go
+          GOOS=darwin GOARCH=amd64 go build -o build/gemfactory-darwin-amd64 cmd/bot/main.go
+          GOOS=darwin GOARCH=arm64 go build -o build/gemfactory-darwin-arm64 cmd/bot/main.go
+          GOOS=windows GOARCH=amd64 go build -o build/gemfactory-windows-amd64.exe cmd/bot/main.go
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-binaries
+          path: build/
 
   docker:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main'
-
+    needs: [lint, test]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.tags }}
+            tempizhere/gemfactory:latest
+            ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Docker Build Summary
+        if: always()
+        run: |
+          echo '### 🐳 Docker image успешно собран и опубликован!' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '**Теги:**' >> $GITHUB_STEP_SUMMARY
+          echo '- `${{ steps.meta.outputs.tags }}`' >> $GITHUB_STEP_SUMMARY
+          echo '- `tempizhere/gemfactory:latest`' >> $GITHUB_STEP_SUMMARY
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "- \\`${GITHUB_REF_NAME}\\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '**Docker Hub:** https://hub.docker.com/r/tempizhere/gemfactory' >> $GITHUB_STEP_SUMMARY
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.DOCKER_IMAGE }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=sha
-
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: linux/amd64,linux/arm64
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [docker]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
 
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [test, docker]
+    needs: [docker]
     if: github.ref == 'refs/heads/main'
     environment: production
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Deploy to server
-      run: |
-        echo "Deploying to production server..."
-        # Здесь можно добавить команды для деплоя
-        # Например, через SSH или Kubernetes
-        echo "Deployment completed successfully"
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Deploy to server
+        run: |
+          echo "Deploying to production server..."
+          # Здесь можно добавить команды для деплоя
+          # Например, через SSH или Kubernetes
+          echo "Deployment completed successfully"
 
   notify:
     name: Notify on Failure
     runs-on: ubuntu-latest
     if: failure()
-    needs: [test, build, docker, deploy]
-
+    needs: [lint, test, build, docker, release, deploy]
     steps:
-    - name: Notify failure
-      run: |
-        echo "CI/CD pipeline failed!"
-        # Здесь можно добавить уведомления (Slack, Telegram, etc.)
+      - name: Notify failure
+        run: |
+          echo "CI/CD pipeline failed!"
+          # Здесь можно добавить уведомления (Slack, Telegram, etc.)
