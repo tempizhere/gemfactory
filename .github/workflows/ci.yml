@@ -52,7 +52,7 @@ jobs:
       - name: Clean Go build cache
         run: |
           rm -rf ~/.cache/go-build
-          rm -rf ~/go/pkg/mod
+          go clean -modcache
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
@@ -91,7 +91,7 @@ jobs:
       - name: Clean Go build cache
         run: |
           rm -rf ~/.cache/go-build
-          rm -rf ~/go/pkg/mod
+          go clean -modcache
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
