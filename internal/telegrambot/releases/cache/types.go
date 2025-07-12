@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"gemfactory/internal/telegrambot/bot/worker"
 	"gemfactory/internal/telegrambot/releases/artist"
 	"gemfactory/internal/telegrambot/releases/release"
 	"gemfactory/internal/telegrambot/releases/scraper"
@@ -21,6 +22,8 @@ type Cache interface {
 	GetCachedLinks(month string) ([]string, error)
 	IsUpdating(month string) bool
 	StoreReleases(month string, releases []release.Release)
+	StartWorkerPool()
+	StopWorkerPool()
 }
 
 // CacheEntry holds cached releases or links
@@ -48,11 +51,19 @@ type CacheManager struct {
 	artistList     artist.WhitelistManager
 	scraper        scraper.Fetcher
 	updater        Updater
+	workerPool     worker.WorkerPoolInterface
 }
+
+// Убеждаемся, что CacheManager реализует Cache interface
+var _ Cache = (*CacheManager)(nil)
 
 // NewCacheManager creates a new CacheManager instance
 func NewCacheManager(config *config.Config, logger *zap.Logger, al artist.WhitelistManager, scraper scraper.Fetcher, updater Updater) *CacheManager {
 	cacheDuration := parseCacheDuration(logger, config)
+
+	// Создаем worker pool для фоновых операций кэша
+	workerPool := worker.NewWorkerPool(config.MaxConcurrentRequests, 50, logger)
+
 	return &CacheManager{
 		cache:          make(map[string]CacheEntry),
 		duration:       cacheDuration,
@@ -63,6 +74,7 @@ func NewCacheManager(config *config.Config, logger *zap.Logger, al artist.Whitel
 		updater:        updater,
 		isUpdating:     false,
 		pendingUpdates: make(map[string]struct{}),
+		workerPool:     workerPool,
 	}
 }
 
@@ -80,4 +92,19 @@ func parseCacheDuration(logger *zap.Logger, config *config.Config) time.Duration
 	}
 	logger.Info("CACHE_DURATION parsed successfully", zap.Duration("duration", cacheDuration))
 	return cacheDuration
+}
+
+// StartWorkerPool запускает worker pool для cache
+func (cm *CacheManager) StartWorkerPool() {
+	cm.workerPool.Start()
+}
+
+// StopWorkerPool останавливает worker pool для cache
+func (cm *CacheManager) StopWorkerPool() {
+	cm.workerPool.Stop()
+}
+
+// GetWorkerPoolMetrics возвращает метрики worker pool
+func (cm *CacheManager) GetWorkerPoolMetrics() worker.WorkerPoolInterface {
+	return cm.workerPool
 }

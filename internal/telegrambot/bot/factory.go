@@ -1,0 +1,166 @@
+package bot
+
+import (
+	"gemfactory/internal/debounce"
+	"gemfactory/internal/telegrambot/bot/botapi"
+	commandcache "gemfactory/internal/telegrambot/bot/cache"
+	"gemfactory/internal/telegrambot/bot/health"
+	"gemfactory/internal/telegrambot/bot/keyboard"
+	"gemfactory/internal/telegrambot/bot/middleware"
+	"gemfactory/internal/telegrambot/bot/service"
+	"gemfactory/internal/telegrambot/bot/types"
+	"gemfactory/internal/telegrambot/bot/worker"
+	"gemfactory/internal/telegrambot/releases/artist"
+	releasecache "gemfactory/internal/telegrambot/releases/cache"
+	"gemfactory/internal/telegrambot/releases/scraper"
+	"gemfactory/internal/telegrambot/releases/updater"
+	"gemfactory/pkg/config"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
+)
+
+// ComponentFactory создает компоненты бота
+type ComponentFactory struct {
+	config config.ConfigInterface
+	logger *zap.Logger
+}
+
+// NewComponentFactory создает новую фабрику компонентов
+func NewComponentFactory(config *config.Config, logger *zap.Logger) *ComponentFactory {
+	return &ComponentFactory{
+		config: config,
+		logger: logger,
+	}
+}
+
+// CreateBotAPI создает API для работы с Telegram
+func (f *ComponentFactory) CreateBotAPI() (botapi.BotAPI, error) {
+	tgAPI, err := tgbotapi.NewBotAPI(f.config.GetBotToken())
+	if err != nil {
+		return nil, err
+	}
+
+	api := botapi.NewTelegramBotAPI(tgAPI, f.logger)
+	return api, nil
+}
+
+// CreateWhitelistManager создает менеджер белых списков
+func (f *ComponentFactory) CreateWhitelistManager() artist.WhitelistManager {
+	return artist.NewWhitelistManager(f.config.GetWhitelistDir(), f.logger)
+}
+
+// CreateScraper создает скрейпер
+func (f *ComponentFactory) CreateScraper() scraper.Fetcher {
+	// Приведение типа для совместимости с существующим кодом
+	if cfg, ok := f.config.(*config.Config); ok {
+		return scraper.NewFetcher(cfg, f.logger)
+	}
+	// Fallback для интерфейса
+	return scraper.NewFetcher(nil, f.logger)
+}
+
+// CreateCacheManager создает менеджер кэша
+func (f *ComponentFactory) CreateCacheManager(
+	whitelistManager artist.WhitelistManager,
+	scraper scraper.Fetcher,
+) releasecache.Cache {
+	// Приведение типа для совместимости с существующим кодом
+	if cfg, ok := f.config.(*config.Config); ok {
+		cacheManager := releasecache.NewCacheManager(cfg, f.logger, whitelistManager, scraper, nil)
+		updater := updater.NewUpdater(cfg, f.logger, whitelistManager, cacheManager, scraper)
+		cacheManager.SetUpdater(updater)
+		return cacheManager
+	}
+	// Fallback для интерфейса
+	return nil
+}
+
+// CreateServices создает сервисы
+func (f *ComponentFactory) CreateServices(
+	whitelistManager artist.WhitelistManager,
+	cache releasecache.Cache,
+) (*service.ReleaseService, *service.ArtistService) {
+	// Приведение типа для совместимости с существующим кодом
+	if cfg, ok := f.config.(*config.Config); ok {
+		releaseService := service.NewReleaseService(whitelistManager, cfg, f.logger, cache)
+		artistService := service.NewArtistService(whitelistManager, f.logger)
+		return releaseService, artistService
+	}
+	// Fallback для интерфейса
+	return nil, nil
+}
+
+// CreateKeyboardManager создает менеджер клавиатуры
+func (f *ComponentFactory) CreateKeyboardManager(
+	api botapi.BotAPI,
+	whitelistManager artist.WhitelistManager,
+	cache releasecache.Cache,
+) keyboard.KeyboardManagerInterface {
+	// Приведение типа для совместимости с существующим кодом
+	if cfg, ok := f.config.(*config.Config); ok {
+		return keyboard.NewKeyboardManager(api, f.logger, whitelistManager, cfg, cache)
+	}
+	// Fallback для интерфейса
+	return nil
+}
+
+// CreateWorkerPool создает пул воркеров
+func (f *ComponentFactory) CreateWorkerPool() worker.WorkerPoolInterface {
+	return worker.NewWorkerPool(f.config.GetMaxConcurrentRequests(), 100, f.logger)
+}
+
+// CreateCommandCache создает кэш команд
+func (f *ComponentFactory) CreateCommandCache() commandcache.CommandCacheInterface {
+	if !f.config.GetCommandCacheEnabled() {
+		return nil
+	}
+	return commandcache.NewCommandCache(f.config.GetCommandCacheTTL(), f.logger)
+}
+
+// CreateRateLimiter создает ограничитель запросов
+func (f *ComponentFactory) CreateRateLimiter() middleware.RateLimiterInterface {
+	if !f.config.GetRateLimitEnabled() {
+		return nil
+	}
+	return middleware.NewRateLimiter(
+		f.config.GetRateLimitRequests(),
+		f.config.GetRateLimitWindow(),
+		f.logger,
+	)
+}
+
+// CreateHealthServer создает сервер health check
+func (f *ComponentFactory) CreateHealthServer() health.HealthServerInterface {
+	if !f.config.GetHealthCheckEnabled() {
+		return nil
+	}
+	return health.NewHealthServer(f.config.GetHealthCheckPort(), f.logger)
+}
+
+// CreateDependencies создает все зависимости
+func (f *ComponentFactory) CreateDependencies(
+	api botapi.BotAPI,
+	whitelistManager artist.WhitelistManager,
+	cache releasecache.Cache,
+	releaseService *service.ReleaseService,
+	artistService *service.ArtistService,
+	keyboardManager keyboard.KeyboardManagerInterface,
+	workerPool worker.WorkerPoolInterface,
+	commandCache commandcache.CommandCacheInterface,
+) *types.Dependencies {
+	debouncer := debounce.NewDebouncer()
+
+	return &types.Dependencies{
+		BotAPI:         api,
+		Logger:         f.logger,
+		Config:         f.config,
+		ReleaseService: releaseService,
+		ArtistService:  artistService,
+		Keyboard:       keyboardManager,
+		Debouncer:      debouncer,
+		Cache:          cache,
+		WorkerPool:     workerPool,
+		CommandCache:   commandCache,
+	}
+}

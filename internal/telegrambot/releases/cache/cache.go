@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"gemfactory/internal/telegrambot/bot/worker"
 	"gemfactory/internal/telegrambot/releases/release"
 	"sort"
 	"strings"
@@ -60,10 +61,11 @@ func (cm *CacheManager) StoreReleases(month string, releases []release.Release) 
 		Releases:  releases,
 		Timestamp: time.Now(),
 	}
+
 	cm.SetEntry(cacheKey, entry)
 }
 
-// ScheduleUpdate schedules a cache update for specified months
+// ScheduleUpdate schedules a cache update for specified months using worker pool
 func (cm *CacheManager) ScheduleUpdate() {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -73,11 +75,30 @@ func (cm *CacheManager) ScheduleUpdate() {
 	}
 
 	cm.logger.Info("Scheduled cache update")
-	go func() {
-		if err := cm.updater.InitializeCache(context.Background()); err != nil {
-			cm.logger.Error("Cache update failed", zap.Error(err))
-		}
-	}()
+
+	// Создаем задачу для обновления кэша
+	job := worker.Job{
+		UpdateID: 0, // Не используется для cache
+		UserID:   0, // Не используется для cache
+		Command:  "cache_update",
+		Handler: func() error {
+			if err := cm.updater.InitializeCache(context.Background()); err != nil {
+				cm.logger.Error("Cache update failed", zap.Error(err))
+				return err
+			}
+			return nil
+		},
+	}
+
+	if err := cm.workerPool.Submit(job); err != nil {
+		cm.logger.Error("Failed to submit cache update job", zap.Error(err))
+		// Fallback к синхронному обновлению
+		go func() {
+			if err := cm.updater.InitializeCache(context.Background()); err != nil {
+				cm.logger.Error("Cache update failed", zap.Error(err))
+			}
+		}()
+	}
 }
 
 // Clear clears the cache
@@ -88,21 +109,20 @@ func (cm *CacheManager) Clear() {
 	cm.cache = make(map[string]CacheEntry)
 }
 
-// StartUpdater starts the periodic cache updater
+// StartUpdater starts the periodic cache updater using worker pool
 func (cm *CacheManager) StartUpdater() {
 	ticker := time.NewTicker(cm.duration)
 	defer ticker.Stop()
 
-	if err := cm.updater.InitializeCache(context.Background()); err != nil {
-		cm.logger.Error("Initial cache update failed", zap.Error(err))
-	}
+	// Запускаем worker pool
+	cm.workerPool.Start()
+	defer cm.workerPool.Stop()
+
+	// Немедленное обновление кэша при старте
+	cm.ScheduleUpdate()
 
 	for range ticker.C {
-		go func() {
-			if err := cm.updater.InitializeCache(context.Background()); err != nil {
-				cm.logger.Error("Periodic cache update failed", zap.Error(err))
-			}
-		}()
+		cm.ScheduleUpdate()
 	}
 }
 

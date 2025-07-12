@@ -1,91 +1,106 @@
 package bot
 
 import (
+	"context"
 	"fmt"
-	"gemfactory/internal/debounce"
 	"gemfactory/internal/telegrambot/bot/botapi"
+	commandcache "gemfactory/internal/telegrambot/bot/cache"
 	"gemfactory/internal/telegrambot/bot/commands"
+	"gemfactory/internal/telegrambot/bot/health"
 	"gemfactory/internal/telegrambot/bot/keyboard"
 	"gemfactory/internal/telegrambot/bot/middleware"
 	"gemfactory/internal/telegrambot/bot/router"
-	"gemfactory/internal/telegrambot/bot/service"
 	"gemfactory/internal/telegrambot/bot/types"
-	"gemfactory/internal/telegrambot/releases/artist"
-	"gemfactory/internal/telegrambot/releases/cache"
-	"gemfactory/internal/telegrambot/releases/scraper"
-	"gemfactory/internal/telegrambot/releases/updater"
+	"gemfactory/internal/telegrambot/bot/worker"
 	"gemfactory/pkg/config"
 	"strings"
+	"sync"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
 )
 
-// Bot represents the Telegram bot
+// Bot represents the main bot instance
 type Bot struct {
-	api      botapi.BotAPI
-	logger   *zap.Logger
-	config   *config.Config
-	router   *router.Router
-	deps     *types.Dependencies
-	keyboard *keyboard.KeyboardManager
+	api          botapi.BotAPI
+	logger       *zap.Logger
+	config       config.ConfigInterface
+	router       router.RouterInterface
+	deps         *types.Dependencies
+	keyboard     keyboard.KeyboardManagerInterface
+	workerPool   worker.WorkerPoolInterface
+	health       health.HealthServerInterface
+	commandCache commandcache.CommandCacheInterface
+	rateLimiter  middleware.RateLimiterInterface
+	stopChan     chan struct{}
+	wg           sync.WaitGroup
 }
 
-// NewBot creates a new bot instance
+// Убеждаемся, что Bot реализует BotInterface
+var _ BotInterface = (*Bot)(nil)
+
+// NewBot creates a new Bot instance
 func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
-	tgApi, err := tgbotapi.NewBotAPI(config.BotToken)
+	factory := NewComponentFactory(config, logger)
+
+	// Создаем компоненты через фабрику
+	api, err := factory.CreateBotAPI()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Telegram bot: %w", err)
 	}
 
-	api := botapi.NewTelegramBotAPI(tgApi)
-	al := artist.NewWhitelistManager(config.WhitelistDir, logger)
-
-	if len(al.GetFemaleWhitelist()) == 0 && len(al.GetMaleWhitelist()) == 0 {
+	whitelistManager := factory.CreateWhitelistManager()
+	if len(whitelistManager.GetFemaleWhitelist()) == 0 && len(whitelistManager.GetMaleWhitelist()) == 0 {
 		logger.Warn("Both female and male whitelists are empty; populate at least one whitelist using /add_artist")
 	}
 
-	scraper := scraper.NewFetcher(config, logger)
-	cacheManager := cache.NewCacheManager(config, logger, al, scraper, nil)
-	updater := updater.NewUpdater(config, logger, al, cacheManager, scraper)
-	cacheManager.SetUpdater(updater)
+	scraper := factory.CreateScraper()
+	cache := factory.CreateCacheManager(whitelistManager, scraper)
+	releaseService, artistService := factory.CreateServices(whitelistManager, cache)
+	keyboardManager := factory.CreateKeyboardManager(api, whitelistManager, cache)
+	workerPool := factory.CreateWorkerPool()
+	commandCache := factory.CreateCommandCache()
+	rateLimiter := factory.CreateRateLimiter()
+	healthServer := factory.CreateHealthServer()
 
-	debouncer := debounce.NewDebouncer()
-	releaseService := service.NewReleaseService(al, config, logger, cacheManager)
-	artistService := service.NewArtistService(al, logger)
-	keyboardManager := keyboard.NewKeyboardManager(api, logger, al, config, cacheManager)
+	deps := factory.CreateDependencies(
+		api, whitelistManager, cache, releaseService, artistService,
+		keyboardManager, workerPool, commandCache,
+	)
 
-	deps := &types.Dependencies{
-		BotAPI:         api,
-		Logger:         logger,
-		Config:         config,
-		ReleaseService: releaseService,
-		ArtistService:  artistService,
-		Keyboard:       keyboardManager,
-		Debouncer:      debouncer,
-		Cache:          cacheManager,
-	}
-
+	// Настраиваем роутер
 	r := router.NewRouter()
 	r.Use(middleware.LogRequest)
 	r.Use(middleware.Debounce)
 	r.Use(middleware.ErrorHandler)
 
+	// Добавляем rate limiting middleware если включен
+	if rateLimiter != nil {
+		r.Use(createRateLimitMiddleware(rateLimiter, logger))
+	}
+
 	logger.Info("Initializing command routes")
 	commands.RegisterRoutes(r, deps)
 
 	bot := &Bot{
-		api:      api,
-		logger:   logger,
-		config:   config,
-		router:   r,
-		deps:     deps,
-		keyboard: keyboardManager,
+		api:          api,
+		logger:       logger,
+		config:       config,
+		router:       r,
+		deps:         deps,
+		keyboard:     keyboardManager,
+		workerPool:   workerPool,
+		health:       healthServer,
+		commandCache: commandCache,
+		rateLimiter:  rateLimiter,
+		stopChan:     make(chan struct{}),
 	}
 
-	if len(al.GetFemaleWhitelist()) > 0 || len(al.GetMaleWhitelist()) > 0 {
+	// Запускаем обновление кэша если есть данные
+	if len(whitelistManager.GetFemaleWhitelist()) > 0 || len(whitelistManager.GetMaleWhitelist()) > 0 {
 		logger.Info("Starting cache updater")
-		go cacheManager.StartUpdater()
+		go cache.StartUpdater()
 	} else {
 		logger.Warn("Cache updater not started due to empty whitelists")
 	}
@@ -93,70 +108,170 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 	return bot, nil
 }
 
+// createRateLimitMiddleware создает middleware для rate limiting
+func createRateLimitMiddleware(rateLimiter middleware.RateLimiterInterface, logger *zap.Logger) types.Middleware {
+	return func(ctx types.Context, next types.HandlerFunc) error {
+		userID := ctx.Message.From.ID
+		if !rateLimiter.AllowRequest(userID) {
+			logger.Warn("Rate limit exceeded",
+				zap.Int64("user_id", userID),
+				zap.String("command", ctx.Message.Command()))
+			return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
+				"Слишком много запросов. Попробуйте позже.")
+		}
+		return next(ctx)
+	}
+}
+
 // Start runs the bot
 func (b *Bot) Start() error {
 	defer b.keyboard.Stop()
+	defer b.workerPool.Stop()
 
-	tgApi := b.api.(*botapi.TelegramBotAPI).GetAPI()
-	b.logger.Info("Bot started", zap.String("username", tgApi.Self.UserName))
+	// Запускаем worker pool
+	b.workerPool.Start()
 
-	_, err := tgApi.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: true})
-	if err != nil {
-		b.logger.Error("Failed to delete webhook", zap.Error(err))
-		return fmt.Errorf("failed to delete webhook: %w", err)
+	// Запускаем worker pool в keyboard manager
+	b.keyboard.StartWorkerPool()
+
+	// Запускаем health check сервер
+	if b.health != nil {
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			if err := b.health.Start(); err != nil {
+				b.logger.Error("Health check server failed", zap.Error(err))
+			}
+		}()
 	}
 
-	if err := b.deps.SetBotCommands(); err != nil {
-		b.logger.Error("Failed to set bot commands", zap.Error(err))
-		return fmt.Errorf("failed to set bot commands: %w", err)
+	// Запускаем очистку rate limiter
+	if b.rateLimiter != nil {
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			ticker := time.NewTicker(b.config.GetRateLimitWindow())
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ticker.C:
+					b.rateLimiter.Cleanup()
+				case <-b.stopChan:
+					return
+				}
+			}
+		}()
 	}
 
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
-	u.AllowedUpdates = []string{"message", "callback_query"}
+	reconnectDelay := 10 * time.Second // Задержка между попытками реконнекта
 
-	b.logger.Info("Starting to fetch updates")
-	updatesChan := tgApi.GetUpdatesChan(u)
-	if updatesChan == nil {
-		return fmt.Errorf("failed to create updates channel")
-	}
-
-	for update := range updatesChan {
-		if update.Message != nil {
-			b.logger.Debug("Received message",
-				zap.String("text", update.Message.Text),
-				zap.Int64("chat_id", update.Message.Chat.ID),
-				zap.String("user", types.GetUserIdentifier(update.Message.From)),
-				zap.Int("update_id", update.UpdateID))
-		} else if update.CallbackQuery != nil {
-			month := extractMonth(update.CallbackQuery.Data)
-			b.logger.Info("Received callback",
-				zap.String("data", update.CallbackQuery.Data),
-				zap.String("month", month),
-				zap.Int64("chat_id", update.CallbackQuery.Message.Chat.ID),
-				zap.String("user", types.GetUserIdentifier(update.CallbackQuery.From)))
-			b.logger.Debug("Callback details",
-				zap.Int("update_id", update.UpdateID))
+	for {
+		select {
+		case <-b.stopChan:
+			b.logger.Info("Received stop signal before start polling")
+			return nil
+		default:
 		}
 
-		if update.Message == nil && update.CallbackQuery == nil {
+		tgApi := b.api.(*botapi.TelegramBotAPI).GetAPI()
+		b.logger.Info("Bot started", zap.String("username", tgApi.Self.UserName))
+
+		_, err := tgApi.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: true})
+		if err != nil {
+			b.logger.Error("Failed to delete webhook", zap.Error(err))
+			return fmt.Errorf("failed to delete webhook: %w", err)
+		}
+
+		if err := b.deps.SetBotCommands(); err != nil {
+			b.logger.Error("Failed to set bot commands", zap.Error(err))
+			return fmt.Errorf("failed to set bot commands: %w", err)
+		}
+
+		u := tgbotapi.NewUpdate(0)
+		u.Timeout = 60
+		u.AllowedUpdates = []string{"message", "callback_query"}
+
+		b.logger.Info("Starting to fetch updates")
+		updatesChan := tgApi.GetUpdatesChan(u)
+		if updatesChan == nil {
+			b.logger.Error("Failed to create updates channel, will retry after delay")
+			time.Sleep(reconnectDelay)
 			continue
 		}
 
-		if update.CallbackQuery != nil {
-			go b.keyboard.HandleCallbackQuery(update.CallbackQuery)
-			continue
+		for update := range updatesChan {
+			select {
+			case <-b.stopChan:
+				b.logger.Info("Received stop signal")
+				return nil
+			default:
+			}
+
+			if update.Message != nil {
+				b.logger.Debug("Received message",
+					zap.String("text", update.Message.Text),
+					zap.Int64("chat_id", update.Message.Chat.ID),
+					zap.String("user", types.GetUserIdentifier(update.Message.From)),
+					zap.Int("update_id", update.UpdateID))
+			} else if update.CallbackQuery != nil {
+				month := extractMonth(update.CallbackQuery.Data)
+				b.logger.Info("Received callback",
+					zap.String("data", update.CallbackQuery.Data),
+					zap.String("month", month),
+					zap.Int64("chat_id", update.CallbackQuery.Message.Chat.ID),
+					zap.String("user", types.GetUserIdentifier(update.CallbackQuery.From)))
+				b.logger.Debug("Callback details",
+					zap.Int("update_id", update.UpdateID))
+			}
+
+			if update.Message == nil && update.CallbackQuery == nil {
+				continue
+			}
+
+			if update.CallbackQuery != nil {
+				// Обрабатываем callback query через worker pool
+				job := worker.Job{
+					UpdateID: update.UpdateID,
+					UserID:   update.CallbackQuery.From.ID,
+					Command:  "callback_query",
+					Handler: func() error {
+						b.keyboard.HandleCallbackQuery(update.CallbackQuery)
+						return nil
+					},
+				}
+				if err := b.workerPool.Submit(job); err != nil {
+					b.logger.Error("Failed to submit callback job", zap.Error(err))
+					// Fallback к синхронной обработке
+					go b.keyboard.HandleCallbackQuery(update.CallbackQuery)
+				}
+				continue
+			}
+
+			if !update.Message.IsCommand() {
+				continue
+			}
+
+			// Обрабатываем команды через worker pool
+			job := worker.Job{
+				UpdateID: update.UpdateID,
+				UserID:   update.Message.From.ID,
+				Command:  update.Message.Command(),
+				Handler: func() error {
+					b.handleUpdate(update)
+					return nil
+				},
+			}
+			if err := b.workerPool.Submit(job); err != nil {
+				b.logger.Error("Failed to submit command job", zap.Error(err))
+				// Fallback к синхронной обработке
+				go b.handleUpdate(update)
+			}
 		}
 
-		if !update.Message.IsCommand() {
-			continue
-		}
-
-		go b.handleUpdate(update)
+		b.logger.Warn("Update channel closed, will try to reconnect after delay")
+		time.Sleep(reconnectDelay)
 	}
-
-	b.logger.Info("Update channel closed")
-	return nil
 }
 
 // handleUpdate processes incoming updates
@@ -174,6 +289,44 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 			zap.Int("update_id", ctx.UpdateID),
 			zap.Error(err))
 	}
+}
+
+// Stop gracefully stops the bot
+func (b *Bot) Stop() error {
+	b.logger.Info("Stopping bot gracefully")
+
+	// Отправляем сигнал остановки
+	close(b.stopChan)
+
+	// Останавливаем health check сервер
+	if b.health != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := b.health.Stop(ctx); err != nil {
+			b.logger.Error("Failed to stop health check server", zap.Error(err))
+		}
+	}
+
+	// Ждем завершения всех горутин
+	b.wg.Wait()
+
+	// Останавливаем worker pool
+	b.workerPool.Stop()
+
+	// Останавливаем keyboard manager
+	b.keyboard.Stop()
+
+	// Очищаем кэш
+	b.deps.Cache.Clear()
+
+	// Логируем метрики worker pool
+	b.logger.Info("Worker pool metrics",
+		zap.Int64("processed_jobs", b.workerPool.GetProcessedJobs()),
+		zap.Int64("failed_jobs", b.workerPool.GetFailedJobs()),
+		zap.Duration("total_processing_time", b.workerPool.GetProcessingTime()))
+
+	b.logger.Info("Bot stopped successfully")
+	return nil
 }
 
 // extractMonth extracts the month from callback data

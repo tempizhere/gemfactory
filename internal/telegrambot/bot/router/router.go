@@ -12,6 +12,9 @@ type Router struct {
 	middlewares []types.Middleware
 }
 
+// Убеждаемся, что Router реализует RouterInterface
+var _ RouterInterface = (*Router)(nil)
+
 // NewRouter creates a new Router instance
 func NewRouter() *Router {
 	return &Router{

@@ -10,11 +10,11 @@ import (
 
 // RegisterAdminRoutes registers admin command handlers
 func RegisterAdminRoutes(r *router.Router, deps *types.Dependencies) {
-	r.Handle("add_artist", middleware.Wrap(middleware.AdminOnly(deps.Config.AdminUsername), handleAddArtist))
-	r.Handle("remove_artist", middleware.Wrap(middleware.AdminOnly(deps.Config.AdminUsername), handleRemoveArtist))
-	r.Handle("clearcache", middleware.Wrap(middleware.AdminOnly(deps.Config.AdminUsername), handleClearCache))
-	r.Handle("clearwhitelists", middleware.Wrap(middleware.AdminOnly(deps.Config.AdminUsername), handleClearWhitelists))
-	r.Handle("export", middleware.Wrap(middleware.AdminOnly(deps.Config.AdminUsername), handleExport))
+	r.Handle("add_artist", middleware.Wrap(middleware.AdminOnly(deps.Config.GetAdminUsername()), handleAddArtist))
+	r.Handle("remove_artist", middleware.Wrap(middleware.AdminOnly(deps.Config.GetAdminUsername()), handleRemoveArtist))
+	r.Handle("clearcache", middleware.Wrap(middleware.AdminOnly(deps.Config.GetAdminUsername()), handleClearCache))
+	r.Handle("clearwhitelists", middleware.Wrap(middleware.AdminOnly(deps.Config.GetAdminUsername()), handleClearWhitelists))
+	r.Handle("export", middleware.Wrap(middleware.AdminOnly(deps.Config.GetAdminUsername()), handleExport))
 }
 
 func handleAddArtist(ctx types.Context) error {
@@ -87,6 +87,13 @@ func handleRemoveArtist(ctx types.Context) error {
 
 func handleClearCache(ctx types.Context) error {
 	ctx.Deps.ReleaseService.ClearCache()
+
+	// Также очищаем command cache если включен
+	if ctx.Deps.CommandCache != nil {
+		ctx.Deps.CommandCache.Clear()
+		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID, "Кэш релизов и command cache очищены, обновление запущено")
+	}
+
 	return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID, "Кэш очищен, обновление запущено")
 }
 
@@ -100,4 +107,9 @@ func handleClearWhitelists(ctx types.Context) error {
 func handleExport(ctx types.Context) error {
 	response := ctx.Deps.ArtistService.FormatWhitelistsForExport()
 	return ctx.Deps.BotAPI.SendMessageWithMarkup(ctx.Message.Chat.ID, response, ctx.Deps.Keyboard.GetMainKeyboard())
+}
+
+// isAdmin проверяет, является ли пользователь администратором
+func isAdmin(username, adminUsername string) bool {
+	return username == adminUsername
 }

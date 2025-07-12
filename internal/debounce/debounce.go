@@ -11,6 +11,9 @@ type Debouncer struct {
 	mu          sync.Mutex
 }
 
+// Убеждаемся, что Debouncer реализует DebouncerInterface
+var _ DebouncerInterface = (*Debouncer)(nil)
+
 const debounceTimeout = 5 * time.Second
 
 // NewDebouncer creates a new Debouncer instance

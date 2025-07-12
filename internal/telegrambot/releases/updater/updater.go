@@ -65,6 +65,7 @@ func (u *UpdaterImpl) InitializeCache(ctx context.Context) error {
 	var errs []error
 	var errsMu sync.Mutex
 
+	// Последовательная обработка месяцев для избежания блокировки сайта
 	for _, month := range months {
 		u.logger.Debug("Starting task", zap.String("task", "process month "+month))
 		monthCtx, monthCancel := context.WithCancel(ctx)

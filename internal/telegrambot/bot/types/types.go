@@ -3,9 +3,11 @@ package types
 import (
 	"gemfactory/internal/debounce"
 	"gemfactory/internal/telegrambot/bot/botapi"
+	commandcache "gemfactory/internal/telegrambot/bot/cache"
 	"gemfactory/internal/telegrambot/bot/keyboard"
 	"gemfactory/internal/telegrambot/bot/service"
-	"gemfactory/internal/telegrambot/releases/cache"
+	"gemfactory/internal/telegrambot/bot/worker"
+	releasecache "gemfactory/internal/telegrambot/releases/cache"
 	"gemfactory/pkg/config"
 	"strings"
 
@@ -23,12 +25,14 @@ type Middleware func(ctx Context, next HandlerFunc) error
 type Dependencies struct {
 	BotAPI         botapi.BotAPI
 	Logger         *zap.Logger
-	Config         *config.Config
+	Config         config.ConfigInterface
 	ReleaseService service.ReleaseServiceInterface
 	ArtistService  service.ArtistServiceInterface
-	Keyboard       *keyboard.KeyboardManager
-	Debouncer      *debounce.Debouncer
-	Cache          cache.Cache
+	Keyboard       keyboard.KeyboardManagerInterface
+	Debouncer      debounce.DebouncerInterface
+	Cache          releasecache.Cache
+	WorkerPool     worker.WorkerPoolInterface
+	CommandCache   commandcache.CommandCacheInterface
 }
 
 // Context holds the context for command handlers
@@ -45,6 +49,8 @@ func (d *Dependencies) SetBotCommands() error {
 		{Command: "/help", Description: "Показать справку"},
 		{Command: "/month", Description: "Получить релизы за месяц"},
 		{Command: "/whitelists", Description: "Показать списки артистов"},
+		{Command: "/metrics", Description: "Показать метрики системы"},
+		{Command: "/clearcache", Description: "Очистить кэш (только для админов)"},
 	}
 	if err := d.BotAPI.SetBotCommands(commands); err != nil {
 		return err
