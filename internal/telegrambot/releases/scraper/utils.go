@@ -20,7 +20,7 @@ func ExtractYouTubeLinkFromEvent(e *colly.HTMLElement, startIndex, endIndex int,
 	}
 
 	e.ForEach("td.has-text-align-left", func(_ int, s *colly.HTMLElement) {
-		s.DOM.Contents().Each(func(i int, node *goquery.Selection) {
+		s.DOM.Contents().Each(func(_ int, node *goquery.Selection) {
 			if node.Is("br") {
 				currentIndex++
 			} else if currentIndex >= startIndex && currentIndex < endIndex {
@@ -42,15 +42,17 @@ func ExtractYouTubeLinkFromEvent(e *colly.HTMLElement, startIndex, endIndex int,
 }
 
 // ExtractAlbumName extracts album name from lines
-func ExtractAlbumName(lines []string, startIndex, endIndex int, logger *zap.Logger) string {
+func ExtractAlbumName(lines []string, startIndex, endIndex int, _ *zap.Logger) string {
 	for i := startIndex; i < endIndex && i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 		lowerLine := strings.ToLower(line)
-		if strings.HasPrefix(lowerLine, "album:") {
+
+		switch {
+		case strings.HasPrefix(lowerLine, "album:"):
 			return strings.TrimSpace(strings.TrimPrefix(line, "album:"))
-		} else if strings.HasPrefix(lowerLine, "ost:") {
+		case strings.HasPrefix(lowerLine, "ost:"):
 			return strings.TrimSpace(strings.TrimPrefix(line, "ost:"))
-		} else if strings.Contains(lowerLine, "mini album") || strings.Contains(lowerLine, "special mini album") {
+		case strings.Contains(lowerLine, "mini album") || strings.Contains(lowerLine, "special mini album"):
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
 				return strings.TrimSpace(parts[1])
@@ -61,7 +63,7 @@ func ExtractAlbumName(lines []string, startIndex, endIndex int, logger *zap.Logg
 }
 
 // ExtractTrackName extracts track name from lines
-func ExtractTrackName(lines []string, startIndex, endIndex int, logger *zap.Logger) string {
+func ExtractTrackName(lines []string, startIndex, endIndex int, _ *zap.Logger) string {
 	for i := startIndex; i < endIndex && i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 		line = strings.ReplaceAll(line, "‘", "'")
@@ -71,11 +73,13 @@ func ExtractTrackName(lines []string, startIndex, endIndex int, logger *zap.Logg
 
 		lowerLine := strings.ToLower(line)
 		var trackName string
-		if strings.HasPrefix(lowerLine, "title track:") {
+
+		switch {
+		case strings.HasPrefix(lowerLine, "title track:"):
 			trackName = strings.TrimSpace(strings.TrimPrefix(line, "title track:"))
-		} else if strings.Contains(lowerLine, "release") || strings.Contains(lowerLine, "pre-release") || strings.Contains(lowerLine, "mv release") {
+		case strings.Contains(lowerLine, "release") || strings.Contains(lowerLine, "pre-release") || strings.Contains(lowerLine, "mv release"):
 			trackName = line
-		} else {
+		default:
 			continue
 		}
 

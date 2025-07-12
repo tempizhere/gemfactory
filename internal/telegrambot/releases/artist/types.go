@@ -1,3 +1,4 @@
+// Package artist содержит типы и логику для работы с артистами.
 package artist
 
 // WhitelistManager defines the interface for managing artist whitelists

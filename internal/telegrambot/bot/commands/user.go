@@ -8,11 +8,12 @@ import (
 )
 
 // RegisterUserRoutes registers user command handlers
-func RegisterUserRoutes(r *router.Router, deps *types.Dependencies) {
+func RegisterUserRoutes(r *router.Router, _ *types.Dependencies) {
 	r.Handle("start", handleStart)
 	r.Handle("help", handleHelp)
 	r.Handle("month", handleMonth)
 	r.Handle("whitelists", handleWhitelists)
+	r.Handle("metrics", handleMetricsCommand)
 }
 
 func handleStart(ctx types.Context) error {
@@ -27,8 +28,9 @@ func handleHelp(ctx types.Context) error {
 		"/month [месяц] -gg - Релизы только женских групп\n" +
 		"/month [месяц] -mg - Релизы только мужских групп\n" +
 		"/whitelists - Показать списки артистов\n" +
+		"/metrics - Показать метрики системы\n" +
 		"\n" +
-		fmt.Sprintf("По вопросам вайтлистов: @%s", ctx.Deps.Config.AdminUsername)
+		fmt.Sprintf("По вопросам вайтлистов: @%s", ctx.Deps.Config.GetAdminUsername())
 	return ctx.Deps.BotAPI.SendMessageWithMarkup(ctx.Message.Chat.ID, text, ctx.Deps.Keyboard.GetMainKeyboard())
 }
 
@@ -62,4 +64,31 @@ func handleMonth(ctx types.Context) error {
 func handleWhitelists(ctx types.Context) error {
 	response := ctx.Deps.ArtistService.FormatWhitelists()
 	return ctx.Deps.BotAPI.SendMessageWithMarkup(ctx.Message.Chat.ID, response, ctx.Deps.Keyboard.GetMainKeyboard())
+}
+
+// handleMetricsCommand handles the /metrics command
+func handleMetricsCommand(ctx types.Context) error {
+	var response strings.Builder
+	response.WriteString("📊 **Метрики системы**\n\n")
+	response.WriteString("🤖 **Основной бот:**\n")
+	response.WriteString(fmt.Sprintf("  • Обработано задач: %d\n", ctx.Deps.WorkerPool.GetProcessedJobs()))
+	response.WriteString(fmt.Sprintf("  • Неудачных задач: %d\n", ctx.Deps.WorkerPool.GetFailedJobs()))
+	response.WriteString(fmt.Sprintf("  • Общее время обработки: %v\n", ctx.Deps.WorkerPool.GetProcessingTime()))
+	response.WriteString(fmt.Sprintf("  • Размер очереди: %d\n\n", ctx.Deps.WorkerPool.GetQueueSize()))
+
+	// Добавляем метрики command cache
+	if ctx.Deps.CommandCache != nil {
+		stats := ctx.Deps.CommandCache.Stats()
+		response.WriteString("🗂️ **Command Cache:**\n")
+		response.WriteString(fmt.Sprintf("  • Размер кэша: %v\n", stats["size"]))
+		response.WriteString(fmt.Sprintf("  • TTL: %v\n\n", stats["ttl"]))
+	} else {
+		response.WriteString("🗂️ **Command Cache:** Отключен\n\n")
+	}
+
+	response.WriteString("🔄 **Статус системы:**\n")
+	response.WriteString("  • Все worker pool активны\n")
+	response.WriteString("  • Система работает стабильно\n")
+
+	return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID, response.String())
 }

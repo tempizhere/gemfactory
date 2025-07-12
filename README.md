@@ -7,34 +7,42 @@ Gemfactory is a Telegram bot designed to provide users with schedules of K-pop c
 
 ## Features
 
-- **K-pop Release Schedules**: Retrieve upcoming K-pop comebacks and releases for a specific month.
-- **Whitelist Filtering**: Filter releases by female (`-gg`) or male (`-mg`) artists using curated whitelists.
-- **Dynamic Whitelists**: Admins can manage artist whitelists with commands like `/add_artist` and `/remove_artist`.
-- **User-Friendly Output**: Formatted release lists and whitelists displayed in Telegram with HTML and monospaced fonts.
-- **Caching**: Efficient caching of release data to reduce external API calls.
-- **Dockerized Deployment**: Easy deployment with Docker and Docker Compose, supporting persistent storage for whitelists.
+- **K-pop Release Schedules**: Retrieve upcoming K-pop comebacks and releases for a specific month
+- **Whitelist Filtering**: Filter releases by female (`-gg`) or male (`-mg`) artists using curated whitelists
+- **Dynamic Whitelists**: Admins can manage artist whitelists with commands like `/add_artist` and `/remove_artist`
+- **Interactive Interface**: User-friendly keyboard interface for month selection with current, previous, and next month quick access
+- **Smart Caching**: Efficient caching system with automatic updates and retry mechanisms
+- **Fault Tolerance**: Automatic restart on failures, request rate limiting, and API error handling
+- **Timezone Support**: Configurable timezone settings (default: Asia/Seoul)
+- **Persistent Storage**: Docker volume-based storage for whitelist data
 
 ## Commands
 
-- `/help`: Display available commands and contact info for whitelist inquiries.
-- `/month [month]`: Show K-pop releases for the specified month (e.g., `/month april`).
-- `/month [month] -gg`: Show releases only for female artists.
-- `/month [month] -mg`: Show releases only for male artists.
-- `/whitelists`: Display lists of female and male artists in a multi-column format.
-- `/add_artist [female/male] [artists]`: Add artists to the female or male whitelist (admin only).
-- `/remove_artist [artists]`: Remove artists from the whitelist (admin only).
-- `/clearwhitelists`: Clear all whitelists (admin only).
-- `/clearcache`: Clears the cache and reinitializes it (admin only).
-- `/export`: Exports whitelists (admin only).
+### User Commands
 
-For whitelist-related questions, contact the admin (e.g., `@fullofsarang`).
+- `/start`: Start interaction with the bot and display month selection keyboard
+- `/help`: Display available commands and admin contact information
+- `/month [month]`: Show K-pop releases for the specified month (e.g., `/month april`)
+- `/month [month] -gg`: Show releases only for female artists
+- `/month [month] -mg`: Show releases only for male artists
+- `/whitelists`: Display lists of female and male artists in a multi-column format
+
+### Admin Commands
+
+Whitelist management commands are only available to the user specified in `ADMIN_USERNAME` environment variable:
+
+- `/add_artist [female/male] [artists]`: Add artists to the whitelist
+- `/remove_artist [artists]`: Remove artists from the whitelist
+- `/clearwhitelists`: Clear all whitelists
+- `/clearcache`: Clear and reinitialize the cache
+- `/export`: Export whitelists
 
 ## Prerequisites
 
-- **Go**: Version 1.24 or higher (for development).
-- **Docker**: For containerized deployment.
-- **Docker Compose**: For orchestrating the bot with persistent storage.
-- **Telegram Bot Token**: Obtain from BotFather in Telegram.
+- **Go**: Version 1.21 or higher (for development)
+- **Docker**: For containerized deployment
+- **Docker Compose**: For orchestrating the bot with persistent storage
+- **Telegram Bot Token**: Obtain from BotFather in Telegram
 
 ## Running the Bot
 
@@ -65,27 +73,79 @@ volumes:
     name: whitelist_data
 ```
 
+### Environment Variables
+
+- `BOT_TOKEN`: Telegram bot token
+- `ADMIN_USERNAME`: Admin's Telegram username
+- `CACHE_DURATION`: Duration to cache data (default: 24h)
+- `MAX_RETRIES`: Maximum number of retries on failures (default: 3)
+- `REQUEST_DELAY`: Delay between requests (default: 3s)
+- `WHITELIST_DIR`: Directory for whitelist storage (default: data)
+- `LOG_LEVEL`: Logging level (default: info)
+- `TZ`: Timezone (default: Asia/Seoul)
+- `MAX_CONCURRENT_REQUESTS`: Maximum concurrent requests (default: 5)
+
 ## Deployment
 
-The bot is automatically built and published to Docker Hub (`tempizhere/gemfactory:latest`) via GitHub Actions on every push to the `main` branch. To deploy on your server:
+The bot is automatically built and published to Docker Hub (`tempizhere/gemfactory:latest`) via GitHub Actions on every push to the `main` branch. The CI/CD pipeline includes:
 
-1. Use the provided `docker-compose.yml` (see above).
+1. Automated testing
+2. Code linting
+3. Docker image building and publishing
+4. Automated deployment support
+
+To deploy on your server:
+
+1. Use the provided `docker-compose.yml` (see above)
 2. Deploy using a tool like **Dockge**:
-   - Copy the `docker-compose.yml` into Dockge.
-   - Create a stack and deploy it.
-3. Ensure the `.env` file is present on the server with the correct `BOT_TOKEN` and other variables.
+   - Copy the `docker-compose.yml` into Dockge
+   - Create a stack and deploy it
+3. Ensure the `.env` file is present on the server with the correct environment variables
 
 ## Development
 
 ### Project Structure
 
-- `cmd/bot/main.go`: Entry point for the bot.
-- `internal/telegrambot/`: Core bot logic, including scraping, caching, and command handling.
-- `pkg/`: Shared utilities (logging, configuration).
-- `data/`: Directory for whitelist JSON files.
+- `cmd/bot/main.go`: Entry point with configuration loading and bot initialization
+- `internal/`:
+  - `telegrambot/`:
+    - `bot/`: Core bot logic with command handling and keyboard management
+    - `releases/`: Release management, caching, and scraping logic
+  - `debounce/`: Rate limiting utilities
+- `pkg/`:
+  - `config/`: Configuration management
+  - `log/`: Structured logging with zap
+- `data/`: Whitelist JSON files storage
 
 ### Key Components
 
-- **Scraper**: Fetches K-pop release schedules from external sources (e.g., `kpopofficial.com`).
-- **Cache**: Stores release data to reduce API calls, updated every `CACHE_DURATION` (default: 24 hours).
-- **Whitelists**: Managed via `female_whitelist.json` and `male_whitelist.json`, editable by admins.
+- **Bot Core**: Handles Telegram API interaction and command routing
+- **Release Manager**: Manages K-pop release data and filtering
+- **Cache System**:
+  - Intelligent caching with periodic updates
+  - Configurable cache duration
+  - Concurrent update protection
+- **Whitelist Manager**:
+  - Separate female and male artist lists
+  - JSON-based persistent storage
+  - Thread-safe operations
+- **Keyboard Manager**:
+  - Dynamic month selection interface
+  - Automatic monthly updates
+  - Context-aware navigation
+- **Error Handling**:
+  - Comprehensive logging
+  - Automatic retries
+  - Rate limiting protection
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to your fork (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

@@ -21,15 +21,28 @@ import (
 
 // fetcherImpl implements the Fetcher interface
 type fetcherImpl struct {
-	config *config.Config
-	logger *zap.Logger
+	config     *config.Config
+	logger     *zap.Logger
+	httpClient *http.Client
 }
 
 // NewFetcher creates a new Fetcher instance
 func NewFetcher(config *config.Config, logger *zap.Logger) Fetcher {
+	httpConfig := HTTPClientConfig{
+		MaxIdleConns:          config.HTTPClientConfig.MaxIdleConns,
+		MaxIdleConnsPerHost:   config.HTTPClientConfig.MaxIdleConnsPerHost,
+		IdleConnTimeout:       config.HTTPClientConfig.IdleConnTimeout,
+		TLSHandshakeTimeout:   config.HTTPClientConfig.TLSHandshakeTimeout,
+		ResponseHeaderTimeout: config.HTTPClientConfig.ResponseHeaderTimeout,
+		DisableKeepAlives:     config.HTTPClientConfig.DisableKeepAlives,
+	}
+
+	httpClient := NewHTTPClient(httpConfig, logger)
+
 	return &fetcherImpl{
-		config: config,
-		logger: logger,
+		config:     config,
+		logger:     logger,
+		httpClient: httpClient,
 	}
 }
 
@@ -72,9 +85,22 @@ func (f *fetcherImpl) FetchMonthlyLinks(ctx context.Context, months []string) ([
 	})
 
 	url := "https://kpopofficial.com/category/kpop-comeback-schedule/"
-	if err := collector.Visit(url); err != nil {
-		f.logger.Error("Failed to visit main page", zap.String("url", url), zap.Error(err))
-		return nil, fmt.Errorf("failed to visit main page: %w", err)
+
+	// Используем retry механизм для надежности
+	retryConfig := RetryConfig{
+		MaxRetries:        f.config.RetryConfig.MaxRetries,
+		InitialDelay:      f.config.RetryConfig.InitialDelay,
+		MaxDelay:          f.config.RetryConfig.MaxDelay,
+		BackoffMultiplier: f.config.RetryConfig.BackoffMultiplier,
+	}
+
+	err := WithRetry(ctx, f.logger, retryConfig, func() error {
+		return collector.Visit(url)
+	})
+
+	if err != nil {
+		f.logger.Error("Failed to visit main page after retries", zap.String("url", url), zap.Error(err))
+		return nil, fmt.Errorf("failed to visit main page after retries: %w", err)
 	}
 	collector.Wait()
 
@@ -91,8 +117,8 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month string, w
 		return nil, fmt.Errorf("unknown month: %s", month)
 	}
 
-	var allReleases []release.Release
 	artistReleases := make(map[string][]release.Release)
+	allReleases := make([]release.Release, 0, len(artistReleases))
 	var mu sync.Mutex
 	rowCount := 0
 
@@ -112,9 +138,21 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month string, w
 		f.logger.Error("Failed to scrape page", zap.String("url", r.Request.URL.String()), zap.Error(err))
 	})
 
-	if err := collector.Visit(url); err != nil {
-		f.logger.Error("Failed to visit page", zap.String("url", url), zap.Error(err))
-		return nil, fmt.Errorf("failed to visit page: %w", err)
+	// Используем retry механизм для надежности
+	retryConfig := RetryConfig{
+		MaxRetries:        f.config.RetryConfig.MaxRetries,
+		InitialDelay:      f.config.RetryConfig.InitialDelay,
+		MaxDelay:          f.config.RetryConfig.MaxDelay,
+		BackoffMultiplier: f.config.RetryConfig.BackoffMultiplier,
+	}
+
+	err := WithRetry(ctx, f.logger, retryConfig, func() error {
+		return collector.Visit(url)
+	})
+
+	if err != nil {
+		f.logger.Error("Failed to visit page after retries", zap.String("url", url), zap.Error(err))
+		return nil, fmt.Errorf("failed to visit page after retries: %w", err)
 	}
 	collector.Wait()
 
@@ -136,15 +174,18 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month string, w
 				found = true
 				continue
 			}
-			if rel.TitleTrack != "N/A" && rel.MV != "" {
+
+			switch {
+			case rel.TitleTrack != "N/A" && rel.MV != "":
 				bestRelease = rel
-				break
-			} else if rel.TitleTrack != "N/A" && bestRelease.TitleTrack == "N/A" {
+				goto foundBest
+			case rel.TitleTrack != "N/A" && bestRelease.TitleTrack == "N/A":
 				bestRelease = rel
-			} else if rel.MV != "" && bestRelease.MV == "" {
+			case rel.MV != "" && bestRelease.MV == "":
 				bestRelease = rel
 			}
 		}
+	foundBest:
 		allReleases = append(allReleases, bestRelease)
 	}
 
@@ -165,10 +206,16 @@ func (f *fetcherImpl) newCollector() *colly.Collector {
 		colly.MaxDepth(1),
 	)
 
-	collector.WithTransport(&http.Transport{
-		ResponseHeaderTimeout: 180 * time.Second,
-		DisableKeepAlives:     true,
-	})
+	// Используем оптимизированный HTTP клиент
+	if f.httpClient != nil {
+		collector.WithTransport(f.httpClient.Transport)
+	} else {
+		// Fallback к стандартным настройкам
+		collector.WithTransport(&http.Transport{
+			ResponseHeaderTimeout: 180 * time.Second,
+			DisableKeepAlives:     true,
+		})
+	}
 
 	if err := collector.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
@@ -198,7 +245,7 @@ func (f *fetcherImpl) newCollector() *colly.Collector {
 }
 
 // extractRow extracts release data from a table row
-func (f *fetcherImpl) extractRow(ctx context.Context, e *colly.HTMLElement, monthNum string, whitelist map[string]struct{}, artistReleases map[string][]release.Release, mu *sync.Mutex, rowCount int) {
+func (f *fetcherImpl) extractRow(_ context.Context, e *colly.HTMLElement, monthNum string, whitelist map[string]struct{}, artistReleases map[string][]release.Release, mu *sync.Mutex, rowCount int) {
 	cfg := release.NewConfig()
 	dateText := e.ChildText("td.has-text-align-right mark")
 	if dateText == "" {

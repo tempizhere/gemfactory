@@ -55,7 +55,14 @@ func (m *whitelistManagerImpl) loadWhitelists() error {
 // loadFemaleWhitelist loads the female whitelist from JSON file
 func (m *whitelistManagerImpl) loadFemaleWhitelist() error {
 	path := filepath.Join(m.dir, "female_whitelist.json")
-	data, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+
+	// Базовая защита от path traversal
+	if strings.Contains(cleanPath, "..") {
+		return fmt.Errorf("invalid file path: %s", path)
+	}
+
+	data, err := os.ReadFile(cleanPath)
 	if err != nil {
 		m.logger.Error("Failed to read female whitelist", zap.Error(err))
 		return err
@@ -79,7 +86,14 @@ func (m *whitelistManagerImpl) loadFemaleWhitelist() error {
 // loadMaleWhitelist loads the male whitelist from JSON file
 func (m *whitelistManagerImpl) loadMaleWhitelist() error {
 	path := filepath.Join(m.dir, "male_whitelist.json")
-	data, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+
+	// Базовая защита от path traversal
+	if strings.Contains(cleanPath, "..") {
+		return fmt.Errorf("invalid file path: %s", path)
+	}
+
+	data, err := os.ReadFile(cleanPath)
 	if err != nil {
 		m.logger.Error("Failed to read male whitelist", zap.Error(err))
 		return err
@@ -122,7 +136,7 @@ func (m *whitelistManagerImpl) GetFemaleWhitelist() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var result []string
+	result := make([]string, 0, len(m.female))
 	for k := range m.female {
 		result = append(result, k)
 	}
@@ -138,7 +152,7 @@ func (m *whitelistManagerImpl) GetMaleWhitelist() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var result []string
+	result := make([]string, 0, len(m.male))
 	for k := range m.male {
 		result = append(result, k)
 	}
@@ -355,7 +369,7 @@ func (m *whitelistManagerImpl) ClearWhitelists() error {
 // saveWhitelist saves the specified whitelist to JSON
 func (m *whitelistManagerImpl) saveWhitelist(filename string, items map[string]struct{}) error {
 	path := filepath.Join(m.dir, filename)
-	var itemList []string
+	itemList := make([]string, 0, len(items))
 	for k := range items {
 		itemList = append(itemList, k)
 	}
@@ -366,7 +380,7 @@ func (m *whitelistManagerImpl) saveWhitelist(filename string, items map[string]s
 		return err
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		m.logger.Error("Failed to write whitelist", zap.String("filename", filename), zap.Error(err))
 		return err
 	}

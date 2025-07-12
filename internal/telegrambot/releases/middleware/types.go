@@ -1,3 +1,4 @@
+// Package middleware содержит типы для middleware парсинга релизов.
 package middleware
 
 import (
@@ -7,8 +8,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// MiddlewareFunc defines a middleware function for HTTP requests
-type MiddlewareFunc func(*colly.Request, *zap.Logger) error
+// Func defines a middleware function for HTTP requests
+type Func func(*colly.Request, *zap.Logger) error
 
 // TaskMiddlewareFunc defines a middleware function for asynchronous tasks
 type TaskMiddlewareFunc func(context.Context, *zap.Logger, func() error) error

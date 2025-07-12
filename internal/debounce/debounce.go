@@ -1,3 +1,4 @@
+// Package debounce реализует механизм дебаунса для предотвращения повторных запросов.
 package debounce
 
 import (
@@ -10,6 +11,9 @@ type Debouncer struct {
 	lastRequest map[string]time.Time
 	mu          sync.Mutex
 }
+
+// Убеждаемся, что Debouncer реализует DebouncerInterface
+var _ DebouncerInterface = (*Debouncer)(nil)
 
 const debounceTimeout = 5 * time.Second
 
