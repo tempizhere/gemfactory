@@ -29,14 +29,16 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+            ~/.cache/golangci-lint
+          key: ${{ runner.os }}-go-lint-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-go-lint-
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
           args: --timeout=5m
+          skip-cache: false
 
   test:
     name: Test
@@ -54,9 +56,9 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-test-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-go-test-
       - name: Install dependencies
         run: go mod download
       - name: Run tests
@@ -89,9 +91,9 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-build-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-go-build-
       - name: Build for multiple platforms
         run: |
           GOOS=linux GOARCH=amd64 go build -o build/gemfactory-linux-amd64 cmd/bot/main.go
@@ -142,8 +144,8 @@ jobs:
             tempizhere/gemfactory:latest
             ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=docker
+          cache-to: type=gha,mode=max,scope=docker
       - name: Docker Build Summary
         if: always()
         run: |
