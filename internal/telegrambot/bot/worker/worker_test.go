@@ -127,13 +127,19 @@ func TestWorkerPoolQueueFull(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	// Заполняем очередь
+	// Создаем канал для синхронизации
+	jobStarted := make(chan struct{})
+	jobFinished := make(chan struct{})
+
+	// Заполняем очередь долгой задачей
 	job1 := Job{
 		UpdateID: 1,
 		UserID:   1,
 		Command:  "test1",
 		Handler: func() error {
-			time.Sleep(200 * time.Millisecond) // Долгая задача
+			close(jobStarted)                  // Сигнализируем, что задача началась
+			time.Sleep(500 * time.Millisecond) // Очень долгая задача
+			close(jobFinished)                 // Сигнализируем, что задача закончилась
 			return nil
 		},
 	}
@@ -142,7 +148,15 @@ func TestWorkerPoolQueueFull(t *testing.T) {
 		t.Errorf("Failed to submit first job: %v", err)
 	}
 
-	// Пытаемся отправить еще одну задачу
+	// Ждем, пока первая задача начнет выполняться
+	<-jobStarted
+
+	// Проверяем, что очередь заполнена
+	if pool.GetQueueSize() != 0 {
+		t.Errorf("Expected queue size 0 after job started, got %d", pool.GetQueueSize())
+	}
+
+	// Пытаемся отправить еще одну задачу - должна получить ErrQueueFull
 	job2 := Job{
 		UpdateID: 2,
 		UserID:   2,
@@ -155,4 +169,7 @@ func TestWorkerPoolQueueFull(t *testing.T) {
 	if err := pool.Submit(job2); err != ErrQueueFull {
 		t.Errorf("Expected ErrQueueFull, got %v", err)
 	}
+
+	// Ждем завершения первой задачи
+	<-jobFinished
 }
