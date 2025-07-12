@@ -103,6 +103,9 @@ func TestWorkerPoolContextCancellation(t *testing.T) {
 	// Останавливаем пул
 	pool.Stop()
 
+	// Ждем немного, чтобы пул полностью остановился
+	time.Sleep(100 * time.Millisecond)
+
 	// Пытаемся отправить задачу после остановки
 	job := Job{
 		UpdateID: 1,
@@ -113,8 +116,9 @@ func TestWorkerPoolContextCancellation(t *testing.T) {
 		},
 	}
 
-	if err := pool.Submit(job); err == nil {
-		t.Error("Expected error when submitting job to stopped pool")
+	// Ожидаем ErrQueueFull, так как пул остановлен
+	if err := pool.Submit(job); err != ErrQueueFull {
+		t.Errorf("Expected ErrQueueFull when submitting job to stopped pool, got %v", err)
 	}
 }
 
@@ -151,22 +155,44 @@ func TestWorkerPoolQueueFull(t *testing.T) {
 	// Ждем, пока первая задача начнет выполняться
 	<-jobStarted
 
-	// Проверяем, что очередь заполнена
+	// Проверяем, что очередь пуста (задача взята воркером)
 	if pool.GetQueueSize() != 0 {
 		t.Errorf("Expected queue size 0 after job started, got %d", pool.GetQueueSize())
 	}
 
-	// Пытаемся отправить еще одну задачу - должна получить ErrQueueFull
-	job2 := Job{
+	// Теперь заполняем очередь до максимума
+	// Создаем задачу, которая будет долго выполняться и заблокирует воркер
+	blockingJob := Job{
 		UpdateID: 2,
 		UserID:   2,
-		Command:  "test2",
+		Command:  "blocking",
+		Handler: func() error {
+			time.Sleep(1 * time.Second) // Очень долгая задача
+			return nil
+		},
+	}
+
+	// Отправляем блокирующую задачу
+	if err := pool.Submit(blockingJob); err != nil {
+		t.Errorf("Failed to submit blocking job: %v", err)
+	}
+
+	// Проверяем, что очередь заполнена
+	if pool.GetQueueSize() != 1 {
+		t.Errorf("Expected queue size 1 after blocking job, got %d", pool.GetQueueSize())
+	}
+
+	// Пытаемся отправить еще одну задачу - должна получить ErrQueueFull
+	job3 := Job{
+		UpdateID: 3,
+		UserID:   3,
+		Command:  "test3",
 		Handler: func() error {
 			return nil
 		},
 	}
 
-	if err := pool.Submit(job2); err != ErrQueueFull {
+	if err := pool.Submit(job3); err != ErrQueueFull {
 		t.Errorf("Expected ErrQueueFull, got %v", err)
 	}
 

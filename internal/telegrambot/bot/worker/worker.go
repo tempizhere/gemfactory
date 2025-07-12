@@ -18,6 +18,9 @@ type Pool struct {
 	wg       sync.WaitGroup
 	logger   *zap.Logger
 	metrics  *Metrics
+	stopOnce sync.Once
+	stopped  bool
+	mu       sync.RWMutex
 }
 
 // Убеждаемся, что Pool реализует PoolInterface
@@ -68,17 +71,28 @@ func (wp *Pool) Start() {
 func (wp *Pool) Stop() {
 	wp.logger.Info("Stopping worker pool")
 	wp.cancel()
+
 	// Безопасное закрытие jobQueue
-	var once sync.Once
-	once.Do(func() {
+	wp.stopOnce.Do(func() {
+		wp.mu.Lock()
+		wp.stopped = true
+		wp.mu.Unlock()
 		close(wp.jobQueue)
 	})
+
 	wp.wg.Wait()
 	wp.logger.Info("Worker pool stopped")
 }
 
 // Submit добавляет задачу в очередь
 func (wp *Pool) Submit(job Job) error {
+	wp.mu.Lock()
+	defer wp.mu.Unlock()
+
+	if wp.stopped {
+		return ErrQueueFull // Or a more specific error indicating the pool is stopped
+	}
+
 	select {
 	case wp.jobQueue <- job:
 		wp.metrics.mu.Lock()
