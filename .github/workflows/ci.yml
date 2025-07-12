@@ -23,16 +23,15 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: Clean golangci-lint cache
+        run: rm -rf ~/.cache/golangci-lint
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-            ~/.cache/golangci-lint
-          key: ${{ runner.os }}-go-lint-${{ hashFiles('**/go.sum') }}
+          path: ~/.cache/golangci-lint
+          key: ${{ runner.os }}-go-lint-${{ github.job }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-lint-
+            ${{ runner.os }}-go-lint-${{ github.job }}-
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
@@ -50,15 +49,19 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: Clean Go build cache
+        run: |
+          rm -rf ~/.cache/go-build
+          rm -rf ~/go/pkg/mod
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-test-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-test-${{ github.job }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-test-
+            ${{ runner.os }}-go-test-${{ github.job }}-
       - name: Install dependencies
         run: go mod download
       - name: Run tests
@@ -85,15 +88,19 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: Clean Go build cache
+        run: |
+          rm -rf ~/.cache/go-build
+          rm -rf ~/go/pkg/mod
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-build-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-build-${{ github.job }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-build-
+            ${{ runner.os }}-go-build-${{ github.job }}-
       - name: Build for linux/amd64 only
         run: |
           GOOS=linux GOARCH=amd64 go build -o build/gemfactory-linux-amd64 cmd/bot/main.go
