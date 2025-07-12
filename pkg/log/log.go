@@ -1,3 +1,4 @@
+// Package log реализует инициализацию zap-логгера для приложения.
 package log
 
 import (

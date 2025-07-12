@@ -1,3 +1,4 @@
+// Package health реализует HTTP healthcheck сервер для мониторинга состояния бота.
 package health
 
 import (
@@ -10,19 +11,19 @@ import (
 	"go.uber.org/zap"
 )
 
-// HealthServer представляет HTTP сервер для health check
-type HealthServer struct {
+// Server представляет HTTP сервер для health check
+type Server struct {
 	server    *http.Server
 	logger    *zap.Logger
 	port      int
 	startTime time.Time
 }
 
-// Убеждаемся, что HealthServer реализует HealthServerInterface
-var _ HealthServerInterface = (*HealthServer)(nil)
+// Убеждаемся, что Server реализует ServerInterface
+var _ ServerInterface = (*Server)(nil)
 
-// HealthStatus представляет статус здоровья системы
-type HealthStatus struct {
+// Status представляет статус здоровья системы
+type Status struct {
 	Status    string    `json:"status"`
 	Timestamp time.Time `json:"timestamp"`
 	Uptime    string    `json:"uptime"`
@@ -30,15 +31,16 @@ type HealthStatus struct {
 }
 
 // NewHealthServer создает новый health check сервер
-func NewHealthServer(port int, logger *zap.Logger) *HealthServer {
+func NewHealthServer(port int, logger *zap.Logger) *Server {
 	mux := http.NewServeMux()
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: mux,
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	hs := &HealthServer{
+	hs := &Server{
 		server:    server,
 		logger:    logger,
 		port:      port,
@@ -53,20 +55,20 @@ func NewHealthServer(port int, logger *zap.Logger) *HealthServer {
 }
 
 // Start запускает health check сервер
-func (hs *HealthServer) Start() error {
+func (hs *Server) Start() error {
 	hs.logger.Info("Starting health check server", zap.Int("port", hs.port))
 	return hs.server.ListenAndServe()
 }
 
 // Stop останавливает health check сервер
-func (hs *HealthServer) Stop(ctx context.Context) error {
+func (hs *Server) Stop(ctx context.Context) error {
 	hs.logger.Info("Stopping health check server")
 	return hs.server.Shutdown(ctx)
 }
 
 // healthHandler обрабатывает запросы /health
-func (hs *HealthServer) healthHandler(w http.ResponseWriter, r *http.Request) {
-	status := HealthStatus{
+func (hs *Server) healthHandler(w http.ResponseWriter, _ *http.Request) {
+	status := Status{
 		Status:    "healthy",
 		Timestamp: time.Now(),
 		Uptime:    time.Since(hs.startTime).String(),
@@ -83,8 +85,8 @@ func (hs *HealthServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // readyHandler обрабатывает запросы /ready
-func (hs *HealthServer) readyHandler(w http.ResponseWriter, r *http.Request) {
-	status := HealthStatus{
+func (hs *Server) readyHandler(w http.ResponseWriter, _ *http.Request) {
+	status := Status{
 		Status:    "ready",
 		Timestamp: time.Now(),
 		Uptime:    time.Since(hs.startTime).String(),

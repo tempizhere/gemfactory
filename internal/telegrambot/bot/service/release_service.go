@@ -56,19 +56,20 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 	}
 
 	var targetWhitelist map[string]struct{}
-	if femaleOnly && !maleOnly {
+	switch {
+	case femaleOnly && !maleOnly:
 		femaleSlice := s.artistList.GetFemaleWhitelist()
 		targetWhitelist = make(map[string]struct{})
 		for _, artist := range femaleSlice {
 			targetWhitelist[artist] = struct{}{}
 		}
-	} else if maleOnly && !femaleOnly {
+	case !femaleOnly && maleOnly:
 		maleSlice := s.artistList.GetMaleWhitelist()
 		targetWhitelist = make(map[string]struct{})
 		for _, artist := range maleSlice {
 			targetWhitelist[artist] = struct{}{}
 		}
-	} else {
+	default:
 		targetWhitelist = whitelist
 	}
 

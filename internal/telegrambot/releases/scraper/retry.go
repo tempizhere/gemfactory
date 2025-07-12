@@ -40,11 +40,11 @@ func WithRetry(ctx context.Context, logger *zap.Logger, config RetryConfig, fn R
 		default:
 		}
 
-		if err := fn(); err == nil {
+		err := fn()
+		if err == nil {
 			return nil
-		} else {
-			lastErr = err
 		}
+		lastErr = err
 
 		if attempt == config.MaxRetries {
 			break

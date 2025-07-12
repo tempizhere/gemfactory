@@ -1,3 +1,4 @@
+// Package service реализует бизнес-логику для работы с артистами и релизами.
 package service
 
 import (

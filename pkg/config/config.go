@@ -1,3 +1,4 @@
+// Package config реализует загрузку и хранение конфигурации приложения.
 package config
 
 import (
@@ -53,8 +54,8 @@ type Config struct {
 	GracefulShutdownTimeout time.Duration
 }
 
-// Убеждаемся, что Config реализует ConfigInterface
-var _ ConfigInterface = (*Config)(nil)
+// Убеждаемся, что Config реализует Interface
+var _ Interface = (*Config)(nil)
 
 // RetryConfig конфигурация для retry механизма
 type RetryConfig struct {
@@ -349,17 +350,6 @@ func (c *Config) loadAdvancedSettings() error {
 		}
 	}
 
-	return nil
-}
-
-// validateWhitelistDir валидирует директорию whitelist
-func (c *Config) validateWhitelistDir() error {
-	if c.WhitelistDir == "" {
-		c.WhitelistDir = "internal/telegrambot/releases/data"
-	}
-	if _, err := os.Stat(c.WhitelistDir); os.IsNotExist(err) {
-		return fmt.Errorf("WHITELIST_DIR does not exist: %s", c.WhitelistDir)
-	}
 	return nil
 }
 

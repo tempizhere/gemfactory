@@ -2,8 +2,8 @@ package health
 
 import "context"
 
-// HealthServerInterface определяет интерфейс для health check сервера
-type HealthServerInterface interface {
+// ServerInterface определяет интерфейс для health check сервера
+type ServerInterface interface {
 	// Start запускает health check сервер
 	Start() error
 

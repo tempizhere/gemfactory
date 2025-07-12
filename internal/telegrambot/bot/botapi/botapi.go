@@ -1,3 +1,4 @@
+// Package botapi реализует взаимодействие с Telegram Bot API.
 package botapi
 
 import (

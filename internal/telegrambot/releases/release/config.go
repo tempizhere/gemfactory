@@ -1,3 +1,4 @@
+// Package release содержит конфигурацию для релизов.
 package release
 
 import (

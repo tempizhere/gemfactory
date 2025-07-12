@@ -1,3 +1,4 @@
+// Package scraper реализует HTTP-клиент для парсинга релизов.
 package scraper
 
 import (

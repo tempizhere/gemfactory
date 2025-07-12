@@ -1,24 +1,14 @@
+// Package keyboard содержит интерфейсы для управления клавиатурами Telegram-бота.
 package keyboard
 
 import tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
-// KeyboardManagerInterface определяет интерфейс для управления клавиатурами
-type KeyboardManagerInterface interface {
-	// GetMainKeyboard возвращает основную клавиатуру с месяцами
-	GetMainKeyboard() tgbotapi.InlineKeyboardMarkup
-
-	// GetAllMonthsKeyboard возвращает клавиатуру со всеми месяцами
-	GetAllMonthsKeyboard() tgbotapi.InlineKeyboardMarkup
-
-	// HandleCallbackQuery обрабатывает callback запросы от inline клавиатур
-	HandleCallbackQuery(callback *tgbotapi.CallbackQuery)
-
-	// StartWorkerPool запускает worker pool для keyboard manager
+// ManagerInterface определяет интерфейс для менеджера клавиатур Telegram-бота.
+type ManagerInterface interface {
 	StartWorkerPool()
-
-	// StopWorkerPool останавливает worker pool для keyboard manager
 	StopWorkerPool()
-
-	// Stop останавливает keyboard manager
+	GetMainKeyboard() tgbotapi.InlineKeyboardMarkup
+	GetAllMonthsKeyboard() tgbotapi.InlineKeyboardMarkup
+	HandleCallbackQuery(callback *tgbotapi.CallbackQuery)
 	Stop()
 }

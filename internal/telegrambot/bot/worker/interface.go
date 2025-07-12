@@ -1,9 +1,12 @@
+// Package worker содержит интерфейсы для пула воркеров Telegram-бота.
 package worker
 
-import "time"
+import (
+	"time"
+)
 
-// WorkerPoolInterface определяет интерфейс для пула воркеров
-type WorkerPoolInterface interface {
+// PoolInterface определяет интерфейс для пула воркеров
+type PoolInterface interface {
 	// Start запускает пул воркеров
 	Start()
 
@@ -12,6 +15,9 @@ type WorkerPoolInterface interface {
 
 	// Submit добавляет задачу в очередь
 	Submit(job Job) error
+
+	// GetMetrics возвращает текущие метрики
+	GetMetrics() Metrics
 
 	// GetProcessedJobs возвращает количество обработанных задач
 	GetProcessedJobs() int64

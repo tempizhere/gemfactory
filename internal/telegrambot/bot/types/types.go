@@ -1,3 +1,4 @@
+// Package types содержит основные типы данных для Telegram-бота.
 package types
 
 import (
@@ -25,13 +26,13 @@ type Middleware func(ctx Context, next HandlerFunc) error
 type Dependencies struct {
 	BotAPI         botapi.BotAPI
 	Logger         *zap.Logger
-	Config         config.ConfigInterface
+	Config         config.Interface
 	ReleaseService service.ReleaseServiceInterface
 	ArtistService  service.ArtistServiceInterface
-	Keyboard       keyboard.KeyboardManagerInterface
+	Keyboard       keyboard.ManagerInterface
 	Debouncer      debounce.DebouncerInterface
 	Cache          releasecache.Cache
-	WorkerPool     worker.WorkerPoolInterface
+	WorkerPool     worker.PoolInterface
 	CommandCache   commandcache.CommandCacheInterface
 }
 
@@ -78,4 +79,11 @@ func GetUserIdentifier(user *tgbotapi.User) string {
 		return strings.Join(nameParts, " ")
 	}
 	return "unknown"
+}
+
+// Interface определяет публичные методы Telegram-бота
+// (минимальный контракт для использования в других пакетах)
+type Interface interface {
+	Start() error
+	Stop() error
 }

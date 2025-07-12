@@ -1,3 +1,4 @@
+// Package commands содержит обработчики команд для Telegram-бота.
 package commands
 
 import (
@@ -107,9 +108,4 @@ func handleClearWhitelists(ctx types.Context) error {
 func handleExport(ctx types.Context) error {
 	response := ctx.Deps.ArtistService.FormatWhitelistsForExport()
 	return ctx.Deps.BotAPI.SendMessageWithMarkup(ctx.Message.Chat.ID, response, ctx.Deps.Keyboard.GetMainKeyboard())
-}
-
-// isAdmin проверяет, является ли пользователь администратором
-func isAdmin(username, adminUsername string) bool {
-	return username == adminUsername
 }

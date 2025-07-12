@@ -1,9 +1,10 @@
+// Package router содержит интерфейсы для роутера команд Telegram-бота.
 package router
 
 import "gemfactory/internal/telegrambot/bot/types"
 
-// RouterInterface определяет интерфейс для роутера команд
-type RouterInterface interface {
+// Interface определяет интерфейс для роутера команд Telegram-бота.
+type Interface interface {
 	// Use добавляет middleware к роутеру
 	Use(middleware types.Middleware)
 

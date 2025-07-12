@@ -1,7 +1,7 @@
 package bot
 
-// BotInterface определяет интерфейс для основного бота
-type BotInterface interface {
+// Interface определяет интерфейс для основного бота
+type Interface interface {
 	// Start запускает бота
 	Start() error
 

@@ -1,3 +1,4 @@
+// Package debounce реализует механизм дебаунса для предотвращения повторных запросов.
 package debounce
 
 import (

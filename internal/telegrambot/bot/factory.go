@@ -22,7 +22,7 @@ import (
 
 // ComponentFactory создает компоненты бота
 type ComponentFactory struct {
-	config config.ConfigInterface
+	config config.Interface
 	logger *zap.Logger
 }
 
@@ -60,17 +60,18 @@ func (f *ComponentFactory) CreateScraper() scraper.Fetcher {
 	return scraper.NewFetcher(nil, f.logger)
 }
 
-// CreateCacheManager создает менеджер кэша
-func (f *ComponentFactory) CreateCacheManager(
-	whitelistManager artist.WhitelistManager,
+// CreateManager создает менеджер кэша
+func (f *ComponentFactory) CreateManager(
+	_ artist.WhitelistManager,
 	scraper scraper.Fetcher,
 ) releasecache.Cache {
 	// Приведение типа для совместимости с существующим кодом
 	if cfg, ok := f.config.(*config.Config); ok {
-		cacheManager := releasecache.NewCacheManager(cfg, f.logger, whitelistManager, scraper, nil)
-		updater := updater.NewUpdater(cfg, f.logger, whitelistManager, cacheManager, scraper)
-		cacheManager.SetUpdater(updater)
-		return cacheManager
+		whitelistManager := f.CreateWhitelistManager()
+		manager := releasecache.NewManager(cfg, f.logger, whitelistManager, scraper, nil)
+		updater := updater.NewUpdater(cfg, f.logger, whitelistManager, manager, scraper)
+		manager.SetUpdater(updater)
+		return manager
 	}
 	// Fallback для интерфейса
 	return nil
@@ -78,11 +79,12 @@ func (f *ComponentFactory) CreateCacheManager(
 
 // CreateServices создает сервисы
 func (f *ComponentFactory) CreateServices(
-	whitelistManager artist.WhitelistManager,
+	_ artist.WhitelistManager,
 	cache releasecache.Cache,
 ) (*service.ReleaseService, *service.ArtistService) {
 	// Приведение типа для совместимости с существующим кодом
 	if cfg, ok := f.config.(*config.Config); ok {
+		whitelistManager := f.CreateWhitelistManager()
 		releaseService := service.NewReleaseService(whitelistManager, cfg, f.logger, cache)
 		artistService := service.NewArtistService(whitelistManager, f.logger)
 		return releaseService, artistService
@@ -96,7 +98,7 @@ func (f *ComponentFactory) CreateKeyboardManager(
 	api botapi.BotAPI,
 	whitelistManager artist.WhitelistManager,
 	cache releasecache.Cache,
-) keyboard.KeyboardManagerInterface {
+) keyboard.ManagerInterface {
 	// Приведение типа для совместимости с существующим кодом
 	if cfg, ok := f.config.(*config.Config); ok {
 		return keyboard.NewKeyboardManager(api, f.logger, whitelistManager, cfg, cache)
@@ -106,7 +108,7 @@ func (f *ComponentFactory) CreateKeyboardManager(
 }
 
 // CreateWorkerPool создает пул воркеров
-func (f *ComponentFactory) CreateWorkerPool() worker.WorkerPoolInterface {
+func (f *ComponentFactory) CreateWorkerPool() worker.PoolInterface {
 	return worker.NewWorkerPool(f.config.GetMaxConcurrentRequests(), 100, f.logger)
 }
 
@@ -130,8 +132,8 @@ func (f *ComponentFactory) CreateRateLimiter() middleware.RateLimiterInterface {
 	)
 }
 
-// CreateHealthServer создает сервер health check
-func (f *ComponentFactory) CreateHealthServer() health.HealthServerInterface {
+// CreateServer создает сервер health check
+func (f *ComponentFactory) CreateServer() health.ServerInterface {
 	if !f.config.GetHealthCheckEnabled() {
 		return nil
 	}
@@ -141,12 +143,12 @@ func (f *ComponentFactory) CreateHealthServer() health.HealthServerInterface {
 // CreateDependencies создает все зависимости
 func (f *ComponentFactory) CreateDependencies(
 	api botapi.BotAPI,
-	whitelistManager artist.WhitelistManager,
+	_ artist.WhitelistManager,
 	cache releasecache.Cache,
 	releaseService *service.ReleaseService,
 	artistService *service.ArtistService,
-	keyboardManager keyboard.KeyboardManagerInterface,
-	workerPool worker.WorkerPoolInterface,
+	keyboardManager keyboard.ManagerInterface,
+	workerPool worker.PoolInterface,
 	commandCache commandcache.CommandCacheInterface,
 ) *types.Dependencies {
 	debouncer := debounce.NewDebouncer()

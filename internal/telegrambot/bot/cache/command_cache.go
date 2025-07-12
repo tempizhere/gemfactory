@@ -1,3 +1,4 @@
+// Package cache реализует кэширование команд для Telegram-бота.
 package cache
 
 import (
@@ -9,7 +10,7 @@ import (
 
 // CommandCache представляет кэш для результатов команд
 type CommandCache struct {
-	cache  map[string]CacheEntry
+	cache  map[string]Entry
 	mu     sync.RWMutex
 	ttl    time.Duration
 	logger *zap.Logger
@@ -18,8 +19,8 @@ type CommandCache struct {
 // Убеждаемся, что CommandCache реализует CommandCacheInterface
 var _ CommandCacheInterface = (*CommandCache)(nil)
 
-// CacheEntry представляет запись в кэше
-type CacheEntry struct {
+// Entry представляет запись в кэше
+type Entry struct {
 	Data      any
 	Timestamp time.Time
 }
@@ -27,7 +28,7 @@ type CacheEntry struct {
 // NewCommandCache создает новый кэш команд
 func NewCommandCache(ttl time.Duration, logger *zap.Logger) *CommandCache {
 	cc := &CommandCache{
-		cache:  make(map[string]CacheEntry),
+		cache:  make(map[string]Entry),
 		ttl:    ttl,
 		logger: logger,
 	}
@@ -68,7 +69,7 @@ func (cc *CommandCache) Set(key string, data any) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
-	cc.cache[key] = CacheEntry{
+	cc.cache[key] = Entry{
 		Data:      data,
 		Timestamp: time.Now(),
 	}
@@ -90,7 +91,7 @@ func (cc *CommandCache) Clear() {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
-	cc.cache = make(map[string]CacheEntry)
+	cc.cache = make(map[string]Entry)
 	cc.logger.Info("Cache cleared")
 }
 

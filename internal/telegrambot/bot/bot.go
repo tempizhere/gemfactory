@@ -1,3 +1,4 @@
+// Package bot содержит основную логику Telegram-бота.
 package bot
 
 import (
@@ -25,12 +26,12 @@ import (
 type Bot struct {
 	api          botapi.BotAPI
 	logger       *zap.Logger
-	config       config.ConfigInterface
-	router       router.RouterInterface
+	config       config.Interface
+	router       router.Interface
 	deps         *types.Dependencies
-	keyboard     keyboard.KeyboardManagerInterface
-	workerPool   worker.WorkerPoolInterface
-	health       health.HealthServerInterface
+	keyboard     keyboard.ManagerInterface
+	workerPool   worker.PoolInterface
+	health       health.ServerInterface
 	commandCache commandcache.CommandCacheInterface
 	rateLimiter  middleware.RateLimiterInterface
 	stopChan     chan struct{}
@@ -38,7 +39,7 @@ type Bot struct {
 }
 
 // Убеждаемся, что Bot реализует BotInterface
-var _ BotInterface = (*Bot)(nil)
+var _ types.Interface = (*Bot)(nil)
 
 // NewBot creates a new Bot instance
 func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
@@ -56,13 +57,13 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 	}
 
 	scraper := factory.CreateScraper()
-	cache := factory.CreateCacheManager(whitelistManager, scraper)
+	cache := factory.CreateManager(whitelistManager, scraper)
 	releaseService, artistService := factory.CreateServices(whitelistManager, cache)
 	keyboardManager := factory.CreateKeyboardManager(api, whitelistManager, cache)
 	workerPool := factory.CreateWorkerPool()
 	commandCache := factory.CreateCommandCache()
 	rateLimiter := factory.CreateRateLimiter()
-	healthServer := factory.CreateHealthServer()
+	healthServer := factory.CreateServer()
 
 	deps := factory.CreateDependencies(
 		api, whitelistManager, cache, releaseService, artistService,
@@ -174,10 +175,10 @@ func (b *Bot) Start() error {
 		default:
 		}
 
-		tgApi := b.api.(*botapi.TelegramBotAPI).GetAPI()
-		b.logger.Info("Bot started", zap.String("username", tgApi.Self.UserName))
+		tgAPI := b.api.(*botapi.TelegramBotAPI).GetAPI()
+		b.logger.Info("Bot started", zap.String("username", tgAPI.Self.UserName))
 
-		_, err := tgApi.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: true})
+		_, err := tgAPI.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: true})
 		if err != nil {
 			b.logger.Error("Failed to delete webhook", zap.Error(err))
 			return fmt.Errorf("failed to delete webhook: %w", err)
@@ -193,7 +194,7 @@ func (b *Bot) Start() error {
 		u.AllowedUpdates = []string{"message", "callback_query"}
 
 		b.logger.Info("Starting to fetch updates")
-		updatesChan := tgApi.GetUpdatesChan(u)
+		updatesChan := tgAPI.GetUpdatesChan(u)
 		if updatesChan == nil {
 			b.logger.Error("Failed to create updates channel, will retry after delay")
 			time.Sleep(reconnectDelay)

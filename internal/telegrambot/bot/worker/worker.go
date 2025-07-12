@@ -1,3 +1,4 @@
+// Package worker реализует пул воркеров для асинхронной обработки задач Telegram-бота.
 package worker
 
 import (
@@ -8,8 +9,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// WorkerPool пул воркеров для обработки обновлений
-type WorkerPool struct {
+// Pool пул воркеров для обработки обновлений
+type Pool struct {
 	workers  int
 	jobQueue chan Job
 	ctx      context.Context
@@ -19,8 +20,8 @@ type WorkerPool struct {
 	metrics  *Metrics
 }
 
-// Убеждаемся, что WorkerPool реализует WorkerPoolInterface
-var _ WorkerPoolInterface = (*WorkerPool)(nil)
+// Убеждаемся, что Pool реализует PoolInterface
+var _ PoolInterface = (*Pool)(nil)
 
 // Job представляет задачу для обработки
 type Job struct {
@@ -40,10 +41,10 @@ type Metrics struct {
 }
 
 // NewWorkerPool создает новый пул воркеров
-func NewWorkerPool(workers int, queueSize int, logger *zap.Logger) *WorkerPool {
+func NewWorkerPool(workers int, queueSize int, logger *zap.Logger) *Pool {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &WorkerPool{
+	return &Pool{
 		workers:  workers,
 		jobQueue: make(chan Job, queueSize),
 		ctx:      ctx,
@@ -54,7 +55,7 @@ func NewWorkerPool(workers int, queueSize int, logger *zap.Logger) *WorkerPool {
 }
 
 // Start запускает пул воркеров
-func (wp *WorkerPool) Start() {
+func (wp *Pool) Start() {
 	wp.logger.Info("Starting worker pool", zap.Int("workers", wp.workers))
 
 	for i := 0; i < wp.workers; i++ {
@@ -64,7 +65,7 @@ func (wp *WorkerPool) Start() {
 }
 
 // Stop останавливает пул воркеров
-func (wp *WorkerPool) Stop() {
+func (wp *Pool) Stop() {
 	wp.logger.Info("Stopping worker pool")
 	wp.cancel()
 	// Безопасное закрытие jobQueue
@@ -77,7 +78,7 @@ func (wp *WorkerPool) Stop() {
 }
 
 // Submit добавляет задачу в очередь
-func (wp *WorkerPool) Submit(job Job) error {
+func (wp *Pool) Submit(job Job) error {
 	select {
 	case wp.jobQueue <- job:
 		wp.metrics.mu.Lock()
@@ -92,7 +93,7 @@ func (wp *WorkerPool) Submit(job Job) error {
 }
 
 // worker основной цикл воркера
-func (wp *WorkerPool) worker(id int) {
+func (wp *Pool) worker(id int) {
 	defer wp.wg.Done()
 
 	wp.logger.Debug("Worker started", zap.Int("worker_id", id))
@@ -115,7 +116,7 @@ func (wp *WorkerPool) worker(id int) {
 }
 
 // processJob обрабатывает задачу
-func (wp *WorkerPool) processJob(job Job, workerID int) {
+func (wp *Pool) processJob(job Job, workerID int) {
 	startTime := time.Now()
 
 	wp.logger.Debug("Processing job",
@@ -149,7 +150,7 @@ func (wp *WorkerPool) processJob(job Job, workerID int) {
 }
 
 // GetMetrics возвращает текущие метрики
-func (wp *WorkerPool) GetMetrics() Metrics {
+func (wp *Pool) GetMetrics() Metrics {
 	wp.metrics.mu.RLock()
 	defer wp.metrics.mu.RUnlock()
 
@@ -162,28 +163,28 @@ func (wp *WorkerPool) GetMetrics() Metrics {
 }
 
 // GetProcessedJobs возвращает количество обработанных задач
-func (wp *WorkerPool) GetProcessedJobs() int64 {
+func (wp *Pool) GetProcessedJobs() int64 {
 	wp.metrics.mu.RLock()
 	defer wp.metrics.mu.RUnlock()
 	return wp.metrics.processedJobs
 }
 
 // GetFailedJobs возвращает количество неудачных задач
-func (wp *WorkerPool) GetFailedJobs() int64 {
+func (wp *Pool) GetFailedJobs() int64 {
 	wp.metrics.mu.RLock()
 	defer wp.metrics.mu.RUnlock()
 	return wp.metrics.failedJobs
 }
 
 // GetProcessingTime возвращает общее время обработки
-func (wp *WorkerPool) GetProcessingTime() time.Duration {
+func (wp *Pool) GetProcessingTime() time.Duration {
 	wp.metrics.mu.RLock()
 	defer wp.metrics.mu.RUnlock()
 	return wp.metrics.processingTime
 }
 
 // GetQueueSize возвращает текущий размер очереди
-func (wp *WorkerPool) GetQueueSize() int {
+func (wp *Pool) GetQueueSize() int {
 	wp.metrics.mu.RLock()
 	defer wp.metrics.mu.RUnlock()
 	return wp.metrics.queueSize
@@ -191,14 +192,14 @@ func (wp *WorkerPool) GetQueueSize() int {
 
 // Ошибки
 var (
-	ErrQueueFull = &WorkerError{msg: "job queue is full"}
+	ErrQueueFull = &Error{msg: "job queue is full"}
 )
 
-// WorkerError ошибка воркера
-type WorkerError struct {
+// Error ошибка воркера
+type Error struct {
 	msg string
 }
 
-func (e *WorkerError) Error() string {
+func (e *Error) Error() string {
 	return e.msg
 }

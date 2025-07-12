@@ -6,8 +6,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// ConfigInterface определяет интерфейс для конфигурации
-type ConfigInterface interface {
+// Interface определяет интерфейс для конфигурации
+type Interface interface {
 	// LoadLocation загружает временную зону
 	LoadLocation(logger *zap.Logger) *time.Location
 

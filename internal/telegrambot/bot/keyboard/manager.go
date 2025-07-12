@@ -1,3 +1,4 @@
+// Package keyboard реализует менеджер клавиатур для Telegram-бота.
 package keyboard
 
 import (
@@ -19,24 +20,24 @@ import (
 	"golang.org/x/text/language"
 )
 
-// KeyboardManager manages Inline Keyboards for the bot
-type KeyboardManager struct {
-	mainMonthKeyboard tgbotapi.InlineKeyboardMarkup
-	allMonthsKeyboard tgbotapi.InlineKeyboardMarkup
+// Manager реализует менеджер клавиатур для Telegram-бота.
+type Manager struct {
 	api               botapi.BotAPI
 	logger            *zap.Logger
-	debouncer         *debounce.Debouncer
-	svc               *service.ReleaseService
+	debouncer         debounce.DebouncerInterface
+	svc               service.ReleaseServiceInterface
 	config            *config.Config
-	workerPool        worker.WorkerPoolInterface
+	workerPool        worker.PoolInterface
+	allMonthsKeyboard tgbotapi.InlineKeyboardMarkup
+	mainMonthKeyboard tgbotapi.InlineKeyboardMarkup
 }
 
-// Убеждаемся, что KeyboardManager реализует KeyboardManagerInterface
-var _ KeyboardManagerInterface = (*KeyboardManager)(nil)
+// Убеждаемся, что Manager реализует ManagerInterface
+var _ ManagerInterface = (*Manager)(nil)
 
 // NewKeyboardManager creates a new KeyboardManager instance with cached keyboards
-func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al artist.WhitelistManager, config *config.Config, cache cache.Cache) *KeyboardManager {
-	k := &KeyboardManager{
+func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al artist.WhitelistManager, config *config.Config, cache cache.Cache) *Manager {
+	k := &Manager{
 		api:        api,
 		logger:     logger,
 		debouncer:  debounce.NewDebouncer(),
@@ -84,7 +85,7 @@ func NewKeyboardManager(api botapi.BotAPI, logger *zap.Logger, al artist.Whiteli
 }
 
 // updateMainMonthKeyboard updates the main month keyboard
-func (k *KeyboardManager) updateMainMonthKeyboard() {
+func (k *Manager) updateMainMonthKeyboard() {
 	loc, err := time.LoadLocation(k.config.Timezone)
 	if err != nil {
 		k.logger.Error("Failed to load timezone", zap.String("timezone", k.config.Timezone), zap.Error(err))
@@ -116,27 +117,27 @@ func (k *KeyboardManager) updateMainMonthKeyboard() {
 }
 
 // GetMainKeyboard returns the main month keyboard
-func (k *KeyboardManager) GetMainKeyboard() tgbotapi.InlineKeyboardMarkup {
+func (k *Manager) GetMainKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return k.mainMonthKeyboard
 }
 
 // GetAllMonthsKeyboard returns the all months keyboard
-func (k *KeyboardManager) GetAllMonthsKeyboard() tgbotapi.InlineKeyboardMarkup {
+func (k *Manager) GetAllMonthsKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return k.allMonthsKeyboard
 }
 
 // StartWorkerPool запускает worker pool для keyboard manager
-func (k *KeyboardManager) StartWorkerPool() {
+func (k *Manager) StartWorkerPool() {
 	k.workerPool.Start()
 }
 
 // StopWorkerPool останавливает worker pool для keyboard manager
-func (k *KeyboardManager) StopWorkerPool() {
+func (k *Manager) StopWorkerPool() {
 	k.workerPool.Stop()
 }
 
 // HandleCallbackQuery processes callback queries from inline keyboards using worker pool
-func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) {
+func (k *Manager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) {
 	data := callback.Data
 	chatID := callback.Message.Chat.ID
 
@@ -155,12 +156,14 @@ func (k *KeyboardManager) HandleCallbackQuery(callback *tgbotapi.CallbackQuery) 
 	if err := k.workerPool.Submit(job); err != nil {
 		k.logger.Error("Failed to submit callback query job", zap.Error(err))
 		// Fallback к синхронной обработке
-		k.processCallbackQuery(callback)
+		if err := k.processCallbackQuery(callback); err != nil {
+			k.logger.Error("Failed to process callback query", zap.Error(err))
+		}
 	}
 }
 
 // processCallbackQuery обрабатывает callback query синхронно
-func (k *KeyboardManager) processCallbackQuery(callback *tgbotapi.CallbackQuery) error {
+func (k *Manager) processCallbackQuery(callback *tgbotapi.CallbackQuery) error {
 	data := callback.Data
 	chatID := callback.Message.Chat.ID
 
@@ -227,7 +230,7 @@ func (k *KeyboardManager) processCallbackQuery(callback *tgbotapi.CallbackQuery)
 }
 
 // Stop stops the keyboard manager
-func (k *KeyboardManager) Stop() {
+func (k *Manager) Stop() {
 	k.StopWorkerPool()
 
 	// Логируем метрики worker pool

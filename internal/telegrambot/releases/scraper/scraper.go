@@ -117,8 +117,8 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month string, w
 		return nil, fmt.Errorf("unknown month: %s", month)
 	}
 
-	var allReleases []release.Release
 	artistReleases := make(map[string][]release.Release)
+	allReleases := make([]release.Release, 0, len(artistReleases))
 	var mu sync.Mutex
 	rowCount := 0
 
@@ -174,15 +174,18 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month string, w
 				found = true
 				continue
 			}
-			if rel.TitleTrack != "N/A" && rel.MV != "" {
+
+			switch {
+			case rel.TitleTrack != "N/A" && rel.MV != "":
 				bestRelease = rel
-				break
-			} else if rel.TitleTrack != "N/A" && bestRelease.TitleTrack == "N/A" {
+				goto foundBest
+			case rel.TitleTrack != "N/A" && bestRelease.TitleTrack == "N/A":
 				bestRelease = rel
-			} else if rel.MV != "" && bestRelease.MV == "" {
+			case rel.MV != "" && bestRelease.MV == "":
 				bestRelease = rel
 			}
 		}
+	foundBest:
 		allReleases = append(allReleases, bestRelease)
 	}
 
@@ -242,7 +245,7 @@ func (f *fetcherImpl) newCollector() *colly.Collector {
 }
 
 // extractRow extracts release data from a table row
-func (f *fetcherImpl) extractRow(ctx context.Context, e *colly.HTMLElement, monthNum string, whitelist map[string]struct{}, artistReleases map[string][]release.Release, mu *sync.Mutex, rowCount int) {
+func (f *fetcherImpl) extractRow(_ context.Context, e *colly.HTMLElement, monthNum string, whitelist map[string]struct{}, artistReleases map[string][]release.Release, mu *sync.Mutex, rowCount int) {
 	cfg := release.NewConfig()
 	dateText := e.ChildText("td.has-text-align-right mark")
 	if dateText == "" {

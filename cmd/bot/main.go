@@ -1,3 +1,4 @@
+// Package main запускает Telegram-бота GemFactory.
 package main
 
 import (
@@ -18,10 +19,16 @@ func main() {
 	logger, err := log.Init()
 	if err != nil {
 		// Используем os.Exit вместо panic для корректного завершения
-		os.Stderr.WriteString("Failed to initialize logger: " + err.Error() + "\n")
+		if _, err2 := os.Stderr.WriteString("Failed to initialize logger: " + err.Error() + "\n"); err2 != nil {
+			panic("Failed to write to stderr: " + err2.Error())
+		}
 		os.Exit(1)
 	}
-	defer logger.Sync()
+	defer func() {
+		if err := logger.Sync(); err != nil {
+			_, _ = os.Stderr.WriteString("Failed to sync logger: " + err.Error() + "\n")
+		}
+	}()
 
 	// Загрузка конфигурации
 	cfg, err := config.Load()
@@ -66,7 +73,7 @@ func main() {
 	case <-shutdownCtx.Done():
 		logger.Warn("Graceful shutdown timeout exceeded", zap.Error(shutdownCtx.Err()))
 		logger.Error("Graceful shutdown failed", zap.Error(shutdownCtx.Err()))
-		os.Exit(1)
+		return
 	default:
 		logger.Info("Graceful shutdown completed successfully")
 	}

@@ -1,3 +1,4 @@
+// Package middleware содержит интерфейсы для middleware Telegram-бота.
 package middleware
 
 // RateLimiterInterface определяет интерфейс для ограничителя запросов

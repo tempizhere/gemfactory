@@ -8,7 +8,7 @@ import (
 )
 
 // RegisterUserRoutes registers user command handlers
-func RegisterUserRoutes(r *router.Router, deps *types.Dependencies) {
+func RegisterUserRoutes(r *router.Router, _ *types.Dependencies) {
 	r.Handle("start", handleStart)
 	r.Handle("help", handleHelp)
 	r.Handle("month", handleMonth)
@@ -70,7 +70,7 @@ func handleWhitelists(ctx types.Context) error {
 func handleMetricsCommand(ctx types.Context) error {
 	var response strings.Builder
 	response.WriteString("📊 **Метрики системы**\n\n")
-	response.WriteString(fmt.Sprintf("🤖 **Основной бот:**\n"))
+	response.WriteString("🤖 **Основной бот:**\n")
 	response.WriteString(fmt.Sprintf("  • Обработано задач: %d\n", ctx.Deps.WorkerPool.GetProcessedJobs()))
 	response.WriteString(fmt.Sprintf("  • Неудачных задач: %d\n", ctx.Deps.WorkerPool.GetFailedJobs()))
 	response.WriteString(fmt.Sprintf("  • Общее время обработки: %v\n", ctx.Deps.WorkerPool.GetProcessingTime()))
@@ -79,7 +79,7 @@ func handleMetricsCommand(ctx types.Context) error {
 	// Добавляем метрики command cache
 	if ctx.Deps.CommandCache != nil {
 		stats := ctx.Deps.CommandCache.Stats()
-		response.WriteString(fmt.Sprintf("🗂️ **Command Cache:**\n"))
+		response.WriteString("🗂️ **Command Cache:**\n")
 		response.WriteString(fmt.Sprintf("  • Размер кэша: %v\n", stats["size"]))
 		response.WriteString(fmt.Sprintf("  • TTL: %v\n\n", stats["ttl"]))
 	} else {

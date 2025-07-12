@@ -1,3 +1,4 @@
+// Package updater содержит типы для обновления релизов.
 package updater
 
 import (
@@ -16,8 +17,8 @@ type Updater interface {
 	StartUpdater()
 }
 
-// UpdaterImpl implements the Updater interface
-type UpdaterImpl struct {
+// Impl implements the Updater interface
+type Impl struct {
 	config     *config.Config
 	logger     *zap.Logger
 	artistList artist.WhitelistManager
@@ -26,8 +27,8 @@ type UpdaterImpl struct {
 }
 
 // NewUpdater creates a new Updater instance
-func NewUpdater(config *config.Config, logger *zap.Logger, al artist.WhitelistManager, cache cache.Cache, scraper scraper.Fetcher) *UpdaterImpl {
-	return &UpdaterImpl{
+func NewUpdater(config *config.Config, logger *zap.Logger, al artist.WhitelistManager, cache cache.Cache, scraper scraper.Fetcher) *Impl {
+	return &Impl{
 		config:     config,
 		logger:     logger,
 		artistList: al,

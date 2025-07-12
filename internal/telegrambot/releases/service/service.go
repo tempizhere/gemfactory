@@ -1,3 +1,4 @@
+// Package service реализует сервисы для работы с релизами.
 package service
 
 import (

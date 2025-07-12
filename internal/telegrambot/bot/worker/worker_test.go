@@ -77,7 +77,7 @@ func TestWorkerPoolWithErrors(t *testing.T) {
 		Command:  "error_test",
 		Handler: func() error {
 			defer wg.Done()
-			return &WorkerError{msg: "test error"}
+			return &Error{msg: "test error"}
 		},
 	}
 

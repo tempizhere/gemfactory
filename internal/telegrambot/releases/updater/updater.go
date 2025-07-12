@@ -14,7 +14,7 @@ import (
 )
 
 // InitializeCache initializes the cache for all months sequentially
-func (u *UpdaterImpl) InitializeCache(ctx context.Context) error {
+func (u *Impl) InitializeCache(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
 
@@ -118,13 +118,13 @@ func (u *UpdaterImpl) InitializeCache(ctx context.Context) error {
 }
 
 // processMonth processes a single month
-func (u *UpdaterImpl) processMonth(ctx context.Context, month string, monthlyLinks []string, totalReleases *int, totalReleasesMu *sync.Mutex, successfulMonths, emptyMonths *[]string, monthsMu *sync.Mutex) error {
+func (u *Impl) processMonth(ctx context.Context, month string, monthlyLinks []string, totalReleases *int, totalReleasesMu *sync.Mutex, successfulMonths, emptyMonths *[]string, monthsMu *sync.Mutex) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
 	startTime := time.Now()
 
-	var fullWhitelist []string
+	fullWhitelist := make([]string, 0, len(u.artistList.GetUnitedWhitelist()))
 	whitelistMap := make(map[string]struct{})
 	for _, artist := range u.artistList.GetUnitedWhitelist() {
 		fullWhitelist = append(fullWhitelist, artist)
@@ -186,7 +186,7 @@ func (u *UpdaterImpl) processMonth(ctx context.Context, month string, monthlyLin
 }
 
 // StartUpdater periodically updates the cache
-func (u *UpdaterImpl) StartUpdater() {
+func (u *Impl) StartUpdater() {
 	u.logger.Info("Starting cache updater", zap.Duration("cache_duration", u.config.CacheDuration))
 	ticker := time.NewTicker(u.config.CacheDuration)
 	defer ticker.Stop()
