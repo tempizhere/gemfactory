@@ -67,7 +67,11 @@ func (wp *WorkerPool) Start() {
 func (wp *WorkerPool) Stop() {
 	wp.logger.Info("Stopping worker pool")
 	wp.cancel()
-	close(wp.jobQueue)
+	// Безопасное закрытие jobQueue
+	var once sync.Once
+	once.Do(func() {
+		close(wp.jobQueue)
+	})
 	wp.wg.Wait()
 	wp.logger.Info("Worker pool stopped")
 }
