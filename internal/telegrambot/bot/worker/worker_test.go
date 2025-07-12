@@ -87,6 +87,9 @@ func TestWorkerPoolWithErrors(t *testing.T) {
 
 	wg.Wait()
 
+	// Ждем немного, чтобы воркер успел обновить метрики
+	time.Sleep(50 * time.Millisecond)
+
 	// Проверяем метрики
 	metrics := pool.GetMetrics()
 	if metrics.failedJobs != 1 {
