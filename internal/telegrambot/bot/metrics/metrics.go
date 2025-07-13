@@ -194,9 +194,19 @@ func (m *Metrics) formatTime(t time.Time) string {
 	return t.Format("02.01.06 15:04")
 }
 
-// formatDuration форматирует duration с двумя знаками после запятой
+// formatDuration форматирует duration в человекочитаемый вид
 func (m *Metrics) formatDuration(d time.Duration) string {
-	// Конвертируем в секунды с двумя знаками после запятой
-	seconds := d.Seconds()
-	return fmt.Sprintf("%.2fs", seconds)
+	seconds := int64(d.Seconds())
+	if seconds < 60 {
+		return fmt.Sprintf("%.2fs", d.Seconds())
+	} else if seconds < 3600 {
+		min := seconds / 60
+		sec := seconds % 60
+		return fmt.Sprintf("%d мин %d сек", min, sec)
+	} else {
+		h := seconds / 3600
+		m := (seconds % 3600) / 60
+		s := seconds % 60
+		return fmt.Sprintf("%d ч %d мин %d сек", h, m, s)
+	}
 }
