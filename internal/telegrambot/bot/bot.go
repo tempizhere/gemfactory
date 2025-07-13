@@ -57,22 +57,32 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 	}
 
 	scraper := factory.CreateScraper()
-	cache := factory.CreateManager(whitelistManager, scraper)
-	releaseService, artistService := factory.CreateServices(whitelistManager, cache)
-	keyboardManager := factory.CreateKeyboardManager(api, whitelistManager, cache)
 	workerPool := factory.CreateWorkerPool()
 	commandCache := factory.CreateCommandCache()
 	rateLimiter := factory.CreateRateLimiter()
 	healthServer := factory.CreateServer()
 
+	// Создаем зависимости
 	deps := factory.CreateDependencies(
-		api, whitelistManager, cache, releaseService, artistService,
-		keyboardManager, workerPool, commandCache,
+		api, whitelistManager, nil, nil, nil,
+		nil, workerPool, commandCache,
 	)
+
+	// Создаем кэш с метриками
+	cache := factory.CreateManager(whitelistManager, scraper, deps.Metrics)
+	releaseService, artistService := factory.CreateServices(whitelistManager, cache)
+	keyboardManager := factory.CreateKeyboardManager(api, whitelistManager, cache)
+
+	// Обновляем зависимости с правильными сервисами
+	deps.ReleaseService = releaseService
+	deps.ArtistService = artistService
+	deps.Cache = cache
+	deps.Keyboard = keyboardManager
 
 	// Настраиваем роутер
 	r := router.NewRouter()
 	r.Use(middleware.LogRequest)
+	r.Use(middleware.MetricsMiddleware)
 	r.Use(middleware.Debounce)
 	r.Use(middleware.ErrorHandler)
 
@@ -96,6 +106,18 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 		commandCache: commandCache,
 		rateLimiter:  rateLimiter,
 		stopChan:     make(chan struct{}),
+	}
+
+	// Устанавливаем время следующего обновления кэша
+	if deps.Metrics != nil {
+		// Получаем CACHE_DURATION из конфигурации
+		cacheDuration := config.CacheDuration
+		if cacheDuration <= 0 {
+			cacheDuration = 8 * time.Hour // значение по умолчанию
+		}
+		nextUpdate := time.Now().Add(cacheDuration)
+		deps.Metrics.SetNextCacheUpdate(nextUpdate)
+		logger.Info("Set next cache update time", zap.Time("next_update", nextUpdate))
 	}
 
 	// Запускаем обновление кэша если есть данные

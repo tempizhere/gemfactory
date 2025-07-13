@@ -18,6 +18,11 @@ func (u *Impl) InitializeCache(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
 
+	// Устанавливаем статус обновления
+	if u.metrics != nil {
+		u.metrics.SetCacheUpdateStatus(true)
+	}
+
 	u.logger.Debug("Cache initialization configuration",
 		zap.Int("max_retries", u.config.MaxRetries),
 		zap.Duration("request_delay", u.config.RequestDelay))
@@ -110,6 +115,11 @@ func (u *Impl) InitializeCache(ctx context.Context) error {
 		u.logger.Info("Cache updated successfully", zap.Int("total_releases", totalReleases))
 	}
 
+	// Устанавливаем статус завершения обновления
+	if u.metrics != nil {
+		u.metrics.SetCacheUpdateStatus(false)
+	}
+
 	if len(errs) > 0 {
 		return fmt.Errorf("cache initialization completed with %d errors: %v", len(errs), errs)
 	}
@@ -197,8 +207,25 @@ func (u *Impl) StartUpdater() {
 		u.logger.Error("Initial cache update failed", zap.Error(err))
 	}
 
+	// Устанавливаем время следующего обновления только если оно еще не установлено
+	if u.metrics != nil {
+		stats := u.metrics.GetStats()
+		system := stats["system"].(map[string]interface{})
+		if system["next_cache_update"] == "Не установлено" {
+			nextUpdate := time.Now().Add(u.config.CacheDuration)
+			u.metrics.SetNextCacheUpdate(nextUpdate)
+		}
+	}
+
 	for t := range ticker.C {
 		u.logger.Info("Starting periodic cache update", zap.Time("tick_time", t))
+
+		// Обновляем время следующего обновления
+		if u.metrics != nil {
+			nextUpdate := time.Now().Add(u.config.CacheDuration)
+			u.metrics.SetNextCacheUpdate(nextUpdate)
+		}
+
 		go func() {
 			if err := u.InitializeCache(context.Background()); err != nil {
 				u.logger.Error("Periodic cache update failed", zap.Error(err))

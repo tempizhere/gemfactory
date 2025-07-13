@@ -162,3 +162,13 @@ func (s *ArtistService) ClearWhitelists() error {
 	}
 	return nil
 }
+
+// GetFemaleWhitelist returns the female whitelist
+func (s *ArtistService) GetFemaleWhitelist() []string {
+	return s.artistList.GetFemaleWhitelist()
+}
+
+// GetMaleWhitelist returns the male whitelist
+func (s *ArtistService) GetMaleWhitelist() []string {
+	return s.artistList.GetMaleWhitelist()
+}

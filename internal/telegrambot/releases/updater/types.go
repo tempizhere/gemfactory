@@ -3,6 +3,7 @@ package updater
 
 import (
 	"context"
+	"gemfactory/internal/telegrambot/bot/metrics"
 	"gemfactory/internal/telegrambot/releases/artist"
 	"gemfactory/internal/telegrambot/releases/cache"
 	"gemfactory/internal/telegrambot/releases/scraper"
@@ -15,6 +16,7 @@ import (
 type Updater interface {
 	InitializeCache(ctx context.Context) error
 	StartUpdater()
+	SetMetrics(metrics metrics.Interface)
 }
 
 // Impl implements the Updater interface
@@ -24,6 +26,7 @@ type Impl struct {
 	artistList artist.WhitelistManager
 	cache      cache.Cache
 	scraper    scraper.Fetcher
+	metrics    metrics.Interface
 }
 
 // NewUpdater creates a new Updater instance
@@ -35,4 +38,9 @@ func NewUpdater(config *config.Config, logger *zap.Logger, al artist.WhitelistMa
 		cache:      cache,
 		scraper:    scraper,
 	}
+}
+
+// SetMetrics sets the metrics interface for the updater
+func (u *Impl) SetMetrics(metrics metrics.Interface) {
+	u.metrics = metrics
 }

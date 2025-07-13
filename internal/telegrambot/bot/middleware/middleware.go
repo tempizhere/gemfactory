@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"gemfactory/internal/telegrambot/bot/types"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -66,4 +67,27 @@ func Wrap(mw func(ctx types.Context, next types.HandlerFunc) error, handler type
 	return func(ctx types.Context) error {
 		return mw(ctx, handler)
 	}
+}
+
+// MetricsMiddleware записывает метрики выполнения команд
+func MetricsMiddleware(ctx types.Context, next types.HandlerFunc) error {
+	startTime := time.Now()
+	command := ctx.Message.Command()
+	userID := ctx.Message.From.ID
+
+	// Записываем команду пользователя
+	ctx.Deps.Metrics.RecordUserCommand(command, userID)
+
+	// Выполняем команду
+	err := next(ctx)
+
+	// Записываем время выполнения
+	ctx.Deps.Metrics.RecordResponseTime(time.Since(startTime))
+
+	// Записываем ошибку если есть
+	if err != nil {
+		ctx.Deps.Metrics.RecordError()
+	}
+
+	return err
 }

@@ -68,27 +68,51 @@ func handleWhitelists(ctx types.Context) error {
 
 // handleMetricsCommand handles the /metrics command
 func handleMetricsCommand(ctx types.Context) error {
+	// Обновляем метрики перед отображением
+	ctx.Deps.Metrics.UpdateArtistMetrics(
+		len(ctx.Deps.ArtistService.GetFemaleWhitelist()),
+		len(ctx.Deps.ArtistService.GetMaleWhitelist()),
+	)
+	ctx.Deps.Metrics.UpdateReleaseMetrics(ctx.Deps.Cache.GetCachedReleasesCount())
+
+	stats := ctx.Deps.Metrics.GetStats()
+
 	var response strings.Builder
 	response.WriteString("📊 **Метрики системы**\n\n")
-	response.WriteString("🤖 **Основной бот:**\n")
-	response.WriteString(fmt.Sprintf("  • Обработано задач: %d\n", ctx.Deps.WorkerPool.GetProcessedJobs()))
-	response.WriteString(fmt.Sprintf("  • Неудачных задач: %d\n", ctx.Deps.WorkerPool.GetFailedJobs()))
-	response.WriteString(fmt.Sprintf("  • Общее время обработки: %v\n", ctx.Deps.WorkerPool.GetProcessingTime()))
-	response.WriteString(fmt.Sprintf("  • Размер очереди: %d\n\n", ctx.Deps.WorkerPool.GetQueueSize()))
 
-	// Добавляем метрики command cache
-	if ctx.Deps.CommandCache != nil {
-		stats := ctx.Deps.CommandCache.Stats()
-		response.WriteString("🗂️ **Command Cache:**\n")
-		response.WriteString(fmt.Sprintf("  • Размер кэша: %v\n", stats["size"]))
-		response.WriteString(fmt.Sprintf("  • TTL: %v\n\n", stats["ttl"]))
-	} else {
-		response.WriteString("🗂️ **Command Cache:** Отключен\n\n")
-	}
+	// Пользовательская активность
+	userActivity := stats["user_activity"].(map[string]interface{})
+	response.WriteString("👥 **Пользовательская активность:**\n")
+	response.WriteString(fmt.Sprintf("  • Всего команд: %v\n", userActivity["total_commands"]))
+	response.WriteString(fmt.Sprintf("  • Уникальных пользователей: %v\n\n", userActivity["unique_users"]))
 
+	// Артисты
+	artists := stats["artists"].(map[string]interface{})
+	response.WriteString("🎤 **Артисты в фильтрах:**\n")
+	response.WriteString(fmt.Sprintf("  • Женские группы: %v\n", artists["female_artists"]))
+	response.WriteString(fmt.Sprintf("  • Мужские группы: %v\n", artists["male_artists"]))
+	response.WriteString(fmt.Sprintf("  • Всего артистов: %v\n\n", artists["total_artists"]))
+
+	// Релизы
+	releases := stats["releases"].(map[string]interface{})
+	response.WriteString("💿 **Релизы в кэше:**\n")
+	response.WriteString(fmt.Sprintf("  • Количество релизов: %v\n", releases["cached_releases"]))
+	response.WriteString(fmt.Sprintf("  • Hit rate кэша: %.1f%%\n", releases["cache_hit_rate"]))
+	response.WriteString(fmt.Sprintf("  • Попадания/промахи: %v/%v\n\n", releases["cache_hits"], releases["cache_misses"]))
+
+	// Производительность
+	performance := stats["performance"].(map[string]interface{})
+	response.WriteString("⚡ **Производительность:**\n")
+	response.WriteString(fmt.Sprintf("  • Среднее время ответа: %v\n", performance["avg_response_time"]))
+	response.WriteString(fmt.Sprintf("  • Всего запросов: %v\n", performance["total_requests"]))
+	response.WriteString(fmt.Sprintf("  • Ошибок: %v (%.1f%%)\n\n", performance["error_count"], performance["error_rate"]))
+
+	// Система
+	system := stats["system"].(map[string]interface{})
 	response.WriteString("🔄 **Статус системы:**\n")
-	response.WriteString("  • Все worker pool активны\n")
-	response.WriteString("  • Система работает стабильно\n")
+	response.WriteString(fmt.Sprintf("  • Время работы: %v\n", system["uptime"]))
+	response.WriteString(fmt.Sprintf("  • Последнее обновление: %v\n", system["last_cache_update"]))
+	response.WriteString(fmt.Sprintf("  • Следующее обновление: %v\n", system["next_cache_update"]))
 
 	return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID, response.String())
 }

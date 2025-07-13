@@ -24,6 +24,8 @@ func (cm *Manager) GetReleasesForMonths(months []string, whitelist map[string]st
 
 	var allReleases []release.Release
 	var missingMonths []string
+	cacheHit := false
+
 	cm.mu.Lock()
 	for _, month := range months {
 		// Use united whitelist for cache key to match StoreReleases
@@ -31,11 +33,23 @@ func (cm *Manager) GetReleasesForMonths(months []string, whitelist map[string]st
 		cacheKey := fmt.Sprintf("%s-%s", strings.ToLower(month), cm.HashWhitelist(unitedWhitelist))
 		if entry, exists := cm.cache[cacheKey]; exists && !entry.Timestamp.IsZero() && time.Since(entry.Timestamp) < cm.duration {
 			allReleases = append(allReleases, entry.Releases...)
+			cacheHit = true
 		} else {
 			missingMonths = append(missingMonths, month)
 		}
 	}
 	cm.mu.Unlock()
+
+	// Записываем метрики кэша
+	if cacheHit {
+		if cm.metrics != nil {
+			cm.metrics.RecordCacheHit()
+		}
+	} else {
+		if cm.metrics != nil {
+			cm.metrics.RecordCacheMiss()
+		}
+	}
 
 	var filteredReleases []release.Release
 	for _, rel := range allReleases {
@@ -171,4 +185,16 @@ func (cm *Manager) HashWhitelist(whitelist []string) string {
 	sort.Strings(whitelist)
 	hash := sha256.Sum256([]byte(strings.Join(whitelist, ",")))
 	return hex.EncodeToString(hash[:])
+}
+
+// GetCachedReleasesCount возвращает общее количество релизов в кэше
+func (cm *Manager) GetCachedReleasesCount() int {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	totalReleases := 0
+	for _, entry := range cm.cache {
+		totalReleases += len(entry.Releases)
+	}
+	return totalReleases
 }

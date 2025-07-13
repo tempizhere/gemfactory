@@ -6,6 +6,7 @@ import (
 	commandcache "gemfactory/internal/telegrambot/bot/cache"
 	"gemfactory/internal/telegrambot/bot/health"
 	"gemfactory/internal/telegrambot/bot/keyboard"
+	"gemfactory/internal/telegrambot/bot/metrics"
 	"gemfactory/internal/telegrambot/bot/middleware"
 	"gemfactory/internal/telegrambot/bot/service"
 	"gemfactory/internal/telegrambot/bot/types"
@@ -64,6 +65,7 @@ func (f *ComponentFactory) CreateScraper() scraper.Fetcher {
 func (f *ComponentFactory) CreateManager(
 	_ artist.WhitelistManager,
 	scraper scraper.Fetcher,
+	metrics metrics.Interface,
 ) releasecache.Cache {
 	// Приведение типа для совместимости с существующим кодом
 	if cfg, ok := f.config.(*config.Config); ok {
@@ -71,6 +73,13 @@ func (f *ComponentFactory) CreateManager(
 		manager := releasecache.NewManager(cfg, f.logger, whitelistManager, scraper, nil)
 		updater := updater.NewUpdater(cfg, f.logger, whitelistManager, manager, scraper)
 		manager.SetUpdater(updater)
+
+		// Устанавливаем метрики в кэш и updater
+		if metrics != nil {
+			manager.SetMetrics(metrics)
+			updater.SetMetrics(metrics)
+		}
+
 		return manager
 	}
 	// Fallback для интерфейса
@@ -140,6 +149,11 @@ func (f *ComponentFactory) CreateServer() health.ServerInterface {
 	return health.NewHealthServer(f.config.GetHealthCheckPort(), f.logger)
 }
 
+// CreateMetrics создает систему метрик
+func (f *ComponentFactory) CreateMetrics() metrics.Interface {
+	return metrics.NewMetrics(f.logger)
+}
+
 // CreateDependencies создает все зависимости
 func (f *ComponentFactory) CreateDependencies(
 	api botapi.BotAPI,
@@ -153,6 +167,9 @@ func (f *ComponentFactory) CreateDependencies(
 ) *types.Dependencies {
 	debouncer := debounce.NewDebouncer()
 
+	// Создаем метрики
+	metrics := f.CreateMetrics()
+
 	return &types.Dependencies{
 		BotAPI:         api,
 		Logger:         f.logger,
@@ -164,5 +181,6 @@ func (f *ComponentFactory) CreateDependencies(
 		Cache:          cache,
 		WorkerPool:     workerPool,
 		CommandCache:   commandCache,
+		Metrics:        metrics,
 	}
 }
