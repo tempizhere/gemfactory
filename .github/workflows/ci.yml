@@ -33,7 +33,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-lint-${{ github.job }}-
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.2.2
           args: --timeout=5m
