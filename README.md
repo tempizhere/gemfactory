@@ -1,6 +1,6 @@
 # Gemfactory
 
-Gemfactory is a Telegram bot designed to provide users with schedules of K-pop comebacks and releases for specified months. It fetches data from external sources, filters releases based on predefined whitelists of artists, and presents them in a user-friendly format. The bot is built with Go, containerized using Docker, and deployed via GitHub Actions to Docker Hub.
+Gemfactory is a Telegram bot designed to provide users with schedules of K-pop comebacks and releases for specified months. It fetches data from external sources, filters releases based on predefined whitelists of artists, and presents them in a user-friendly format. The bot is built with Go, containerized using Docker, and deployed via Docker Compose.
 
 ![2025-06-21_01-05](https://github.com/user-attachments/assets/3f1ba3d7-1084-498b-b8e5-18ce49de32a3)
 
@@ -15,6 +15,9 @@ Gemfactory is a Telegram bot designed to provide users with schedules of K-pop c
 - **Fault Tolerance**: Automatic restart on failures, request rate limiting, and API error handling
 - **Timezone Support**: Configurable timezone settings (default: Asia/Seoul)
 - **Persistent Storage**: Docker volume-based storage for whitelist data
+- **Health Monitoring**: Built-in health check endpoints for container orchestration
+- **Metrics Collection**: Comprehensive system metrics and performance monitoring
+- **Graceful Shutdown**: Proper resource cleanup and configurable shutdown timeouts
 
 ## Commands
 
@@ -26,6 +29,7 @@ Gemfactory is a Telegram bot designed to provide users with schedules of K-pop c
 - `/month [month] -gg`: Show releases only for female artists
 - `/month [month] -mg`: Show releases only for male artists
 - `/whitelists`: Display lists of female and male artists in a multi-column format
+- `/metrics`: Display system metrics including user activity, cache stats, and performance data
 
 ### Admin Commands
 
@@ -48,7 +52,7 @@ Whitelist management commands are only available to the user specified in `ADMIN
 
 ### Using Docker Compose (Recommended)
 
-1. Ensure you have a `docker-compose.yml` file in the project root:
+1. Create a `docker-compose.yml` file in your project directory:
 
 ```yaml
 services:
@@ -65,7 +69,7 @@ services:
       - REQUEST_DELAY=10s
       - WHITELIST_DIR=data
       - LOG_LEVEL=info
-      - TZ=Asia/Seoul
+      - TZ=Europe/Moscow
     volumes:
       - whitelist_data:/app/data
 volumes:
@@ -73,78 +77,177 @@ volumes:
     name: whitelist_data
 ```
 
-### Environment Variables
+2. Run the bot:
 
-- `BOT_TOKEN`: Telegram bot token
-- `ADMIN_USERNAME`: Admin's Telegram username
+```bash
+docker-compose up -d
+```
+
+### Using Docker Container
+
+You can also run the bot directly using Docker:
+
+```bash
+docker run -d \
+  --name gemfactory \
+  --restart unless-stopped \
+  -e BOT_TOKEN=your_bot_token \
+  -e ADMIN_USERNAME=your_telegram_username \
+  -e CACHE_DURATION=8h \
+  -e MAX_RETRIES=3 \
+  -e REQUEST_DELAY=10s \
+  -e WHITELIST_DIR=data \
+  -e LOG_LEVEL=info \
+  -e TZ=Europe/Moscow \
+  -v whitelist_data:/app/data \
+  tempizhere/gemfactory:latest
+```
+
+## Environment Variables
+
+### Required Variables
+
+- `BOT_TOKEN`: Telegram bot token from BotFather
+- `ADMIN_USERNAME`: Admin's Telegram username (default: fullofsarang)
+
+### Core Settings
+
 - `CACHE_DURATION`: Duration to cache data (default: 24h)
 - `MAX_RETRIES`: Maximum number of retries on failures (default: 3)
 - `REQUEST_DELAY`: Delay between requests (default: 3s)
 - `WHITELIST_DIR`: Directory for whitelist storage (default: data)
 - `LOG_LEVEL`: Logging level (default: info)
 - `TZ`: Timezone (default: Asia/Seoul)
+
+### Performance Settings
+
 - `MAX_CONCURRENT_REQUESTS`: Maximum concurrent requests (default: 5)
+- `RETRY_MAX_ATTEMPTS`: Maximum retry attempts (default: 3)
+- `RETRY_INITIAL_DELAY`: Initial retry delay (default: 1s)
+- `RETRY_MAX_DELAY`: Maximum retry delay (default: 30s)
+- `RETRY_BACKOFF_MULTIPLIER`: Backoff multiplier (default: 2.0)
+
+### HTTP Client Configuration
+
+- `HTTP_MAX_IDLE_CONNS`: Maximum idle connections (default: 100)
+- `HTTP_MAX_IDLE_CONNS_PER_HOST`: Maximum idle connections per host (default: 10)
+- `HTTP_IDLE_CONN_TIMEOUT`: Idle connection timeout (default: 90s)
+- `HTTP_TLS_HANDSHAKE_TIMEOUT`: TLS handshake timeout (default: 10s)
+- `HTTP_RESPONSE_HEADER_TIMEOUT`: Response header timeout (default: 30s)
+- `HTTP_DISABLE_KEEP_ALIVES`: Disable HTTP keep-alives (default: false)
+
+### Health Check Configuration
+
+- `HEALTH_CHECK_ENABLED`: Enable health check server (default: true)
+- `HEALTH_CHECK_PORT`: Port for health check server (default: 8080)
+- `HEALTH_CHECK_INTERVAL`: Health check interval (default: 30s)
+
+### Rate Limiting Configuration
+
+- `RATE_LIMIT_ENABLED`: Enable rate limiting (default: true)
+- `RATE_LIMIT_REQUESTS`: Rate limit requests per window (default: 10)
+- `RATE_LIMIT_WINDOW`: Rate limit window duration (default: 60s)
+
+### Command Cache Configuration
+
+- `COMMAND_CACHE_ENABLED`: Enable command cache (default: true)
+- `COMMAND_CACHE_TTL`: Command cache TTL (default: 5m)
+
+### Additional Settings
+
+- `METRICS_ENABLED`: Enable metrics collection (default: false)
+- `GRACEFUL_SHUTDOWN_TIMEOUT`: Graceful shutdown timeout (default: 10s)
 
 ## Deployment
 
-The bot is automatically built and published to Docker Hub (`tempizhere/gemfactory:latest`) via GitHub Actions on every push to the `main` branch. The CI/CD pipeline includes:
+The bot can be deployed using Docker Compose or as a standalone Docker container. Both methods provide the same functionality and persistent storage for whitelist data.
 
-1. Automated testing
-2. Code linting
-3. Docker image building and publishing
-4. Automated deployment support
+**Docker Compose** is the recommended approach as it simplifies configuration management and provides better container orchestration.
 
-To deploy on your server:
+## Project Structure
 
-1. Use the provided `docker-compose.yml` (see above)
-2. Deploy using a tool like **Dockge**:
-   - Copy the `docker-compose.yml` into Dockge
-   - Create a stack and deploy it
-3. Ensure the `.env` file is present on the server with the correct environment variables
+```
+gemfactory/
+├── bin/                           # Compiled binaries
+├── cmd/                           # Application entry points
+│   └── bot/
+├── deploy/                        # Deployment configurations
+├── go.mod                        # Go module definition
+├── go.sum                        # Go module checksums
+├── internal/                     # Private application code
+│   ├── bot/                      # Bot core components
+│   │   ├── handlers/            # Command handlers
+│   │   ├── keyboard/            # Keyboard management
+│   │   ├── middleware/          # Middleware components
+│   │   ├── router/              # Request routing
+│   │   └── service/             # Business logic services
+│   ├── config/                   # Configuration management
+│   ├── domain/                   # Domain models and business logic
+│   │   ├── artist/              # Artist domain
+│   │   ├── release/             # Release domain
+│   │   ├── service/             # Service domain
+│   │   └── types/               # Common domain types
+│   ├── gateway/                  # External service integrations
+│   │   ├── scraper/             # Web scraping gateway
+│   │   └── telegram/            # Telegram API gateway
+│   │       └── botapi/
+│   └── infrastructure/          # Infrastructure components
+│       ├── cache/               # Caching system
+│       ├── debounce/            # Request debouncing
+│       ├── health/              # Health monitoring
+│       ├── metrics/             # Metrics collection
+│       ├── middleware/          # Infrastructure middleware
+│       ├── updater/             # Cache updating system
+│       └── worker/              # Worker pool system
+├── pkg/                          # Public library code
+│   └── log/                      # Logging utilities
+├── data/                         # Runtime data storage (created at runtime)
+└── README.md                     # Project documentation
+```
 
 ## Development
 
-### Project Structure
+### Architecture Overview
 
-- `cmd/bot/main.go`: Entry point with configuration loading and bot initialization
-- `internal/`:
-  - `telegrambot/`:
-    - `bot/`: Core bot logic with command handling and keyboard management
-    - `releases/`: Release management, caching, and scraping logic
-  - `debounce/`: Rate limiting utilities
-- `pkg/`:
-  - `config/`: Configuration management
-  - `log/`: Structured logging with zap
-- `data/`: Whitelist JSON files storage
+The project follows Clean Architecture principles with clear separation of concerns:
+
+- **Domain Layer** (`internal/domain/`): Core business logic and entities
+- **Application Layer** (`internal/bot/`): Application-specific business rules
+- **Infrastructure Layer** (`internal/infrastructure/`): External concerns (database, cache, etc.)
+- **Interface Layer** (`internal/gateway/`): External API integrations
 
 ### Key Components
 
-- **Bot Core**: Handles Telegram API interaction and command routing
-- **Release Manager**: Manages K-pop release data and filtering
-- **Cache System**:
-  - Intelligent caching with periodic updates
-  - Configurable cache duration
-  - Concurrent update protection
-- **Whitelist Manager**:
-  - Separate female and male artist lists
-  - JSON-based persistent storage
-  - Thread-safe operations
-- **Keyboard Manager**:
-  - Dynamic month selection interface
-  - Automatic monthly updates
-  - Context-aware navigation
-- **Error Handling**:
-  - Comprehensive logging
-  - Automatic retries
-  - Rate limiting protection
+#### Bot Core
+
+- **Router**: Command routing and middleware pipeline
+- **Handlers**: Command processing logic
+- **Services**: Business logic implementation
+- **Keyboard Manager**: Dynamic inline keyboard generation
+
+#### Infrastructure
+
+- **Cache System**: Intelligent caching with automatic updates and concurrent protection
+- **Worker Pool**: Concurrent job processing with configurable workers
+- **Health Check**: Container health monitoring endpoints
+- **Metrics**: System performance and usage tracking
+- **Rate Limiter**: Request throttling and abuse prevention
+
+#### External Integrations
+
+- **Telegram Bot API**: Official Telegram API wrapper with optimizations
+- **Web Scraper**: Resilient HTTP client with retry logic and connection pooling
+- **Data Persistence**: JSON-based whitelist storage with atomic operations
 
 ## Contributing
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to your fork (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+3. Make your changes following the project's architecture principles
+4. Add tests for new functionality
+5. Commit your changes (`git commit -m 'Add some amazing feature'`)
+6. Push to your fork (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
 ## License
 

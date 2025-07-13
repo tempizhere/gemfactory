@@ -10,6 +10,9 @@ vendor/
 
 # Environment files with sensitive data
 .env
+.env.local
+.env.development
+.env.production
 
 # Logs and temporary files
 *.log
@@ -22,4 +25,16 @@ tmp/
 # Build artifacts
 gemfactory
 tree.md
-*.json
+bin/
+dist/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+coverage.out
+coverage.html
+
+# Игнорируем JSON файлы в корне
+/*.json
