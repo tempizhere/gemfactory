@@ -197,16 +197,33 @@ func (m *Metrics) formatTime(t time.Time) string {
 // formatDuration форматирует duration в человекочитаемый вид
 func (m *Metrics) formatDuration(d time.Duration) string {
 	seconds := int64(d.Seconds())
-	if seconds < 60 {
-		return fmt.Sprintf("%.2fs", d.Seconds())
-	} else if seconds < 3600 {
-		min := seconds / 60
-		sec := seconds % 60
-		return fmt.Sprintf("%d мин %d сек", min, sec)
-	} else {
+
+	if seconds < 3600 { // меньше часа
+		return "менее часа"
+	} else if seconds < 86400 { // меньше 24 часов
 		h := seconds / 3600
 		m := (seconds % 3600) / 60
-		s := seconds % 60
-		return fmt.Sprintf("%d ч %d мин %d сек", h, m, s)
+		return fmt.Sprintf("%d ч %d мин", h, m)
+	} else if seconds < 31536000 { // меньше 365 дней
+		days := seconds / 86400
+		hours := (seconds % 86400) / 3600
+		if days == 1 {
+			return fmt.Sprintf("%d день %d ч", days, hours)
+		} else if days >= 2 && days <= 4 {
+			return fmt.Sprintf("%d дня %d ч", days, hours)
+		} else {
+			return fmt.Sprintf("%d дней %d ч", days, hours)
+		}
+	} else {
+		years := seconds / 31536000
+		days := (seconds % 31536000) / 86400
+		hours := (seconds % 86400) / 3600
+		if years == 1 {
+			return fmt.Sprintf("%d год %d дней %d ч", years, days, hours)
+		} else if years >= 2 && years <= 4 {
+			return fmt.Sprintf("%d года %d дней %d ч", years, days, hours)
+		} else {
+			return fmt.Sprintf("%d лет %d дней %d ч", years, days, hours)
+		}
 	}
 }
