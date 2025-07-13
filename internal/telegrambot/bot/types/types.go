@@ -6,6 +6,7 @@ import (
 	"gemfactory/internal/telegrambot/bot/botapi"
 	commandcache "gemfactory/internal/telegrambot/bot/cache"
 	"gemfactory/internal/telegrambot/bot/keyboard"
+	"gemfactory/internal/telegrambot/bot/metrics"
 	"gemfactory/internal/telegrambot/bot/service"
 	"gemfactory/internal/telegrambot/bot/worker"
 	releasecache "gemfactory/internal/telegrambot/releases/cache"
@@ -34,6 +35,7 @@ type Dependencies struct {
 	Cache          releasecache.Cache
 	WorkerPool     worker.PoolInterface
 	CommandCache   commandcache.CommandCacheInterface
+	Metrics        metrics.Interface
 }
 
 // Context holds the context for command handlers

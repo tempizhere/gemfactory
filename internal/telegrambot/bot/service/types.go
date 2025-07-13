@@ -14,4 +14,6 @@ type ArtistServiceInterface interface {
 	AddArtists(artists []string, isFemale bool) (int, error)
 	RemoveArtists(artists []string) (int, error)
 	ClearWhitelists() error
+	GetFemaleWhitelist() []string
+	GetMaleWhitelist() []string
 }

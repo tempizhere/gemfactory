@@ -3,6 +3,7 @@ package cache
 
 import (
 	"context"
+	"gemfactory/internal/telegrambot/bot/metrics"
 	"gemfactory/internal/telegrambot/bot/worker"
 	"gemfactory/internal/telegrambot/releases/artist"
 	"gemfactory/internal/telegrambot/releases/release"
@@ -25,6 +26,7 @@ type Cache interface {
 	StoreReleases(month string, releases []release.Release)
 	StartWorkerPool()
 	StopWorkerPool()
+	GetCachedReleasesCount() int
 }
 
 // Entry holds cached releases or links
@@ -53,6 +55,7 @@ type Manager struct {
 	scraper        scraper.Fetcher
 	updater        Updater
 	workerPool     worker.PoolInterface
+	metrics        metrics.Interface
 }
 
 // Убеждаемся, что Manager реализует Cache interface
@@ -82,6 +85,11 @@ func NewManager(config *config.Config, logger *zap.Logger, al artist.WhitelistMa
 // SetUpdater sets the updater for the Manager
 func (cm *Manager) SetUpdater(updater Updater) {
 	cm.updater = updater
+}
+
+// SetMetrics sets the metrics interface for the Manager
+func (cm *Manager) SetMetrics(metrics metrics.Interface) {
+	cm.metrics = metrics
 }
 
 // parseCacheDuration parses the CACHE_DURATION environment variable
