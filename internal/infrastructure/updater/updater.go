@@ -143,6 +143,9 @@ func (u *Impl) InitializeCache(ctx context.Context) error {
 	// Устанавливаем статус завершения обновления
 	if u.metrics != nil {
 		u.metrics.SetCacheUpdateStatus(false)
+		// Устанавливаем время следующего обновления после завершения текущего
+		nextUpdate := time.Now().Add(u.config.CacheDuration)
+		u.metrics.SetNextCacheUpdate(nextUpdate)
 	}
 
 	if len(errs) > 0 {
@@ -261,16 +264,6 @@ func (u *Impl) StartUpdater(ctx context.Context) {
 		u.logger.Error("Initial cache update failed", zap.Error(err))
 	}
 
-	// Устанавливаем время следующего обновления только если оно еще не установлено
-	if u.metrics != nil {
-		stats := u.metrics.GetStats()
-		system := stats["system"].(map[string]interface{})
-		if system["next_cache_update"] == "Не установлено" {
-			nextUpdate := time.Now().Add(u.config.CacheDuration)
-			u.metrics.SetNextCacheUpdate(nextUpdate)
-		}
-	}
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -278,12 +271,6 @@ func (u *Impl) StartUpdater(ctx context.Context) {
 			return
 		case t := <-ticker.C:
 			u.logger.Info("Starting periodic cache update", zap.Time("tick_time", t))
-
-			// Обновляем время следующего обновления
-			if u.metrics != nil {
-				nextUpdate := time.Now().Add(u.config.CacheDuration)
-				u.metrics.SetNextCacheUpdate(nextUpdate)
-			}
 
 			// Проверяем, что контекст еще не отменен перед запуском обновления
 			select {

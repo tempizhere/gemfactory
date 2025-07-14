@@ -105,17 +105,7 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 		cancel:      cancel,
 	}
 
-	// Устанавливаем время следующего обновления кэша
-	if deps.Metrics != nil {
-		// Получаем CACHE_DURATION из конфигурации
-		cacheDuration := config.CacheDuration
-		if cacheDuration <= 0 {
-			cacheDuration = 8 * time.Hour // значение по умолчанию
-		}
-		nextUpdate := time.Now().Add(cacheDuration)
-		deps.Metrics.SetNextCacheUpdate(nextUpdate)
-		logger.Info("Set next cache update time", zap.Time("next_update", nextUpdate))
-	}
+
 
 	// Запускаем обновление кэша если есть данные
 	if len(whitelistManager.GetFemaleWhitelist()) > 0 || len(whitelistManager.GetMaleWhitelist()) > 0 {
