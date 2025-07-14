@@ -30,6 +30,14 @@ func FormatDate(dateStr string, logger *zap.Logger) (string, error) {
 	dateStr = strings.ReplaceAll(dateStr, ":", "")
 	dateStr = strings.TrimSpace(dateStr)
 
+	// Удаляем лишний текст со временем KST (например, "at 0 AM KST")
+	if strings.Contains(dateStr, " at ") {
+		parts := strings.Split(dateStr, " at ")
+		if len(parts) > 0 {
+			dateStr = strings.TrimSpace(parts[0])
+		}
+	}
+
 	// Check cache
 	if cached, ok := dateCache.Load(dateStr); ok {
 		return cached.(string), nil
