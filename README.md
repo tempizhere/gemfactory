@@ -166,11 +166,10 @@ The bot can be deployed using Docker Compose or as a standalone Docker container
 ```
 gemfactory/
 ├── bin/                           # Compiled binaries
+├── build/                         # Build artifacts and scripts
 ├── cmd/                           # Application entry points
 │   └── bot/
 ├── deploy/                        # Deployment configurations
-├── go.mod                        # Go module definition
-├── go.sum                        # Go module checksums
 ├── internal/                     # Private application code
 │   ├── bot/                      # Bot core components
 │   │   ├── handlers/            # Command handlers
