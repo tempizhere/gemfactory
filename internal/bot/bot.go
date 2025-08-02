@@ -13,6 +13,9 @@ import (
 	"gemfactory/internal/gateway/telegram/botapi"
 	"gemfactory/internal/infrastructure/health"
 	"gemfactory/internal/infrastructure/worker"
+	"io"
+	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -76,7 +79,6 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 	r := router.NewRouter()
 	r.Use(middleware.LogRequest)
 	r.Use(middleware.MetricsMiddleware)
-	r.Use(middleware.Debounce)
 	r.Use(middleware.ErrorHandler)
 
 	// Добавляем rate limiting middleware если включен
@@ -104,8 +106,6 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 		ctx:         ctx,
 		cancel:      cancel,
 	}
-
-
 
 	// Запускаем обновление кэша если есть данные
 	if len(whitelistManager.GetFemaleWhitelist()) > 0 || len(whitelistManager.GetMaleWhitelist()) > 0 {
@@ -349,7 +349,8 @@ func (b *Bot) processUpdate(update tgbotapi.Update) {
 		return
 	}
 
-	if !update.Message.IsCommand() {
+	// Обрабатываем команды и вложения файлов
+	if !update.Message.IsCommand() && update.Message.Document == nil {
 		return
 	}
 
@@ -390,6 +391,14 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 		UpdateID: update.UpdateID,
 		Deps:     b.deps,
 	}
+
+	// Обрабатываем вложения файлов
+	if update.Message.Document != nil {
+		b.handleDocument(ctx)
+		return
+	}
+
+	// Обрабатываем команды
 	if err := b.router.Dispatch(ctx); err != nil {
 		b.logger.Error("Failed to dispatch command",
 			zap.String("command", ctx.Message.Command()),
@@ -476,6 +485,72 @@ func getUserID(update tgbotapi.Update) int64 {
 		return update.CallbackQuery.From.ID
 	}
 	return 0
+}
+
+// handleDocument обрабатывает вложения файлов
+func (b *Bot) handleDocument(ctx types.Context) {
+	document := ctx.Message.Document
+
+	// Проверяем, что это CSV файл
+	if !strings.HasSuffix(strings.ToLower(document.FileName), ".csv") {
+		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Пожалуйста, отправьте CSV файл.")
+		return
+	}
+
+	// Проверяем права администратора
+	if ctx.Message.From.UserName != b.config.GetAdminUsername() {
+		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Только администратор может загружать плейлисты.")
+		return
+	}
+
+	// Получаем информацию о файле
+	file, err := b.api.GetFile(document.FileID)
+	if err != nil {
+		b.logger.Error("Failed to get file info", zap.Error(err))
+		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при получении файла.")
+		return
+	}
+
+	// Скачиваем файл
+	fileURL := file.Link(b.api.(*botapi.TelegramBotAPI).GetAPI().Token)
+	resp, err := http.Get(fileURL)
+	if err != nil {
+		b.logger.Error("Failed to download file", zap.Error(err))
+		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при скачивании файла.")
+		return
+	}
+	defer resp.Body.Close()
+
+	// Создаем временный файл
+	tempFile, err := os.CreateTemp("", "playlist_*.csv")
+	if err != nil {
+		b.logger.Error("Failed to create temp file", zap.Error(err))
+		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при создании временного файла.")
+		return
+	}
+	defer os.Remove(tempFile.Name())
+	defer tempFile.Close()
+
+	// Копируем содержимое файла
+	_, err = io.Copy(tempFile, resp.Body)
+	if err != nil {
+		b.logger.Error("Failed to copy file content", zap.Error(err))
+		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при копировании файла.")
+		return
+	}
+
+	// Загружаем плейлист
+	b.deps.PlaylistManager.Clear()
+	if err := b.deps.PlaylistManager.LoadPlaylistFromFile(tempFile.Name()); err != nil {
+		b.logger.Error("Failed to load playlist", zap.Error(err))
+		b.api.SendMessage(ctx.Message.Chat.ID, fmt.Sprintf("❌ Ошибка при загрузке плейлиста: %v", err))
+		return
+	}
+
+	// Плейлист автоматически сохраняется в постоянное хранилище при загрузке
+	trackCount := b.deps.PlaylistManager.GetTotalTracks()
+	b.api.SendMessage(ctx.Message.Chat.ID,
+		fmt.Sprintf("✅ Плейлист успешно загружен и сохранен! Загружено %d треков из файла: %s", trackCount, document.FileName))
 }
 
 // extractCommand извлекает команду из обновления

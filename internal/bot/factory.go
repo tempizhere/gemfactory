@@ -7,6 +7,7 @@ import (
 	"gemfactory/internal/bot/service"
 	"gemfactory/internal/config"
 	"gemfactory/internal/domain/artist"
+	"gemfactory/internal/domain/playlist"
 	"gemfactory/internal/domain/types"
 	"gemfactory/internal/gateway/scraper"
 	"gemfactory/internal/gateway/telegram/botapi"
@@ -67,7 +68,7 @@ func (f *ComponentFactory) CreateBotAPI() (botapi.BotAPI, error) {
 
 // CreateWhitelistManager создает менеджер белых списков
 func (f *ComponentFactory) CreateWhitelistManager() artist.WhitelistManager {
-	manager := artist.NewWhitelistManager(f.config.WhitelistDir, f.logger)
+	manager := artist.NewWhitelistManager(f.config.GetAppDataDir(), f.logger)
 
 	// Логируем информацию о загруженных списках
 	femaleCount := len(manager.GetFemaleWhitelist())
@@ -258,17 +259,45 @@ func (f *ComponentFactory) CreateDependencies() (*types.Dependencies, error) {
 		return nil, fmt.Errorf("failed to create keyboard manager: %w", err)
 	}
 
+	// Создаем playlist service (для обратной совместимости)
+	playlistService := playlist.NewPlaylistService(f.logger)
+
+	// Создаем playlist manager (новый способ управления плейлистами)
+	playlistManager := playlist.NewManager(f.logger, f.config.GetAppDataDir())
+
+	// Загружаем плейлист из CSV файла только если указан путь
+	if f.config.PlaylistCSVPath != "" {
+		if err := playlistManager.LoadPlaylistFromFile(f.config.PlaylistCSVPath); err != nil {
+			f.logger.Warn("Failed to load playlist from config path", zap.Error(err))
+		} else {
+			f.logger.Info("Playlist loaded from config path", zap.String("path", f.config.PlaylistCSVPath))
+		}
+	} else {
+		// Пытаемся загрузить из постоянного хранилища
+		if err := playlistManager.LoadPlaylistFromStorage(); err != nil {
+			f.logger.Info("No playlist found in storage - playlist will be loaded via /import_playlist command")
+		} else {
+			f.logger.Info("Playlist loaded from storage")
+		}
+	}
+
+	// Создаем кэш домашних заданий
+	homeworkCache := playlist.NewHomeworkCache()
+
 	deps := &types.Dependencies{
-		BotAPI:         api,
-		Logger:         f.logger,
-		Config:         f.config,
-		ReleaseService: releaseService,
-		ArtistService:  artistService,
-		Keyboard:       keyboardManager,
-		Debouncer:      debouncer,
-		Cache:          cache,
-		WorkerPool:     workerPool,
-		Metrics:        metrics,
+		BotAPI:          api,
+		Logger:          f.logger,
+		Config:          f.config,
+		ReleaseService:  releaseService,
+		ArtistService:   artistService,
+		Keyboard:        keyboardManager,
+		Debouncer:       debouncer,
+		Cache:           cache,
+		WorkerPool:      workerPool,
+		PlaylistService: playlistService,
+		PlaylistManager: playlistManager,
+		HomeworkCache:   homeworkCache,
+		Metrics:         metrics,
 	}
 
 	f.logger.Info("All dependencies created successfully")

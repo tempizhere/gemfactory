@@ -15,7 +15,7 @@ import (
 type Config struct {
 	BotToken      string
 	AdminUsername string
-	WhitelistDir  string
+	AppDataDir    string
 	Timezone      string
 
 	// Настройки запросов
@@ -53,6 +53,9 @@ type Config struct {
 	HealthCheckInterval     time.Duration
 	GracefulShutdownTimeout time.Duration
 
+	// Playlist настройки
+	PlaylistCSVPath string
+
 	// Информация о приложении
 	AppName    string
 	AppVersion string
@@ -65,7 +68,7 @@ type Interface interface {
 	// Основные настройки бота
 	GetBotToken() string
 	GetAdminUsername() string
-	GetWhitelistDir() string
+	GetAppDataDir() string
 	GetTimezone() string
 	LoadLocation(logger *zap.Logger) *time.Location
 
@@ -93,6 +96,9 @@ type Interface interface {
 
 	// Graceful shutdown настройки
 	GetGracefulShutdownTimeout() time.Duration
+
+	// Playlist настройки
+	GetPlaylistCSVPath() string
 
 	// Информация о приложении
 	GetAppName() string
@@ -244,7 +250,7 @@ func (c *Config) loadBasicSettings() error {
 
 	c.BotToken = os.Getenv("BOT_TOKEN")
 	c.AdminUsername = os.Getenv("ADMIN_USERNAME")
-	c.WhitelistDir = os.Getenv("WHITELIST_DIR")
+	c.AppDataDir = os.Getenv("APP_DATA_DIR")
 	c.Timezone = os.Getenv("TZ")
 
 	// Валидация обязательных полей
@@ -470,6 +476,14 @@ func (c *Config) loadAdvancedSettings() error {
 		}
 	}
 
+	// Playlist CSV path (необязательный)
+	playlistCSVPath := os.Getenv("PLAYLIST_CSV_PATH")
+	if playlistCSVPath == "" {
+		c.PlaylistCSVPath = "" // Пустой путь - плейлист не загружается автоматически
+	} else {
+		c.PlaylistCSVPath = playlistCSVPath
+	}
+
 	return nil
 }
 
@@ -499,9 +513,9 @@ func (c *Config) GetAdminUsername() string {
 	return c.AdminUsername
 }
 
-// GetWhitelistDir возвращает директорию белых списков
-func (c *Config) GetWhitelistDir() string {
-	return c.WhitelistDir
+// GetAppDataDir возвращает директорию данных приложения
+func (c *Config) GetAppDataDir() string {
+	return c.AppDataDir
 }
 
 // GetTimezone возвращает временную зону
@@ -572,6 +586,11 @@ func (c *Config) GetMetricsEnabled() bool {
 // GetGracefulShutdownTimeout возвращает таймаут для graceful shutdown
 func (c *Config) GetGracefulShutdownTimeout() time.Duration {
 	return c.GracefulShutdownTimeout
+}
+
+// GetPlaylistCSVPath возвращает путь к CSV файлу плейлиста
+func (c *Config) GetPlaylistCSVPath() string {
+	return c.PlaylistCSVPath
 }
 
 // loadAppInfo загружает информацию о приложении

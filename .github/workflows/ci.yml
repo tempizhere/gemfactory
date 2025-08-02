@@ -103,12 +103,13 @@ jobs:
             ${{ runner.os }}-go-build-${{ github.job }}-
       - name: Build for linux/amd64 only
         run: |
-          GOOS=linux GOARCH=amd64 go build -o build/gemfactory-linux-amd64 cmd/bot/main.go
+          mkdir -p bin
+          GOOS=linux GOARCH=amd64 go build -o bin/gemfactory-linux-amd64 cmd/bot/main.go
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-binaries
-          path: build/
+          path: bin/
 
   docker:
     name: Build and Push Docker Image
@@ -140,7 +141,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./build/Dockerfile
+          file: ./Dockerfile
           platforms: linux/amd64
           push: true
           tags: |

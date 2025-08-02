@@ -38,3 +38,6 @@ coverage.html
 
 # Игнорируем JSON файлы в корне
 /*.json
+
+# temp
+/storage/

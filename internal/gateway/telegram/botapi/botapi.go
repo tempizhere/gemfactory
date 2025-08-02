@@ -14,6 +14,7 @@ type BotAPI interface {
 	SendMessageWithMarkup(chatID int64, text string, markup any) error
 	EditMessageReplyMarkup(chatID int64, messageID int, markup any) error
 	SetBotCommands(commands []tgbotapi.BotCommand) error
+	GetFile(fileID string) (tgbotapi.File, error)
 }
 
 // TelegramBotAPI wraps tgbotapi.BotAPI to implement the BotAPI interface
@@ -79,6 +80,12 @@ func (t *TelegramBotAPI) SetBotCommands(commands []tgbotapi.BotCommand) error {
 		t.logger.Error("Failed to set bot commands", zap.Error(err))
 	}
 	return err
+}
+
+// GetFile gets file information from Telegram
+func (t *TelegramBotAPI) GetFile(fileID string) (tgbotapi.File, error) {
+	file := tgbotapi.FileConfig{FileID: fileID}
+	return t.api.GetFile(file)
 }
 
 var _ BotAPI = (*TelegramBotAPI)(nil)

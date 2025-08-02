@@ -2,18 +2,24 @@ package commands
 
 import (
 	"fmt"
+	"gemfactory/internal/bot/middleware"
 	"gemfactory/internal/bot/router"
 	"gemfactory/internal/domain/types"
+	"math/rand"
 	"strings"
+	"time"
+
+	"go.uber.org/zap"
 )
 
 // RegisterUserRoutes registers user command handlers
 func RegisterUserRoutes(r *router.Router, _ *types.Dependencies) {
 	r.Handle("start", handleStart)
 	r.Handle("help", handleHelp)
-	r.Handle("month", handleMonth)
+	r.Handle("month", middleware.Wrap(middleware.Debounce, handleMonth))
 	r.Handle("whitelists", handleWhitelists)
 	r.Handle("metrics", handleMetricsCommand)
+	r.Handle("homework", handleHomework)
 }
 
 func handleStart(ctx types.Context) error {
@@ -29,6 +35,7 @@ func handleHelp(ctx types.Context) error {
 		"/month [месяц] -mg - Релизы только мужских групп\n" +
 		"/whitelists - Показать списки артистов\n" +
 		"/metrics - Показать метрики системы\n" +
+		"/homework - Получить случайное домашнее задание\n" +
 		"\n" +
 		fmt.Sprintf("По вопросам вайтлистов: @%s", ctx.Deps.Config.GetAdminUsername())
 	return ctx.Deps.BotAPI.SendMessageWithMarkup(ctx.Message.Chat.ID, text, ctx.Deps.Keyboard.GetMainKeyboard())
@@ -114,5 +121,88 @@ func handleMetricsCommand(ctx types.Context) error {
 	response.WriteString(fmt.Sprintf("  • Последнее обновление: %v\n", system["last_cache_update"]))
 	response.WriteString(fmt.Sprintf("  • Следующее обновление: %v\n", system["next_cache_update"]))
 
+	// Домашние задания
+	response.WriteString("\n📚 **Домашние задания:**\n")
+	response.WriteString(fmt.Sprintf("  • Всего выдано заданий: %d\n", ctx.Deps.HomeworkCache.GetTotalRequests()))
+	response.WriteString(fmt.Sprintf("  • Уникальных пользователей: %d\n", ctx.Deps.HomeworkCache.GetUniqueUsers()))
+
 	return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID, response.String())
+}
+
+// handleHomework обрабатывает команду /homework
+func handleHomework(ctx types.Context) error {
+	userID := ctx.Message.From.ID
+
+	// Проверяем, может ли пользователь запросить домашнее задание
+	if !ctx.Deps.HomeworkCache.CanRequest(userID) {
+		timeUntilNext := ctx.Deps.HomeworkCache.GetTimeUntilNextRequest(userID)
+		hours := int(timeUntilNext.Hours())
+		minutes := int(timeUntilNext.Minutes()) % 60
+
+		var timeMessage string
+		if hours > 0 {
+			timeMessage = fmt.Sprintf("%d ч %d мин", hours, minutes)
+		} else {
+			timeMessage = fmt.Sprintf("%d мин", minutes)
+		}
+
+		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
+			fmt.Sprintf("⏰ Вы уже получили домашнее задание сегодня! Следующее задание будет доступно через %s.", timeMessage))
+	}
+
+	// Генерируем случайное число от 1 до 6
+	rand.Seed(time.Now().UnixNano())
+	playCount := rand.Intn(6) + 1
+
+	// Проверяем, загружен ли плейлист
+	if !ctx.Deps.PlaylistManager.IsLoaded() {
+		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
+			"❌ Плейлист не загружен. Обратитесь к администратору для загрузки плейлиста.")
+	}
+
+	// Получаем случайный трек из плейлиста
+	track, err := ctx.Deps.PlaylistManager.GetRandomTrack()
+	if err != nil {
+		ctx.Deps.Logger.Error("Failed to get random track", zap.Error(err))
+		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
+			"❌ Ошибка при получении трека из плейлиста. Попробуйте позже.")
+	}
+
+	// Пул эмодзи для случайного выбора
+	musicEmojis := []string{"🎵", "🎶", "🎼", "🎤", "🎸", "🎹", "🎺", "🎻", "🥁", "🎷"}
+	headphonesEmojis := []string{"🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧"}
+
+	// Выбираем случайные эмодзи
+	rand.Seed(time.Now().UnixNano())
+	selectedMusicEmoji := musicEmojis[rand.Intn(len(musicEmojis))]
+	selectedHeadphonesEmoji := headphonesEmojis[rand.Intn(len(headphonesEmojis))]
+
+	// Создаем ссылку на Spotify для встраивания в текст
+	spotifyLink := fmt.Sprintf("https://open.spotify.com/track/%s", track.ID)
+
+	// Правильное склонение для "раз/раза/раз"
+	var timesWord string
+	switch {
+	case playCount == 1:
+		timesWord = "раз"
+	case playCount >= 2 && playCount <= 4:
+		timesWord = "раза"
+	default:
+		timesWord = "раз"
+	}
+
+	message := fmt.Sprintf("🎲 %s Ваше домашнее задание: %s послушать \"%s - %s\" (<a href=\"%s\">Spotify</a>) %d %s %s",
+		selectedMusicEmoji, selectedHeadphonesEmoji, track.Artist, track.Title, spotifyLink, playCount, timesWord, selectedMusicEmoji)
+
+	// Записываем запрос в кэш
+	ctx.Deps.HomeworkCache.RecordRequest(userID)
+
+	ctx.Deps.Logger.Info("Homework command executed",
+		zap.String("user", types.GetUserIdentifier(ctx.Message.From)),
+		zap.Int64("chat_id", ctx.Message.Chat.ID),
+		zap.String("artist", track.Artist),
+		zap.String("title", track.Title),
+		zap.Int("play_count", playCount))
+
+	return ctx.Deps.BotAPI.SendMessageWithMarkup(ctx.Message.Chat.ID, message, nil)
 }

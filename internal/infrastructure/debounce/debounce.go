@@ -2,6 +2,7 @@
 package debounce
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
@@ -14,7 +15,12 @@ type Debouncer struct {
 
 var _ DebouncerInterface = (*Debouncer)(nil)
 
-const debounceTimeout = 5 * time.Second
+const defaultDebounceTimeout = 5 * time.Second
+
+// Команды с особыми таймаутами дебаунса
+var commandDebounceTimeouts = map[string]time.Duration{
+	"month": 5 * time.Second, // 5 секунд дебаунс для month
+}
 
 // NewDebouncer creates a new Debouncer instance
 func NewDebouncer() *Debouncer {
@@ -34,10 +40,28 @@ func (d *Debouncer) CanProcessRequest(key string) bool {
 		return true
 	}
 
-	if time.Since(last) < debounceTimeout {
+	// Определяем таймаут для команды
+	timeout := defaultDebounceTimeout
+	command, _ := extractCommandFromKey(key)
+	if customTimeout, exists := commandDebounceTimeouts[command]; exists {
+		timeout = customTimeout
+	}
+
+	// Проверяем, прошло ли достаточно времени
+	if time.Since(last) < timeout {
 		return false
 	}
 
 	d.lastRequest[key] = time.Now()
 	return true
+}
+
+// extractCommandFromKey извлекает команду из ключа дебаунса
+func extractCommandFromKey(key string) (string, bool) {
+	// Ключ имеет формат: "chatID:command"
+	parts := strings.Split(key, ":")
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
+	return "", false
 }
