@@ -30,6 +30,7 @@ Gemfactory is a Telegram bot designed to provide users with schedules of K-pop c
 - `/month [month] -mg`: Show releases only for male artists
 - `/whitelists`: Display lists of female and male artists in a multi-column format
 - `/metrics`: Display system metrics including user activity, cache stats, and performance data
+- `/homework`: Get a random homework assignment with a track from the playlist and number of times to listen
 
 ### Admin Commands
 
@@ -40,6 +41,8 @@ Whitelist management commands are only available to the user specified in `ADMIN
 - `/clearwhitelists`: Clear all whitelists
 - `/clearcache`: Clear and reinitialize the cache
 - `/export`: Export whitelists
+- `/import_playlist [file_path]`: Import playlist from CSV file (use [Chosic Spotify Playlist Exporter](https://www.chosic.com/spotify-playlist-exporter/) to export playlists). **Note**: This will replace the current playlist completely and save it to persistent storage.
+- **File Upload**: You can also send a CSV file directly to the bot (only for admin). The bot will automatically detect and load the playlist.
 
 ## Prerequisites
 
@@ -67,14 +70,14 @@ services:
       - CACHE_DURATION=8h
       - MAX_RETRIES=3
       - REQUEST_DELAY=10s
-      - WHITELIST_DIR=data
+      - APP_DATA_DIR=data
       - LOG_LEVEL=info
       - TZ=Europe/Moscow
     volumes:
-      - whitelist_data:/app/data
+      - app_data:/app/data
 volumes:
-  whitelist_data:
-    name: whitelist_data
+  app_data:
+    name: app_data
 ```
 
 2. Run the bot:
@@ -96,10 +99,10 @@ docker run -d \
   -e CACHE_DURATION=8h \
   -e MAX_RETRIES=3 \
   -e REQUEST_DELAY=10s \
-  -e WHITELIST_DIR=data \
+  -e APP_DATA_DIR=data \
   -e LOG_LEVEL=info \
   -e TZ=Europe/Moscow \
-  -v whitelist_data:/app/data \
+  -v app_data:/app/data \
   tempizhere/gemfactory:latest
 ```
 
@@ -115,7 +118,7 @@ docker run -d \
 - `CACHE_DURATION`: Duration to cache data (default: 24h)
 - `MAX_RETRIES`: Maximum number of retries on failures (default: 3)
 - `REQUEST_DELAY`: Delay between requests (default: 3s)
-- `WHITELIST_DIR`: Directory for whitelist storage (default: data)
+- `APP_DATA_DIR`: Directory for application data storage (default: data)
 - `LOG_LEVEL`: Logging level (default: info)
 - `TZ`: Timezone (default: Asia/Seoul)
 
@@ -157,6 +160,22 @@ docker run -d \
 
 - `METRICS_ENABLED`: Enable metrics collection (default: false)
 - `GRACEFUL_SHUTDOWN_TIMEOUT`: Graceful shutdown timeout (default: 10s)
+- `PLAYLIST_CSV_PATH`: Path to the playlist CSV file (optional, if not set playlist will be loaded from persistent storage or via `/import_playlist` command)
+
+  **Playlist Format**: Use [Chosic Spotify Playlist Exporter](https://www.chosic.com/spotify-playlist-exporter/) to export your Spotify playlists to CSV format. The bot expects columns: Song (column 2), Artist (column 3), Spotify Track Id (column 21).
+
+  **Persistence**: Playlists are automatically saved to persistent storage (same directory as whitelists) and will be restored on bot restart.
+
+### Application Data Structure
+
+The bot stores all its data in the `APP_DATA_DIR` directory:
+
+```
+data/
+├── female_whitelist.json    # Female artist whitelist
+├── male_whitelist.json      # Male artist whitelist
+└── playlist.csv             # Music playlist
+```
 
 ## Deployment
 

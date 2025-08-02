@@ -7,6 +7,7 @@ import (
 	"gemfactory/internal/bot/keyboard"
 	"gemfactory/internal/bot/service"
 	"gemfactory/internal/config"
+	"gemfactory/internal/domain/playlist"
 	"gemfactory/internal/gateway/telegram/botapi"
 	cachemodule "gemfactory/internal/infrastructure/cache"
 	"gemfactory/internal/infrastructure/debounce"
@@ -114,15 +115,18 @@ type Middleware func(ctx Context, next HandlerFunc) error
 
 // Dependencies holds all bot dependencies
 type Dependencies struct {
-	BotAPI         botapi.BotAPI
-	Logger         *zap.Logger
-	Config         config.Interface
-	ReleaseService service.ReleaseServiceInterface
-	ArtistService  service.ArtistServiceInterface
-	Keyboard       keyboard.ManagerInterface
-	Debouncer      debounce.DebouncerInterface
-	Cache          cachemodule.Cache
-	WorkerPool     worker.PoolInterface
+	BotAPI          botapi.BotAPI
+	Logger          *zap.Logger
+	Config          config.Interface
+	ReleaseService  service.ReleaseServiceInterface
+	ArtistService   service.ArtistServiceInterface
+	Keyboard        keyboard.ManagerInterface
+	Debouncer       debounce.DebouncerInterface
+	Cache           cachemodule.Cache
+	WorkerPool      worker.PoolInterface
+	PlaylistService playlist.PlaylistService
+	PlaylistManager playlist.PlaylistManager
+	HomeworkCache   *playlist.HomeworkCache
 
 	Metrics metrics.Interface
 }
@@ -142,6 +146,7 @@ func (d *Dependencies) SetBotCommands() error {
 		{Command: "/month", Description: "Получить релизы за месяц"},
 		{Command: "/whitelists", Description: "Показать списки артистов"},
 		{Command: "/metrics", Description: "Показать метрики системы"},
+		{Command: "/homework", Description: "Получить случайное домашнее задание"},
 		{Command: "/clearcache", Description: "Очистить кэш (только для админов)"},
 	}
 	if err := d.BotAPI.SetBotCommands(commands); err != nil {

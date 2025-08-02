@@ -2,7 +2,7 @@
 
 # Переменные
 BINARY_NAME=gemfactory
-BUILD_DIR=build
+BUILD_DIR=bin
 DOCKER_IMAGE=tempizhere/gemfactory
 DOCKER_TAG=latest
 
@@ -78,11 +78,11 @@ docker-push: ## Отправить Docker образ в registry
 
 docker-run: ## Запустить в Docker
 	@echo "$(GREEN)Запуск в Docker...$(NC)"
-	docker-compose up -d
+	docker-compose -f deploy/docker-compose.yml up -d
 
 docker-stop: ## Остановить Docker контейнер
 	@echo "$(GREEN)Остановка Docker контейнера...$(NC)"
-	docker-compose down
+	docker-compose -f deploy/docker-compose.yml down
 
 # Разработка
 dev: ## Запустить в режиме разработки
@@ -121,20 +121,24 @@ all: clean deps format lint test build ## Полная сборка и тест�
 ci: deps lint test build-linux ## Команды для CI/CD
 	@echo "$(GREEN)CI/CD pipeline завершен$(NC)"
 
-# Деплой
-deploy-staging: ## Деплой на staging
-	@echo "$(GREEN)Деплой на staging...$(NC)"
-	docker-compose -f docker-compose.staging.yml up -d
 
-deploy-production: ## Деплой на production
-	@echo "$(GREEN)Деплой на production...$(NC)"
-	docker-compose -f docker-compose.production.yml up -d
+
+# Настройка
+setup: ## Настроить проект (создать docker-compose.yml из примера)
+	@echo "$(GREEN)Настройка проекта...$(NC)"
+	@if [ ! -f deploy/docker-compose.yml ]; then \
+		cp deploy/docker-compose.example.yml deploy/docker-compose.yml; \
+		echo "$(YELLOW)Создан deploy/docker-compose.yml из примера$(NC)"; \
+		echo "$(YELLOW)Не забудьте настроить переменные окружения!$(NC)"; \
+	else \
+		echo "$(YELLOW)deploy/docker-compose.yml уже существует$(NC)"; \
+	fi
 
 # Мониторинг
 logs: ## Показать логи
 	@echo "$(GREEN)Показать логи...$(NC)"
-	docker-compose logs -f
+	docker-compose -f deploy/docker-compose.yml logs -f
 
 status: ## Статус сервисов
 	@echo "$(GREEN)Статус сервисов...$(NC)"
-	docker-compose ps
+	docker-compose -f deploy/docker-compose.yml ps

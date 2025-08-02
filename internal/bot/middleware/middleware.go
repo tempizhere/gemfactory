@@ -59,7 +59,7 @@ func LogRequest(ctx types.Context, next types.HandlerFunc) error {
 
 // Debounce prevents double-clicks with context timeout
 func Debounce(ctx types.Context, next types.HandlerFunc) error {
-	key := fmt.Sprintf("%d:%s:%d", ctx.Message.Chat.ID, ctx.Message.Command(), ctx.UpdateID)
+	key := fmt.Sprintf("%d:%s", ctx.Message.Chat.ID, ctx.Message.Command())
 
 	if !ctx.Deps.Debouncer.CanProcessRequest(key) {
 		user := types.GetUserIdentifier(ctx.Message.From)

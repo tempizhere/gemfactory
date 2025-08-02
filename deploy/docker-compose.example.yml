@@ -1,0 +1,29 @@
+services:
+  gemfactory:
+    image: tempizhere/gemfactory:latest
+    container_name: gemfactory
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      # Обязательные настройки
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-fullofsarang}
+      - APP_DATA_DIR=data
+      - TZ=Europe/Moscow
+
+      # Настройки кэша (по умолчанию 24h, но для продакшена лучше 8h)
+      - CACHE_DURATION=8h
+
+      # Настройки запросов (увеличиваем задержку для стабильности)
+      - REQUEST_DELAY=10s
+    volumes:
+      - app_data:/app/data
+    healthcheck:
+      test: [ "CMD", "pgrep", "gemfactory" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+volumes:
+  app_data:
+    name: app_data 
