@@ -24,12 +24,17 @@ type whitelistManagerImpl struct {
 
 // NewWhitelistManager creates a new WhitelistManager instance
 func NewWhitelistManager(dir string, logger *zap.Logger) WhitelistManager {
-	return &whitelistManagerImpl{
+	manager := &whitelistManagerImpl{
 		female: make(map[string]struct{}),
 		male:   make(map[string]struct{}),
 		dir:    dir,
 		logger: logger,
 	}
+	
+	// Попытка переноса старых файлов вайтлистов
+	manager.migrateOldWhitelists()
+	
+	return manager
 }
 
 // loadWhitelists loads the female and male whitelists from JSON files
@@ -62,8 +67,23 @@ func (m *whitelistManagerImpl) loadFemaleWhitelist() error {
 		return fmt.Errorf("invalid file path: %s", path)
 	}
 
+	// Создаем директорию, если она не существует
+	if err := os.MkdirAll(m.dir, 0755); err != nil {
+		m.logger.Error("Failed to create directory", zap.String("dir", m.dir), zap.Error(err))
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
 	data, err := os.ReadFile(cleanPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			// Файл не существует, создаем пустой файл
+			m.logger.Info("Female whitelist file not found, creating empty file", zap.String("path", cleanPath))
+			if err := m.saveWhitelist("female_whitelist.json", m.female); err != nil {
+				m.logger.Error("Failed to create empty female whitelist", zap.Error(err))
+				return fmt.Errorf("failed to create empty female whitelist: %w", err)
+			}
+			return nil
+		}
 		m.logger.Error("Failed to read female whitelist", zap.Error(err))
 		return err
 	}
@@ -93,8 +113,23 @@ func (m *whitelistManagerImpl) loadMaleWhitelist() error {
 		return fmt.Errorf("invalid file path: %s", path)
 	}
 
+	// Создаем директорию, если она не существует
+	if err := os.MkdirAll(m.dir, 0755); err != nil {
+		m.logger.Error("Failed to create directory", zap.String("dir", m.dir), zap.Error(err))
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
 	data, err := os.ReadFile(cleanPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			// Файл не существует, создаем пустой файл
+			m.logger.Info("Male whitelist file not found, creating empty file", zap.String("path", cleanPath))
+			if err := m.saveWhitelist("male_whitelist.json", m.male); err != nil {
+				m.logger.Error("Failed to create empty male whitelist", zap.Error(err))
+				return fmt.Errorf("failed to create empty male whitelist: %w", err)
+			}
+			return nil
+		}
 		m.logger.Error("Failed to read male whitelist", zap.Error(err))
 		return err
 	}
@@ -384,5 +419,75 @@ func (m *whitelistManagerImpl) saveWhitelist(filename string, items map[string]s
 		m.logger.Error("Failed to write whitelist", zap.String("filename", filename), zap.Error(err))
 		return err
 	}
+	return nil
+}
+
+// migrateOldWhitelists attempts to migrate old whitelist files from the root directory
+func (m *whitelistManagerImpl) migrateOldWhitelists() {
+	// Проверяем, существуют ли файлы в новой директории
+	newFemalePath := filepath.Join(m.dir, "female_whitelist.json")
+	newMalePath := filepath.Join(m.dir, "male_whitelist.json")
+	
+	// Если файлы уже существуют в новой директории, не мигрируем
+	if _, err := os.Stat(newFemalePath); err == nil {
+		if _, err := os.Stat(newMalePath); err == nil {
+			m.logger.Info("Whitelist files already exist in new directory, skipping migration")
+			return
+		}
+	}
+	
+	// Старые пути (в корневой директории)
+	oldFemalePath := "female_whitelist.json"
+	oldMalePath := "male_whitelist.json"
+	
+	// Создаем новую директорию
+	if err := os.MkdirAll(m.dir, 0755); err != nil {
+		m.logger.Error("Failed to create directory for migration", zap.Error(err))
+		return
+	}
+	
+	// Мигрируем женский вайтлист
+	if _, err := os.Stat(oldFemalePath); err == nil {
+		if err := m.migrateFile(oldFemalePath, newFemalePath); err != nil {
+			m.logger.Error("Failed to migrate female whitelist", zap.Error(err))
+		} else {
+			m.logger.Info("Successfully migrated female whitelist", 
+				zap.String("from", oldFemalePath), 
+				zap.String("to", newFemalePath))
+		}
+	}
+	
+	// Мигрируем мужской вайтлист
+	if _, err := os.Stat(oldMalePath); err == nil {
+		if err := m.migrateFile(oldMalePath, newMalePath); err != nil {
+			m.logger.Error("Failed to migrate male whitelist", zap.Error(err))
+		} else {
+			m.logger.Info("Successfully migrated male whitelist", 
+				zap.String("from", oldMalePath), 
+				zap.String("to", newMalePath))
+		}
+	}
+}
+
+// migrateFile copies a file from old path to new path
+func (m *whitelistManagerImpl) migrateFile(oldPath, newPath string) error {
+	// Читаем старый файл
+	data, err := os.ReadFile(oldPath)
+	if err != nil {
+		return fmt.Errorf("failed to read old file: %w", err)
+	}
+	
+	// Записываем в новый файл
+	if err := os.WriteFile(newPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write new file: %w", err)
+	}
+	
+	// Удаляем старый файл
+	if err := os.Remove(oldPath); err != nil {
+		m.logger.Warn("Failed to remove old file after migration", 
+			zap.String("path", oldPath), zap.Error(err))
+		// Не возвращаем ошибку, так как миграция прошла успешно
+	}
+	
 	return nil
 }
