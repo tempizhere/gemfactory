@@ -17,6 +17,7 @@ import (
 	"gemfactory/internal/infrastructure/metrics"
 	"gemfactory/internal/infrastructure/updater"
 	"gemfactory/internal/infrastructure/worker"
+	"os"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -225,6 +226,14 @@ func (f *ComponentFactory) CreateMetrics() metrics.Interface {
 
 // CreateDependencies создает все зависимости
 func (f *ComponentFactory) CreateDependencies() (*types.Dependencies, error) {
+	// Создаем директорию данных приложения
+	dataDir := f.config.GetAppDataDir()
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		f.logger.Error("Failed to create app data directory", zap.String("dir", dataDir), zap.Error(err))
+		return nil, fmt.Errorf("failed to create app data directory: %w", err)
+	}
+	f.logger.Info("App data directory ready", zap.String("dir", dataDir))
+
 	// Создаем debouncer
 	debouncer := debounce.NewDebouncer()
 

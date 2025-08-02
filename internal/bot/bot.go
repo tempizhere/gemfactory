@@ -564,6 +564,7 @@ func (b *Bot) handleDocument(ctx types.Context) {
 	}
 
 	// Загружаем плейлист
+	b.logger.Info("Starting playlist import process")
 	b.deps.PlaylistManager.Clear()
 	if err := b.deps.PlaylistManager.LoadPlaylistFromFile(tempFile.Name()); err != nil {
 		b.logger.Error("Failed to load playlist", zap.Error(err))
@@ -573,8 +574,26 @@ func (b *Bot) handleDocument(ctx types.Context) {
 		return
 	}
 
-	// Плейлист автоматически сохраняется в постоянное хранилище при загрузке
+	// Сохраняем плейлист в постоянное хранилище
+	if err := b.deps.PlaylistManager.SavePlaylistToStorage(); err != nil {
+		b.logger.Error("Failed to save playlist to storage", zap.Error(err))
+		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Плейлист загружен, но не сохранен в постоянное хранилище."); err != nil {
+			b.logger.Error("Failed to send message", zap.Error(err))
+		}
+		return
+	}
+
+	b.logger.Info("Playlist import process completed successfully")
+
+	// Проверяем, что плейлист загружен и сохранен
 	trackCount := b.deps.PlaylistManager.GetTotalTracks()
+	isLoaded := b.deps.PlaylistManager.IsLoaded()
+
+	b.logger.Info("Playlist import completed",
+		zap.String("file_name", document.FileName),
+		zap.Int("tracks_loaded", trackCount),
+		zap.Bool("is_loaded", isLoaded))
+
 	if err := b.api.SendMessage(ctx.Message.Chat.ID,
 		fmt.Sprintf("✅ Плейлист успешно загружен и сохранен! Загружено %d треков из файла: %s", trackCount, document.FileName)); err != nil {
 		b.logger.Error("Failed to send message", zap.Error(err))

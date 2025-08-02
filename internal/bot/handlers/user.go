@@ -7,8 +7,6 @@ import (
 	"gemfactory/internal/domain/types"
 	"math/rand"
 	"strings"
-
-	"go.uber.org/zap"
 )
 
 // RegisterUserRoutes registers user command handlers
@@ -132,7 +130,6 @@ func handleMetricsCommand(ctx types.Context) error {
 func handleHomework(ctx types.Context) error {
 	userID := ctx.Message.From.ID
 
-	// Проверяем, может ли пользователь запросить домашнее задание
 	if !ctx.Deps.HomeworkCache.CanRequest(userID) {
 		timeUntilNext := ctx.Deps.HomeworkCache.GetTimeUntilNextRequest(userID)
 		hours := int(timeUntilNext.Hours())
@@ -145,34 +142,46 @@ func handleHomework(ctx types.Context) error {
 			timeMessage = fmt.Sprintf("%d мин", minutes)
 		}
 
+		// Получаем информацию о текущем домашнем задании
+		homeworkInfo := ctx.Deps.HomeworkCache.GetHomeworkInfo(userID)
+		var currentHomework string
+		if homeworkInfo != nil && homeworkInfo.Track != nil {
+			// Формируем правильное склонение для "раз/раза"
+			var timesWord string
+			switch {
+			case homeworkInfo.PlayCount == 1:
+				timesWord = "раз"
+			case homeworkInfo.PlayCount >= 2 && homeworkInfo.PlayCount <= 4:
+				timesWord = "раза"
+			default:
+				timesWord = "раз"
+			}
+
+			currentHomework = fmt.Sprintf("\n\n📚 Ваше текущее задание:\n🎵 \"%s - %s\" %d %s",
+				homeworkInfo.Track.Artist, homeworkInfo.Track.Title, homeworkInfo.PlayCount, timesWord)
+		}
+
 		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
-			fmt.Sprintf("⏰ Вы уже получили домашнее задание сегодня! Следующее задание будет доступно через %s.", timeMessage))
+			fmt.Sprintf("⏰ Вы уже получили домашнее задание сегодня! Следующее задание будет доступно через %s.%s", timeMessage, currentHomework))
 	}
 
-	// Генерируем случайное число от 1 до 6
-	playCount := rand.Intn(6) + 1
-
-	// Проверяем, загружен ли плейлист
 	if !ctx.Deps.PlaylistManager.IsLoaded() {
 		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
 			"❌ Плейлист не загружен. Обратитесь к администратору для загрузки плейлиста.")
 	}
 
-	// Получаем случайный трек из плейлиста
 	track, err := ctx.Deps.PlaylistManager.GetRandomTrack()
 	if err != nil {
-		ctx.Deps.Logger.Error("Failed to get random track", zap.Error(err))
 		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
 			"❌ Ошибка при получении трека из плейлиста. Попробуйте позже.")
 	}
 
+	// Генерируем случайное число от 1 до 6
+	playCount := rand.Intn(6) + 1
+
 	// Пул эмодзи для случайного выбора
 	musicEmojis := []string{"🎵", "🎶", "🎼", "🎤", "🎸", "🎹", "🎺", "🎻", "🥁", "🎷"}
-	headphonesEmojis := []string{"🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧"}
-
-	// Выбираем случайные эмодзи
 	selectedMusicEmoji := musicEmojis[rand.Intn(len(musicEmojis))]
-	selectedHeadphonesEmoji := headphonesEmojis[rand.Intn(len(headphonesEmojis))]
 
 	// Создаем ссылку на Spotify для встраивания в текст
 	spotifyLink := fmt.Sprintf("https://open.spotify.com/track/%s", track.ID)
@@ -188,18 +197,12 @@ func handleHomework(ctx types.Context) error {
 		timesWord = "раз"
 	}
 
-	message := fmt.Sprintf("🎲 %s Ваше домашнее задание: %s послушать \"%s - %s\" (<a href=\"%s\">Spotify</a>) %d %s %s",
-		selectedMusicEmoji, selectedHeadphonesEmoji, track.Artist, track.Title, spotifyLink, playCount, timesWord, selectedMusicEmoji)
+	// Формируем сообщение с кликабельным Spotify в скобках
+	message := fmt.Sprintf("🎲 Ваше домашнее задание: послушать \"%s - %s\" (<a href=\"%s\">Spotify</a>) %s %d %s",
+		track.Artist, track.Title, spotifyLink, selectedMusicEmoji, playCount, timesWord)
 
 	// Записываем запрос в кэш
-	ctx.Deps.HomeworkCache.RecordRequest(userID)
-
-	ctx.Deps.Logger.Info("Homework command executed",
-		zap.String("user", types.GetUserIdentifier(ctx.Message.From)),
-		zap.Int64("chat_id", ctx.Message.Chat.ID),
-		zap.String("artist", track.Artist),
-		zap.String("title", track.Title),
-		zap.Int("play_count", playCount))
+	ctx.Deps.HomeworkCache.RecordRequest(userID, track, playCount)
 
 	return ctx.Deps.BotAPI.SendMessageWithMarkup(ctx.Message.Chat.ID, message, nil)
 }
