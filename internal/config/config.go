@@ -263,6 +263,10 @@ func (c *Config) loadBasicSettings() error {
 		c.AdminUsername = "fullofsarang"
 	}
 
+	if c.AppDataDir == "" {
+		c.AppDataDir = "data"
+	}
+
 	if c.Timezone == "" {
 		c.Timezone = "Asia/Seoul"
 	}
