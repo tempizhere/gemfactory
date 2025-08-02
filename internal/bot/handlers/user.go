@@ -161,19 +161,19 @@ func handleHomework(ctx types.Context) error {
 				homeworkInfo.Track.Artist, homeworkInfo.Track.Title, homeworkInfo.PlayCount, timesWord)
 		}
 
-		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
-			fmt.Sprintf("⏰ Вы уже получили домашнее задание сегодня! Следующее задание будет доступно через %s.%s", timeMessage, currentHomework))
+		return ctx.Deps.BotAPI.SendMessageWithReply(ctx.Message.Chat.ID,
+			fmt.Sprintf("⏰ Вы уже получили домашнее задание сегодня! Следующее задание будет доступно через %s.%s", timeMessage, currentHomework), ctx.Message.MessageID)
 	}
 
 	if !ctx.Deps.PlaylistManager.IsLoaded() {
-		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
-			"❌ Плейлист не загружен. Обратитесь к администратору для загрузки плейлиста.")
+		return ctx.Deps.BotAPI.SendMessageWithReply(ctx.Message.Chat.ID,
+			"❌ Плейлист не загружен. Обратитесь к администратору для загрузки плейлиста.", ctx.Message.MessageID)
 	}
 
 	track, err := ctx.Deps.PlaylistManager.GetRandomTrack()
 	if err != nil {
-		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
-			"❌ Ошибка при получении трека из плейлиста. Попробуйте позже.")
+		return ctx.Deps.BotAPI.SendMessageWithReply(ctx.Message.Chat.ID,
+			"❌ Ошибка при получении трека из плейлиста. Попробуйте позже.", ctx.Message.MessageID)
 	}
 
 	// Генерируем случайное число от 1 до 6
@@ -204,5 +204,6 @@ func handleHomework(ctx types.Context) error {
 	// Записываем запрос в кэш
 	ctx.Deps.HomeworkCache.RecordRequest(userID, track, playCount)
 
-	return ctx.Deps.BotAPI.SendMessageWithMarkup(ctx.Message.Chat.ID, message, nil)
+	// Отправляем сообщение с reply к исходному сообщению
+	return ctx.Deps.BotAPI.SendMessageWithReplyAndMarkup(ctx.Message.Chat.ID, message, ctx.Message.MessageID, nil)
 }

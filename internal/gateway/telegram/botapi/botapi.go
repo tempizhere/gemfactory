@@ -12,6 +12,8 @@ import (
 type BotAPI interface {
 	SendMessage(chatID int64, text string) error
 	SendMessageWithMarkup(chatID int64, text string, markup any) error
+	SendMessageWithReply(chatID int64, text string, replyToMessageID int) error
+	SendMessageWithReplyAndMarkup(chatID int64, text string, replyToMessageID int, markup any) error
 	EditMessageReplyMarkup(chatID int64, messageID int, markup any) error
 	SetBotCommands(commands []tgbotapi.BotCommand) error
 	GetFile(fileID string) (tgbotapi.File, error)
@@ -55,6 +57,31 @@ func (t *TelegramBotAPI) SendMessageWithMarkup(chatID int64, text string, markup
 	_, err := t.api.Send(msg)
 	if err != nil {
 		t.logger.Error("Failed to send message with markup", zap.Int64("chat_id", chatID), zap.Error(err))
+	}
+	return err
+}
+
+// SendMessageWithReply sends a message with a reply to another message
+func (t *TelegramBotAPI) SendMessageWithReply(chatID int64, text string, replyToMessageID int) error {
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyToMessageID = replyToMessageID
+	_, err := t.api.Send(msg)
+	if err != nil {
+		t.logger.Error("Failed to send message with reply", zap.Int64("chat_id", chatID), zap.Int("reply_to_message_id", replyToMessageID), zap.Error(err))
+	}
+	return err
+}
+
+// SendMessageWithReplyAndMarkup sends a message with a reply and markup
+func (t *TelegramBotAPI) SendMessageWithReplyAndMarkup(chatID int64, text string, replyToMessageID int, markup any) error {
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyToMessageID = replyToMessageID
+	msg.ReplyMarkup = markup
+	msg.ParseMode = "HTML"
+	msg.DisableWebPagePreview = true
+	_, err := t.api.Send(msg)
+	if err != nil {
+		t.logger.Error("Failed to send message with reply and markup", zap.Int64("chat_id", chatID), zap.Int("reply_to_message_id", replyToMessageID), zap.Error(err))
 	}
 	return err
 }
