@@ -8,7 +8,6 @@ services:
       # Обязательные настройки
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-fullofsarang}
-      - APP_DATA_DIR=data
       - TZ=Europe/Moscow
 
       # Настройки кэша (по умолчанию 24h, но для продакшена лучше 8h)
@@ -26,4 +25,4 @@ services:
       start_period: 5s
 volumes:
   app_data:
-    name: app_data 
+    name: app_data

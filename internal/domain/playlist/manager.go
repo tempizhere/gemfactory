@@ -213,6 +213,13 @@ func (m *Manager) SavePlaylistToFile(filePath string) error {
 // LoadPlaylistFromStorage загружает плейлист из постоянного хранилища
 func (m *Manager) LoadPlaylistFromStorage() error {
 	storagePath := filepath.Join(m.storageDir, "playlist.csv")
+
+	// Проверяем, существует ли файл
+	if _, err := os.Stat(storagePath); os.IsNotExist(err) {
+		m.logger.Info("Playlist file not found in storage, will be loaded via /import_playlist command")
+		return nil // Не возвращаем ошибку, если файл не существует
+	}
+
 	return m.LoadPlaylistFromFile(storagePath)
 }
 

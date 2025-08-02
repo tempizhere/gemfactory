@@ -8,7 +8,6 @@ services:
       # Обязательные настройки
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-fullofsarang}
-      - APP_DATA_DIR=${APP_DATA_DIR:-data}
       - TZ=${TZ:-Europe/Moscow}
 
       # Настройки кэша
