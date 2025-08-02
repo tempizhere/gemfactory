@@ -38,7 +38,11 @@ func (m *Manager) LoadPlaylistFromFile(filePath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open playlist file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			m.logger.Error("Failed to close file", zap.Error(err))
+		}
+	}()
 
 	reader := csv.NewReader(file)
 	records, err := reader.ReadAll()
