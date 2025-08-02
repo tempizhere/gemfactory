@@ -36,8 +36,8 @@ Thumbs.db
 coverage.out
 coverage.html
 
-# Игнорируем JSON файлы в корне
-/*.json
+# Игнорируем JSON файлы
+*.json
 
 # temp
-/storage/
+/data/
