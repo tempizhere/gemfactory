@@ -250,7 +250,6 @@ func (c *Config) loadBasicSettings() error {
 
 	c.BotToken = os.Getenv("BOT_TOKEN")
 	c.AdminUsername = os.Getenv("ADMIN_USERNAME")
-	c.AppDataDir = os.Getenv("APP_DATA_DIR")
 	c.Timezone = os.Getenv("TZ")
 
 	// Валидация обязательных полей
@@ -263,9 +262,8 @@ func (c *Config) loadBasicSettings() error {
 		c.AdminUsername = "fullofsarang"
 	}
 
-	if c.AppDataDir == "" {
-		c.AppDataDir = "data"
-	}
+	// Фиксированная директория для данных
+	c.AppDataDir = "data"
 
 	if c.Timezone == "" {
 		c.Timezone = "Asia/Seoul"

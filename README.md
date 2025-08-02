@@ -67,7 +67,7 @@ services:
       - CACHE_DURATION=8h
       - MAX_RETRIES=3
       - REQUEST_DELAY=10s
-      - APP_DATA_DIR=data
+
       - LOG_LEVEL=info
       - TZ=Europe/Moscow
     volumes:
@@ -96,7 +96,7 @@ docker run -d \
   -e CACHE_DURATION=8h \
   -e MAX_RETRIES=3 \
   -e REQUEST_DELAY=10s \
-  -e APP_DATA_DIR=data \
+
   -e LOG_LEVEL=info \
   -e TZ=Europe/Moscow \
   -v app_data:/app/data \
@@ -115,7 +115,7 @@ docker run -d \
 - `CACHE_DURATION`: Duration to cache data (default: 24h)
 - `MAX_RETRIES`: Maximum number of retries on failures (default: 3)
 - `REQUEST_DELAY`: Delay between requests (default: 3s)
-- `APP_DATA_DIR`: Directory for application data storage (default: data)
+
 - `LOG_LEVEL`: Logging level (default: info)
 - `TZ`: Timezone (default: Asia/Seoul)
 
@@ -165,7 +165,7 @@ docker run -d \
 
 ### Application Data Structure
 
-The bot stores all its data in the `APP_DATA_DIR` directory:
+The bot stores all its data in the `data/` directory:
 
 ```
 data/
