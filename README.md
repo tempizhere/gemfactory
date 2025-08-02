@@ -46,7 +46,7 @@ Whitelist management commands are only available to the user specified in `ADMIN
 
 ## Prerequisites
 
-- **Go**: Version 1.21 or higher (for development)
+- **Go**: Version 1.24.1 or higher (for development)
 - **Docker**: For containerized deployment
 - **Docker Compose**: For orchestrating the bot with persistent storage
 - **Telegram Bot Token**: Obtain from BotFather in Telegram
