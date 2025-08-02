@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"go.uber.org/zap"
 )
@@ -45,7 +44,11 @@ func (m *Manager) LoadPlaylistFromFile(filePath string) error {
 		m.logger.Error("Failed to open playlist file", zap.String("file_path", filePath), zap.Error(err))
 		return fmt.Errorf("failed to open playlist file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			m.logger.Error("Failed to close file", zap.Error(err))
+		}
+	}()
 
 	reader := csv.NewReader(file)
 	records, err := reader.ReadAll()
@@ -173,7 +176,11 @@ func (m *Manager) SavePlaylistToFile(filePath string) error {
 		m.logger.Error("Failed to create playlist file", zap.String("file_path", filePath), zap.Error(err))
 		return fmt.Errorf("failed to create playlist file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			m.logger.Error("Failed to close file", zap.Error(err))
+		}
+	}()
 
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
@@ -223,6 +230,5 @@ func (m *Manager) SavePlaylistToStorage() error {
 
 // randomInt генерирует случайное число
 func (m *Manager) randomInt(n int) int {
-	rand.Seed(time.Now().UnixNano())
 	return rand.Intn(n)
 }

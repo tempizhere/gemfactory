@@ -493,13 +493,17 @@ func (b *Bot) handleDocument(ctx types.Context) {
 
 	// Проверяем, что это CSV файл
 	if !strings.HasSuffix(strings.ToLower(document.FileName), ".csv") {
-		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Пожалуйста, отправьте CSV файл.")
+		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Пожалуйста, отправьте CSV файл."); err != nil {
+			b.logger.Error("Failed to send message", zap.Error(err))
+		}
 		return
 	}
 
 	// Проверяем права администратора
 	if ctx.Message.From.UserName != b.config.GetAdminUsername() {
-		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Только администратор может загружать плейлисты.")
+		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Только администратор может загружать плейлисты."); err != nil {
+			b.logger.Error("Failed to send message", zap.Error(err))
+		}
 		return
 	}
 
@@ -507,7 +511,9 @@ func (b *Bot) handleDocument(ctx types.Context) {
 	file, err := b.api.GetFile(document.FileID)
 	if err != nil {
 		b.logger.Error("Failed to get file info", zap.Error(err))
-		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при получении файла.")
+		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при получении файла."); err != nil {
+			b.logger.Error("Failed to send message", zap.Error(err))
+		}
 		return
 	}
 
@@ -516,26 +522,44 @@ func (b *Bot) handleDocument(ctx types.Context) {
 	resp, err := http.Get(fileURL)
 	if err != nil {
 		b.logger.Error("Failed to download file", zap.Error(err))
-		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при скачивании файла.")
+		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при скачивании файла."); err != nil {
+			b.logger.Error("Failed to send message", zap.Error(err))
+		}
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			b.logger.Error("Failed to close response body", zap.Error(err))
+		}
+	}()
 
 	// Создаем временный файл
 	tempFile, err := os.CreateTemp("", "playlist_*.csv")
 	if err != nil {
 		b.logger.Error("Failed to create temp file", zap.Error(err))
-		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при создании временного файла.")
+		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при создании временного файла."); err != nil {
+			b.logger.Error("Failed to send message", zap.Error(err))
+		}
 		return
 	}
-	defer os.Remove(tempFile.Name())
-	defer tempFile.Close()
+	defer func() {
+		if err := os.Remove(tempFile.Name()); err != nil {
+			b.logger.Error("Failed to remove temp file", zap.Error(err))
+		}
+	}()
+	defer func() {
+		if err := tempFile.Close(); err != nil {
+			b.logger.Error("Failed to close temp file", zap.Error(err))
+		}
+	}()
 
 	// Копируем содержимое файла
 	_, err = io.Copy(tempFile, resp.Body)
 	if err != nil {
 		b.logger.Error("Failed to copy file content", zap.Error(err))
-		b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при копировании файла.")
+		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при копировании файла."); err != nil {
+			b.logger.Error("Failed to send message", zap.Error(err))
+		}
 		return
 	}
 
@@ -543,14 +567,18 @@ func (b *Bot) handleDocument(ctx types.Context) {
 	b.deps.PlaylistManager.Clear()
 	if err := b.deps.PlaylistManager.LoadPlaylistFromFile(tempFile.Name()); err != nil {
 		b.logger.Error("Failed to load playlist", zap.Error(err))
-		b.api.SendMessage(ctx.Message.Chat.ID, fmt.Sprintf("❌ Ошибка при загрузке плейлиста: %v", err))
+		if err := b.api.SendMessage(ctx.Message.Chat.ID, fmt.Sprintf("❌ Ошибка при загрузке плейлиста: %v", err)); err != nil {
+			b.logger.Error("Failed to send message", zap.Error(err))
+		}
 		return
 	}
 
 	// Плейлист автоматически сохраняется в постоянное хранилище при загрузке
 	trackCount := b.deps.PlaylistManager.GetTotalTracks()
-	b.api.SendMessage(ctx.Message.Chat.ID,
-		fmt.Sprintf("✅ Плейлист успешно загружен и сохранен! Загружено %d треков из файла: %s", trackCount, document.FileName))
+	if err := b.api.SendMessage(ctx.Message.Chat.ID,
+		fmt.Sprintf("✅ Плейлист успешно загружен и сохранен! Загружено %d треков из файла: %s", trackCount, document.FileName)); err != nil {
+		b.logger.Error("Failed to send message", zap.Error(err))
+	}
 }
 
 // extractCommand извлекает команду из обновления

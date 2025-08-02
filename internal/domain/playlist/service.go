@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"os"
 	"sync"
-	"time"
 
 	"go.uber.org/zap"
 )
@@ -40,7 +39,11 @@ func (p *playlistServiceImpl) LoadPlaylist(filePath string) error {
 		p.logger.Error("Failed to open CSV file", zap.String("file_path", filePath), zap.Error(err))
 		return fmt.Errorf("failed to open CSV file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			p.logger.Error("Failed to close file", zap.Error(err))
+		}
+	}()
 
 	reader := csv.NewReader(file)
 	records, err := reader.ReadAll()
@@ -56,7 +59,7 @@ func (p *playlistServiceImpl) LoadPlaylist(filePath string) error {
 
 	// Пропускаем заголовок (первую строку)
 	tracks := make([]*Track, 0, len(records)-1)
-	
+
 	for i, record := range records[1:] {
 		if len(record) < 22 {
 			p.logger.Warn("Skipping invalid record", zap.Int("row", i+2), zap.Int("columns", len(record)))
@@ -72,9 +75,9 @@ func (p *playlistServiceImpl) LoadPlaylist(filePath string) error {
 
 		// Валидация данных
 		if track.Title == "" || track.Artist == "" {
-			p.logger.Warn("Skipping track with empty title or artist", 
-				zap.Int("row", i+2), 
-				zap.String("title", track.Title), 
+			p.logger.Warn("Skipping track with empty title or artist",
+				zap.Int("row", i+2),
+				zap.String("title", track.Title),
 				zap.String("artist", track.Artist))
 			continue
 		}
@@ -85,7 +88,7 @@ func (p *playlistServiceImpl) LoadPlaylist(filePath string) error {
 	p.tracks = tracks
 	p.loaded = true
 
-	p.logger.Info("Playlist loaded successfully", 
+	p.logger.Info("Playlist loaded successfully",
 		zap.Int("total_tracks", len(p.tracks)),
 		zap.String("file_path", filePath))
 
@@ -106,12 +109,11 @@ func (p *playlistServiceImpl) GetRandomTrack() (*Track, error) {
 	}
 
 	// Генерируем случайный индекс
-	rand.Seed(time.Now().UnixNano())
 	index := rand.Intn(len(p.tracks))
 
 	track := p.tracks[index]
-	p.logger.Debug("Selected random track", 
-		zap.String("artist", track.Artist), 
+	p.logger.Debug("Selected random track",
+		zap.String("artist", track.Artist),
 		zap.String("title", track.Title),
 		zap.Int("index", index))
 
@@ -130,4 +132,4 @@ func (p *playlistServiceImpl) IsLoaded() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.loaded
-} 
+}

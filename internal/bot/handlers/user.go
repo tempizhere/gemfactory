@@ -7,7 +7,6 @@ import (
 	"gemfactory/internal/domain/types"
 	"math/rand"
 	"strings"
-	"time"
 
 	"go.uber.org/zap"
 )
@@ -151,7 +150,6 @@ func handleHomework(ctx types.Context) error {
 	}
 
 	// Генерируем случайное число от 1 до 6
-	rand.Seed(time.Now().UnixNano())
 	playCount := rand.Intn(6) + 1
 
 	// Проверяем, загружен ли плейлист
@@ -173,7 +171,6 @@ func handleHomework(ctx types.Context) error {
 	headphonesEmojis := []string{"🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧", "🎧"}
 
 	// Выбираем случайные эмодзи
-	rand.Seed(time.Now().UnixNano())
 	selectedMusicEmoji := musicEmojis[rand.Intn(len(musicEmojis))]
 	selectedHeadphonesEmoji := headphonesEmojis[rand.Intn(len(headphonesEmojis))]
 
