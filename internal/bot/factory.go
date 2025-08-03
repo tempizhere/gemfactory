@@ -283,10 +283,13 @@ func (f *ComponentFactory) CreateDependencies() (*types.Dependencies, error) {
 		}
 	} else {
 		// Пытаемся загрузить из постоянного хранилища
-		if err := playlistManager.LoadPlaylistFromStorage(); err != nil {
-			f.logger.Info("No playlist found in storage - playlist will be loaded via /import_playlist command")
+		err := playlistManager.LoadPlaylistFromStorage()
+		if err != nil {
+			f.logger.Warn("Failed to load playlist from storage", zap.Error(err))
+		} else if playlistManager.IsLoaded() {
+			f.logger.Info("Playlist loaded from storage", zap.Int("tracks", playlistManager.GetTotalTracks()))
 		} else {
-			f.logger.Info("Playlist loaded from storage")
+			f.logger.Info("No playlist found in storage - playlist will be loaded via /import_playlist command")
 		}
 	}
 
