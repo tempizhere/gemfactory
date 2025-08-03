@@ -36,8 +36,12 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 		return true // Первый запрос
 	}
 
-	// Проверяем, прошло ли 24 часа с последнего запроса
-	return time.Since(homeworkInfo.RequestTime) >= 24*time.Hour
+	// Проверяем, наступила ли полночь с момента последнего запроса
+	now := time.Now()
+	lastRequestDate := homeworkInfo.RequestTime.Truncate(24 * time.Hour)
+	currentDate := now.Truncate(24 * time.Hour)
+
+	return currentDate.After(lastRequestDate)
 }
 
 // RecordRequest записывает запрос пользователя
@@ -52,7 +56,7 @@ func (c *HomeworkCache) RecordRequest(userID int64, track *Track, playCount int)
 	}
 }
 
-// GetTimeUntilNextRequest возвращает время до следующего возможного запроса
+// GetTimeUntilNextRequest возвращает время до следующего возможного запроса (до полуночи)
 func (c *HomeworkCache) GetTimeUntilNextRequest(userID int64) time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -62,14 +66,18 @@ func (c *HomeworkCache) GetTimeUntilNextRequest(userID int64) time.Duration {
 		return 0 // Можно запросить сразу
 	}
 
-	timeSinceLastRequest := time.Since(homeworkInfo.RequestTime)
-	timeUntilNextRequest := 24*time.Hour - timeSinceLastRequest
+	now := time.Now()
+	lastRequestDate := homeworkInfo.RequestTime.Truncate(24 * time.Hour)
+	currentDate := now.Truncate(24 * time.Hour)
 
-	if timeUntilNextRequest <= 0 {
+	// Если уже новый день, можно запросить
+	if currentDate.After(lastRequestDate) {
 		return 0
 	}
 
-	return timeUntilNextRequest
+	// Вычисляем время до следующей полуночи
+	nextMidnight := currentDate.Add(24 * time.Hour)
+	return nextMidnight.Sub(now)
 }
 
 // Cleanup удаляет старые записи (старше 48 часов)
