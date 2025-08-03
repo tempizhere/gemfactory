@@ -286,7 +286,9 @@ func (f *ComponentFactory) CreateDependencies() (*types.Dependencies, error) {
 		err := playlistManager.LoadPlaylistFromStorage()
 		if err != nil {
 			f.logger.Warn("Failed to load playlist from storage", zap.Error(err))
-		} else if playlistManager.IsLoaded() {
+		}
+
+		if playlistManager.IsLoaded() {
 			f.logger.Info("Playlist loaded from storage", zap.Int("tracks", playlistManager.GetTotalTracks()))
 		} else {
 			f.logger.Info("No playlist found in storage - playlist will be loaded via /import_playlist command")
