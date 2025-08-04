@@ -297,7 +297,7 @@ func (f *ComponentFactory) CreateDependencies() (*types.Dependencies, error) {
 
 	// Создаем кэш домашних заданий
 	homeworkCache := playlist.NewHomeworkCache()
-	
+
 	// Устанавливаем временную зону для кэша домашних заданий
 	location := f.config.LoadLocation(f.logger)
 	homeworkCache.SetLocation(location)

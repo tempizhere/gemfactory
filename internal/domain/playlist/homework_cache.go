@@ -32,7 +32,15 @@ func NewHomeworkCache() *HomeworkCache {
 func (c *HomeworkCache) SetLocation(location *time.Location) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// Очищаем кэш если устанавливается не UTC временная зона
+	// Это гарантирует, что все новые записи будут в правильной временной зоне
+	if location != time.UTC {
+		c.requests = make(map[int64]*HomeworkInfo)
+	}
+
 	c.location = location
+
 }
 
 // CanRequest проверяет, может ли пользователь запросить домашнее задание
@@ -43,11 +51,6 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 	homeworkInfo, exists := c.requests[userID]
 	if !exists {
 		return true // Первый запрос
-	}
-
-	// Проверяем, что временная зона установлена
-	if c.location == nil {
-		c.location = time.UTC
 	}
 
 	// Проверяем, наступила ли полночь с момента последнего запроса
@@ -62,11 +65,6 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 func (c *HomeworkCache) RecordRequest(userID int64, track *Track, playCount int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	// Проверяем, что временная зона установлена
-	if c.location == nil {
-		c.location = time.UTC
-	}
 
 	c.requests[userID] = &HomeworkInfo{
 		RequestTime: time.Now().In(c.location),
@@ -85,11 +83,6 @@ func (c *HomeworkCache) GetTimeUntilNextRequest(userID int64) time.Duration {
 		return 0 // Можно запросить сразу
 	}
 
-	// Проверяем, что временная зона установлена
-	if c.location == nil {
-		c.location = time.UTC
-	}
-
 	now := time.Now().In(c.location)
 	lastRequestDate := homeworkInfo.RequestTime.In(c.location).Truncate(24 * time.Hour)
 	currentDate := now.Truncate(24 * time.Hour)
@@ -100,8 +93,12 @@ func (c *HomeworkCache) GetTimeUntilNextRequest(userID int64) time.Duration {
 	}
 
 	// Вычисляем время до ближайшей полуночи от текущего времени
-	nextMidnight := now.Truncate(24 * time.Hour).Add(24 * time.Hour)
-	return nextMidnight.Sub(now)
+	// Создаем время полуночи в той же временной зоне
+	year, month, day := now.Date()
+	nextMidnight := time.Date(year, month, day+1, 0, 0, 0, 0, c.location)
+	duration := nextMidnight.Sub(now)
+
+	return duration
 }
 
 // Cleanup удаляет старые записи (старше 48 часов)
