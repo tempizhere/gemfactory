@@ -62,7 +62,7 @@ func (m *Manager) LoadPlaylistFromFile(filePath string) error {
 
 	// Пропускаем заголовок и обрабатываем данные
 	for _, record := range records[1:] {
-		if len(record) < 22 {
+		if len(record) < 23 {
 			continue
 		}
 
