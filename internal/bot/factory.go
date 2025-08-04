@@ -10,6 +10,7 @@ import (
 	"gemfactory/internal/domain/playlist"
 	"gemfactory/internal/domain/types"
 	"gemfactory/internal/gateway/scraper"
+	"gemfactory/internal/gateway/spotify"
 	"gemfactory/internal/gateway/telegram/botapi"
 	releasecache "gemfactory/internal/infrastructure/cache"
 	"gemfactory/internal/infrastructure/debounce"
@@ -88,6 +89,23 @@ func (f *ComponentFactory) CreateScraper() scraper.Fetcher {
 	scraper := scraper.NewFetcher(f.config, f.logger)
 	f.logger.Info("Scraper created successfully")
 	return scraper
+}
+
+// CreateSpotifyClient создает Spotify клиент
+func (f *ComponentFactory) CreateSpotifyClient() (spotify.Interface, error) {
+	// Проверяем, есть ли настройки Spotify
+	if f.config.GetSpotifyClientID() == "" || f.config.GetSpotifyClientSecret() == "" {
+		f.logger.Warn("Spotify credentials not provided, Spotify client will not be created")
+		return nil, fmt.Errorf("spotify client ID and secret are required")
+	}
+
+	client, err := spotify.NewClient(f.config.GetSpotifyClientID(), f.config.GetSpotifyClientSecret(), f.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create spotify client: %w", err)
+	}
+
+	f.logger.Info("Spotify client created successfully")
+	return client, nil
 }
 
 // CreateManager создает менеджер кэша
@@ -268,31 +286,36 @@ func (f *ComponentFactory) CreateDependencies() (*types.Dependencies, error) {
 		return nil, fmt.Errorf("failed to create keyboard manager: %w", err)
 	}
 
+	// Создаем Spotify клиент (опционально)
+	var spotifyClient playlist.SpotifyClientInterface
+	spotifyClientInstance, err := f.CreateSpotifyClient()
+	if err != nil {
+		f.logger.Warn("Spotify client not available, playlist functionality will be limited", zap.Error(err))
+	} else {
+		// Создаем адаптер для конвертации типов
+		spotifyClient = playlist.NewSpotifyAdapter(spotifyClientInstance)
+		f.logger.Info("Spotify client created successfully")
+	}
+
 	// Создаем playlist service (для обратной совместимости)
-	playlistService := playlist.NewPlaylistService(f.logger)
+	playlistService := playlist.NewPlaylistService(f.logger, spotifyClient)
 
 	// Создаем playlist manager (новый способ управления плейлистами)
-	playlistManager := playlist.NewManager(f.logger, f.config.GetAppDataDir())
+	playlistManager := playlist.NewManager(f.logger, f.config.GetAppDataDir(), spotifyClient)
 
-	// Загружаем плейлист из CSV файла только если указан путь
-	if f.config.PlaylistCSVPath != "" {
-		if err := playlistManager.LoadPlaylistFromFile(f.config.PlaylistCSVPath); err != nil {
-			f.logger.Warn("Failed to load playlist from config path", zap.Error(err))
+	// Загружаем плейлист из переменной окружения, если указан URL и есть Spotify клиент
+	if f.config.GetPlaylistURL() != "" && spotifyClient != nil {
+		if err := playlistManager.LoadPlaylistFromSpotify(f.config.GetPlaylistURL()); err != nil {
+			f.logger.Warn("Failed to load playlist from config URL", zap.Error(err))
 		} else {
-			f.logger.Info("Playlist loaded from config path", zap.String("path", f.config.PlaylistCSVPath))
+			f.logger.Info("Playlist loaded from config URL",
+				zap.String("url", f.config.GetPlaylistURL()),
+				zap.Int("tracks", playlistManager.GetTotalTracks()))
 		}
+	} else if f.config.GetPlaylistURL() != "" && spotifyClient == nil {
+		f.logger.Warn("Playlist URL configured but Spotify client not available - playlist will not be loaded")
 	} else {
-		// Пытаемся загрузить из постоянного хранилища
-		err := playlistManager.LoadPlaylistFromStorage()
-		if err != nil {
-			f.logger.Warn("Failed to load playlist from storage", zap.Error(err))
-		}
-
-		if playlistManager.IsLoaded() {
-			f.logger.Info("Playlist loaded from storage", zap.Int("tracks", playlistManager.GetTotalTracks()))
-		} else {
-			f.logger.Info("No playlist found in storage - playlist will be loaded via /import_playlist command")
-		}
+		f.logger.Info("No playlist URL configured - playlist functionality will be limited")
 	}
 
 	// Создаем кэш домашних заданий
@@ -303,20 +326,40 @@ func (f *ComponentFactory) CreateDependencies() (*types.Dependencies, error) {
 	homeworkCache.SetLocation(location)
 	f.logger.Info("Homework cache timezone set", zap.String("timezone", f.config.GetTimezone()))
 
+	// Создаем планировщик обновлений плейлиста только если есть Spotify клиент
+	var playlistScheduler *playlist.Scheduler
+	if spotifyClient != nil {
+		playlistScheduler = playlist.NewScheduler(
+			playlistManager,
+			spotifyClient,
+			f.config.GetPlaylistURL(),
+			f.config.GetPlaylistUpdateHours(),
+			f.logger,
+		)
+	} else {
+		f.logger.Warn("Spotify client not available, playlist scheduler will not be created")
+	}
+
 	deps := &types.Dependencies{
-		BotAPI:          api,
-		Logger:          f.logger,
-		Config:          f.config,
-		ReleaseService:  releaseService,
-		ArtistService:   artistService,
-		Keyboard:        keyboardManager,
-		Debouncer:       debouncer,
-		Cache:           cache,
-		WorkerPool:      workerPool,
-		PlaylistService: playlistService,
-		PlaylistManager: playlistManager,
-		HomeworkCache:   homeworkCache,
-		Metrics:         metrics,
+		BotAPI:            api,
+		Logger:            f.logger,
+		Config:            f.config,
+		ReleaseService:    releaseService,
+		ArtistService:     artistService,
+		Keyboard:          keyboardManager,
+		Debouncer:         debouncer,
+		Cache:             cache,
+		WorkerPool:        workerPool,
+		PlaylistService:   playlistService,
+		PlaylistManager:   playlistManager,
+		PlaylistScheduler: playlistScheduler,
+		HomeworkCache:     homeworkCache,
+		Metrics:           metrics,
+	}
+
+	// Запускаем планировщик обновлений плейлиста только если он был создан
+	if playlistScheduler != nil {
+		playlistScheduler.Start()
 	}
 
 	f.logger.Info("All dependencies created successfully")

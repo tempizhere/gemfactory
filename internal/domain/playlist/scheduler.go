@@ -1,0 +1,122 @@
+// Package playlist содержит планировщик для автоматического обновления плейлистов.
+package playlist
+
+import (
+	"time"
+
+	"go.uber.org/zap"
+)
+
+// Scheduler управляет автоматическим обновлением плейлиста
+type Scheduler struct {
+	manager        PlaylistManager
+	spotifyClient  SpotifyClientInterface
+	playlistURL    string
+	updateInterval time.Duration
+	logger         *zap.Logger
+	stopChan       chan struct{}
+	isRunning      bool
+	doneChan       chan struct{}
+}
+
+// NewScheduler создает новый планировщик обновлений плейлиста
+func NewScheduler(
+	manager PlaylistManager,
+	spotifyClient SpotifyClientInterface,
+	playlistURL string,
+	updateHours int,
+	logger *zap.Logger,
+) *Scheduler {
+	return &Scheduler{
+		manager:        manager,
+		spotifyClient:  spotifyClient,
+		playlistURL:    playlistURL,
+		updateInterval: time.Duration(updateHours) * time.Hour,
+		logger:         logger,
+		stopChan:       make(chan struct{}),
+		doneChan:       make(chan struct{}),
+	}
+}
+
+// Start запускает планировщик обновлений
+func (s *Scheduler) Start() {
+	if s.isRunning {
+		s.logger.Warn("Scheduler is already running")
+		return
+	}
+
+	if s.playlistURL == "" {
+		s.logger.Warn("No playlist URL configured, scheduler will not start")
+		return
+	}
+
+	s.isRunning = true
+	s.logger.Info("Starting playlist update scheduler",
+		zap.String("playlist_url", s.playlistURL),
+		zap.Duration("update_interval", s.updateInterval))
+
+	go s.run()
+}
+
+// Stop останавливает планировщик обновлений
+func (s *Scheduler) Stop() {
+	if !s.isRunning {
+		return
+	}
+
+	s.logger.Info("Stopping playlist update scheduler")
+	close(s.stopChan)
+
+	// Ждем завершения горутины с таймаутом
+	select {
+	case <-s.doneChan:
+		s.logger.Info("Playlist update scheduler stopped gracefully")
+	case <-time.After(30 * time.Second):
+		s.logger.Warn("Playlist update scheduler stop timeout exceeded")
+	}
+
+	s.isRunning = false
+}
+
+// run выполняет основной цикл обновлений
+func (s *Scheduler) run() {
+	defer close(s.doneChan)
+
+	// Выполняем первое обновление сразу
+	s.updatePlaylist()
+
+	ticker := time.NewTicker(s.updateInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.updatePlaylist()
+		case <-s.stopChan:
+			s.logger.Info("Playlist update scheduler stopped")
+			return
+		}
+	}
+}
+
+// updatePlaylist выполняет обновление плейлиста
+func (s *Scheduler) updatePlaylist() {
+	s.logger.Info("Starting scheduled playlist update",
+		zap.String("playlist_url", s.playlistURL))
+
+	// Очищаем текущий плейлист
+	s.manager.Clear()
+
+	// Загружаем новый плейлист
+	if err := s.manager.LoadPlaylistFromSpotify(s.playlistURL); err != nil {
+		s.logger.Error("Failed to update playlist",
+			zap.String("playlist_url", s.playlistURL),
+			zap.Error(err))
+		return
+	}
+
+	trackCount := s.manager.GetTotalTracks()
+	s.logger.Info("Playlist updated successfully",
+		zap.String("playlist_url", s.playlistURL),
+		zap.Int("tracks_count", trackCount))
+}

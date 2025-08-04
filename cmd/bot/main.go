@@ -52,10 +52,14 @@ func gracefulShutdown(ctx context.Context, logger *zap.Logger, bot interface{ St
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.GetGracefulShutdownTimeout())
 	defer cancel()
 
+	logger.Info("Graceful shutdown timeout set",
+		zap.Duration("timeout", cfg.GetGracefulShutdownTimeout()))
+
 	// Канал для получения результата shutdown
 	done := make(chan error, 1)
 
 	go func() {
+		logger.Debug("Starting bot shutdown process")
 		done <- bot.Stop()
 	}()
 
@@ -67,21 +71,37 @@ func gracefulShutdown(ctx context.Context, logger *zap.Logger, bot interface{ St
 			logger.Info("Graceful shutdown completed successfully")
 		}
 	case <-shutdownCtx.Done():
-		logger.Error("Graceful shutdown timeout exceeded, forcing exit")
+		logger.Error("Graceful shutdown timeout exceeded, forcing exit",
+			zap.Duration("timeout", cfg.GetGracefulShutdownTimeout()))
 	}
 }
 
 // setupSignalHandler настраивает обработку сигналов
 func setupSignalHandler(ctx context.Context, cancel context.CancelFunc, logger *zap.Logger) {
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+	// Настраиваем обработку сигналов для graceful shutdown
+	signals := []os.Signal{
+		syscall.SIGINT,  // Ctrl+C
+		syscall.SIGTERM, // kill
+		syscall.SIGQUIT, // Ctrl+\
+	}
+
+	signal.Notify(sigChan, signals...)
+
+	logger.Info("Signal handler configured",
+		zap.Strings("signals", []string{"SIGINT", "SIGTERM", "SIGQUIT"}),
+		zap.String("os", runtime.GOOS))
 
 	go func() {
 		select {
 		case sig := <-sigChan:
-			logger.Info("Received shutdown signal", zap.String("signal", sig.String()))
+			logger.Info("Received shutdown signal",
+				zap.String("signal", sig.String()),
+				zap.Int("signal_code", int(sig.(syscall.Signal))))
 			cancel()
 		case <-ctx.Done():
+			logger.Debug("Signal handler cancelled by context")
 			return
 		}
 	}()

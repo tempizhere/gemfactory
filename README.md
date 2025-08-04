@@ -15,6 +15,8 @@ Gemfactory is a Telegram bot designed to provide users with schedules of K-pop c
 - **Health Monitoring**: Built-in health check endpoints for container orchestration
 - **Metrics Collection**: Comprehensive system metrics and performance monitoring
 - **Graceful Shutdown**: Proper resource cleanup and configurable shutdown timeouts
+- **Spotify Integration**: Direct integration with Spotify Web API for playlist management and homework assignments
+- **Automatic Playlist Updates**: Scheduled playlist updates from Spotify with configurable intervals
 
 ## Commands
 
@@ -28,6 +30,7 @@ Gemfactory is a Telegram bot designed to provide users with schedules of K-pop c
 - `/whitelists`: Display lists of female and male artists in a multi-column format
 - `/metrics`: Display system metrics including user activity, cache stats, and performance data
 - `/homework`: Get a random homework assignment with a track from the playlist and number of times to listen
+- `/playlist`: Display information about the current playlist (name, track count, owner, description)
 
 ### Admin Commands
 
@@ -38,8 +41,6 @@ Whitelist management commands are only available to the user specified in `ADMIN
 - `/clearwhitelists`: Clear all whitelists
 - `/clearcache`: Clear and reinitialize the cache
 - `/export`: Export whitelists
-- `/import_playlist [file_path]`: Import playlist from CSV file (use [Chosic Spotify Playlist Exporter](https://www.chosic.com/spotify-playlist-exporter/) to export playlists). **Note**: This will replace the current playlist completely and save it to persistent storage.
-- **File Upload**: You can also send a CSV file directly to the bot (only for admin). The bot will automatically detect and load the playlist.
 
 ## Prerequisites
 
@@ -64,10 +65,13 @@ services:
     environment:
       - BOT_TOKEN=your_bot_token
       - ADMIN_USERNAME=your_telegram_username
+      - SPOTIFY_CLIENT_ID=your_spotify_client_id
+      - SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+      - PLAYLIST_URL=https://open.spotify.com/playlist/your_playlist_id
+      - PLAYLIST_UPDATE_HOURS=24
       - CACHE_DURATION=8h
       - MAX_RETRIES=3
       - REQUEST_DELAY=10s
-
       - LOG_LEVEL=info
       - TZ=Europe/Moscow
     volumes:
@@ -93,10 +97,13 @@ docker run -d \
   --restart unless-stopped \
   -e BOT_TOKEN=your_bot_token \
   -e ADMIN_USERNAME=your_telegram_username \
+  -e SPOTIFY_CLIENT_ID=your_spotify_client_id \
+  -e SPOTIFY_CLIENT_SECRET=your_spotify_client_secret \
+  -e PLAYLIST_URL=https://open.spotify.com/playlist/your_playlist_id \
+  -e PLAYLIST_UPDATE_HOURS=24 \
   -e CACHE_DURATION=8h \
   -e MAX_RETRIES=3 \
   -e REQUEST_DELAY=10s \
-
   -e LOG_LEVEL=info \
   -e TZ=Europe/Moscow \
   -v app_data:/app/data \
@@ -109,6 +116,13 @@ docker run -d \
 
 - `BOT_TOKEN`: Telegram bot token from BotFather
 - `ADMIN_USERNAME`: Admin's Telegram username (default: fullofsarang)
+
+### Spotify Integration Variables
+
+- `SPOTIFY_CLIENT_ID`: Spotify Web API client ID
+- `SPOTIFY_CLIENT_SECRET`: Spotify Web API client secret
+- `PLAYLIST_URL`: URL of the Spotify playlist to use for homework assignments
+- `PLAYLIST_UPDATE_HOURS`: Interval in hours for automatic playlist updates (default: 24)
 
 ### Core Settings
 
@@ -157,11 +171,6 @@ docker run -d \
 
 - `METRICS_ENABLED`: Enable metrics collection (default: false)
 - `GRACEFUL_SHUTDOWN_TIMEOUT`: Graceful shutdown timeout (default: 10s)
-- `PLAYLIST_CSV_PATH`: Path to the playlist CSV file (optional, if not set playlist will be loaded from persistent storage or via `/import_playlist` command)
-
-  **Playlist Format**: Use [Chosic Spotify Playlist Exporter](https://www.chosic.com/spotify-playlist-exporter/) to export your Spotify playlists to CSV format. The bot expects columns: Song (column 2), Artist (column 3), Spotify Track Id (column 21).
-
-  **Persistence**: Playlists are automatically saved to persistent storage (same directory as whitelists) and will be restored on bot restart.
 
 ### Application Data Structure
 
@@ -171,7 +180,7 @@ The bot stores all its data in the `data/` directory:
 data/
 ├── female_whitelist.json    # Female artist whitelist
 ├── male_whitelist.json      # Male artist whitelist
-└── playlist.csv             # Music playlist
+└── playlist_cache.json      # Cached playlist data from Spotify
 ```
 
 ## Deployment

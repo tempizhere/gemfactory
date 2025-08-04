@@ -17,6 +17,7 @@ func RegisterUserRoutes(r *router.Router, _ *types.Dependencies) {
 	r.Handle("whitelists", handleWhitelists)
 	r.Handle("metrics", handleMetricsCommand)
 	r.Handle("homework", handleHomework)
+	r.Handle("playlist", handlePlaylist)
 }
 
 func handleStart(ctx types.Context) error {
@@ -33,6 +34,7 @@ func handleHelp(ctx types.Context) error {
 		"/whitelists - Показать списки артистов\n" +
 		"/metrics - Показать метрики системы\n" +
 		"/homework - Получить случайное домашнее задание\n" +
+		"/playlist - Информация о плейлисте\n" +
 		"\n" +
 		fmt.Sprintf("По вопросам вайтлистов: @%s", ctx.Deps.Config.GetAdminUsername())
 	return ctx.Deps.BotAPI.SendMessageWithMarkup(ctx.Message.Chat.ID, text, ctx.Deps.Keyboard.GetMainKeyboard())
@@ -82,44 +84,44 @@ func handleMetricsCommand(ctx types.Context) error {
 	stats := ctx.Deps.Metrics.GetStats()
 
 	var response strings.Builder
-	response.WriteString("📊 **Метрики системы**\n\n")
+	response.WriteString("📊 Метрики системы\n\n")
 
 	// Пользовательская активность
 	userActivity := stats["user_activity"].(map[string]interface{})
-	response.WriteString("👥 **Пользовательская активность:**\n")
+	response.WriteString("👥 Пользовательская активность:\n")
 	response.WriteString(fmt.Sprintf("  • Всего команд: %v\n", userActivity["total_commands"]))
 	response.WriteString(fmt.Sprintf("  • Уникальных пользователей: %v\n\n", userActivity["unique_users"]))
 
 	// Артисты
 	artists := stats["artists"].(map[string]interface{})
-	response.WriteString("🎤 **Артисты в фильтрах:**\n")
+	response.WriteString("🎤 Артисты в фильтрах:\n")
 	response.WriteString(fmt.Sprintf("  • Женские группы: %v\n", artists["female_artists"]))
 	response.WriteString(fmt.Sprintf("  • Мужские группы: %v\n", artists["male_artists"]))
 	response.WriteString(fmt.Sprintf("  • Всего артистов: %v\n\n", artists["total_artists"]))
 
 	// Релизы
 	releases := stats["releases"].(map[string]interface{})
-	response.WriteString("💿 **Релизы в кэше:**\n")
+	response.WriteString("💿 Релизы в кэше:\n")
 	response.WriteString(fmt.Sprintf("  • Количество релизов: %v\n", releases["cached_releases"]))
 	response.WriteString(fmt.Sprintf("  • Hit rate кэша: %.1f%%\n", releases["cache_hit_rate"]))
 	response.WriteString(fmt.Sprintf("  • Попадания/промахи: %v/%v\n\n", releases["cache_hits"], releases["cache_misses"]))
 
 	// Производительность
 	performance := stats["performance"].(map[string]interface{})
-	response.WriteString("⚡ **Производительность:**\n")
+	response.WriteString("⚡ Производительность:\n")
 	response.WriteString(fmt.Sprintf("  • Среднее время ответа: %v\n", performance["avg_response_time"]))
 	response.WriteString(fmt.Sprintf("  • Всего запросов: %v\n", performance["total_requests"]))
 	response.WriteString(fmt.Sprintf("  • Ошибок: %v (%.1f%%)\n\n", performance["error_count"], performance["error_rate"]))
 
 	// Система
 	system := stats["system"].(map[string]interface{})
-	response.WriteString("🔄 **Статус системы:**\n")
+	response.WriteString("🔄 Статус системы:\n")
 	response.WriteString(fmt.Sprintf("  • Время работы: %v\n", system["uptime"]))
 	response.WriteString(fmt.Sprintf("  • Последнее обновление: %v\n", system["last_cache_update"]))
 	response.WriteString(fmt.Sprintf("  • Следующее обновление: %v\n", system["next_cache_update"]))
 
 	// Домашние задания
-	response.WriteString("\n📚 **Домашние задания:**\n")
+	response.WriteString("\n📚 Домашние задания:\n")
 	response.WriteString(fmt.Sprintf("  • Всего выдано заданий: %d\n", ctx.Deps.HomeworkCache.GetTotalRequests()))
 	response.WriteString(fmt.Sprintf("  • Уникальных пользователей: %d\n", ctx.Deps.HomeworkCache.GetUniqueUsers()))
 
@@ -157,12 +159,15 @@ func handleHomework(ctx types.Context) error {
 				timesWord = "раз"
 			}
 
-			currentHomework = fmt.Sprintf("\n\n📚 Ваше текущее задание:\n🎵 \"%s - %s\" %d %s",
-				homeworkInfo.Track.Artist, homeworkInfo.Track.Title, homeworkInfo.PlayCount, timesWord)
+			// Создаем ссылку на Spotify для текущего задания
+			spotifyLink := fmt.Sprintf("https://open.spotify.com/track/%s", homeworkInfo.Track.ID)
+
+			currentHomework = fmt.Sprintf("\n\n📚 Ваше текущее задание:\n🎵 \"%s - %s\" (<a href=\"%s\">Spotify</a>) %d %s",
+				homeworkInfo.Track.Artist, homeworkInfo.Track.Title, spotifyLink, homeworkInfo.PlayCount, timesWord)
 		}
 
-		return ctx.Deps.BotAPI.SendMessageWithReply(ctx.Message.Chat.ID,
-			fmt.Sprintf("⏰ Вы уже получили домашнее задание сегодня! Следующее задание будет доступно через %s.%s", timeMessage, currentHomework), ctx.Message.MessageID)
+		return ctx.Deps.BotAPI.SendMessageWithReplyAndMarkup(ctx.Message.Chat.ID,
+			fmt.Sprintf("⏰ Вы уже получили домашнее задание сегодня! Следующее задание будет доступно через %s.%s", timeMessage, currentHomework), ctx.Message.MessageID, nil)
 	}
 
 	if !ctx.Deps.PlaylistManager.IsLoaded() {
@@ -205,5 +210,34 @@ func handleHomework(ctx types.Context) error {
 	ctx.Deps.HomeworkCache.RecordRequest(userID, track, playCount)
 
 	// Отправляем сообщение с reply к исходному сообщению
+	return ctx.Deps.BotAPI.SendMessageWithReplyAndMarkup(ctx.Message.Chat.ID, message, ctx.Message.MessageID, nil)
+}
+
+// handlePlaylist обрабатывает команду /playlist
+func handlePlaylist(ctx types.Context) error {
+	if !ctx.Deps.PlaylistManager.IsLoaded() {
+		return ctx.Deps.BotAPI.SendMessageWithReply(ctx.Message.Chat.ID,
+			"❌ Плейлист не загружен. Обратитесь к администратору для загрузки плейлиста.", ctx.Message.MessageID)
+	}
+
+	// Получаем информацию о плейлисте
+	playlistInfo, err := ctx.Deps.PlaylistManager.GetPlaylistInfo()
+	if err != nil {
+		return ctx.Deps.BotAPI.SendMessageWithReply(ctx.Message.Chat.ID,
+			"❌ Ошибка при получении информации о плейлисте. Попробуйте позже.", ctx.Message.MessageID)
+	}
+
+	// Создаем ссылку на Spotify плейлист
+	spotifyPlaylistLink := fmt.Sprintf("https://open.spotify.com/playlist/%s", playlistInfo.ID)
+
+	// Формируем сообщение с информацией о плейлисте
+	message := fmt.Sprintf("📚 Информация о плейлисте:\n\n"+
+		"🎵 Название: %s\n"+
+		"📊 Количество треков: %d\n"+
+		"👤 Владелец: %s\n"+
+		"📝 Описание: %s\n\n"+
+		"🔗 Ссылка: (<a href=\"%s\">Открыть в Spotify</a>)",
+		playlistInfo.Name, playlistInfo.TotalTracks, playlistInfo.Owner, playlistInfo.Description, spotifyPlaylistLink)
+
 	return ctx.Deps.BotAPI.SendMessageWithReplyAndMarkup(ctx.Message.Chat.ID, message, ctx.Message.MessageID, nil)
 }

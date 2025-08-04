@@ -54,7 +54,13 @@ type Config struct {
 	GracefulShutdownTimeout time.Duration
 
 	// Playlist настройки
-	PlaylistCSVPath string
+	PlaylistCSVPath     string
+	PlaylistURL         string
+	PlaylistUpdateHours int
+
+	// Spotify настройки
+	SpotifyClientID     string
+	SpotifyClientSecret string
 
 	// Информация о приложении
 	AppName    string
@@ -99,6 +105,12 @@ type Interface interface {
 
 	// Playlist настройки
 	GetPlaylistCSVPath() string
+	GetPlaylistURL() string
+	GetPlaylistUpdateHours() int
+
+	// Spotify настройки
+	GetSpotifyClientID() string
+	GetSpotifyClientSecret() string
 
 	// Информация о приложении
 	GetAppName() string
@@ -168,6 +180,14 @@ func Load() (*Config, error) {
 	}
 
 	if err := config.loadAdvancedSettings(); err != nil {
+		return nil, err
+	}
+
+	if err := config.loadSpotifySettings(); err != nil {
+		return nil, err
+	}
+
+	if err := config.loadPlaylistSettings(); err != nil {
 		return nil, err
 	}
 
@@ -489,6 +509,24 @@ func (c *Config) loadAdvancedSettings() error {
 	return nil
 }
 
+// loadSpotifySettings загружает настройки Spotify
+func (c *Config) loadSpotifySettings() error {
+	// Spotify Client ID (необязательный)
+	c.SpotifyClientID = os.Getenv("SPOTIFY_CLIENT_ID")
+
+	// Spotify Client Secret (необязательный)
+	c.SpotifyClientSecret = os.Getenv("SPOTIFY_CLIENT_SECRET")
+
+	return nil
+}
+
+// loadPlaylistSettings загружает настройки плейлиста
+func (c *Config) loadPlaylistSettings() error {
+	c.PlaylistURL = os.Getenv("PLAYLIST_URL")
+	c.PlaylistUpdateHours = getEnvInt("PLAYLIST_UPDATE_HOURS", 24) // По умолчанию обновляем каждые 24 часа
+	return nil
+}
+
 // LoadLocation loads the timezone specified in the config
 func (c *Config) LoadLocation(logger *zap.Logger) *time.Location {
 	if logger == nil {
@@ -593,6 +631,24 @@ func (c *Config) GetGracefulShutdownTimeout() time.Duration {
 // GetPlaylistCSVPath возвращает путь к CSV файлу плейлиста
 func (c *Config) GetPlaylistCSVPath() string {
 	return c.PlaylistCSVPath
+}
+
+func (c *Config) GetPlaylistURL() string {
+	return c.PlaylistURL
+}
+
+func (c *Config) GetPlaylistUpdateHours() int {
+	return c.PlaylistUpdateHours
+}
+
+// GetSpotifyClientID возвращает Spotify Client ID
+func (c *Config) GetSpotifyClientID() string {
+	return c.SpotifyClientID
+}
+
+// GetSpotifyClientSecret возвращает Spotify Client Secret
+func (c *Config) GetSpotifyClientSecret() string {
+	return c.SpotifyClientSecret
 }
 
 // loadAppInfo загружает информацию о приложении

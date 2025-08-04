@@ -4,12 +4,14 @@ package playlist
 import (
 	"sync"
 	"time"
+
+	"gemfactory/internal/types"
 )
 
 // HomeworkInfo содержит информацию о выданном домашнем задании
 type HomeworkInfo struct {
 	RequestTime time.Time
-	Track       *Track
+	Track       *types.SpotifyTrack
 	PlayCount   int
 }
 
@@ -72,7 +74,7 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 }
 
 // RecordRequest записывает запрос пользователя
-func (c *HomeworkCache) RecordRequest(userID int64, track *Track, playCount int) {
+func (c *HomeworkCache) RecordRequest(userID int64, track *types.SpotifyTrack, playCount int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

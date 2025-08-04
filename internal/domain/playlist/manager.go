@@ -2,111 +2,89 @@
 package playlist
 
 import (
-	"encoding/csv"
 	"fmt"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"sync"
+
+	"gemfactory/internal/types"
 
 	"go.uber.org/zap"
 )
 
 // Manager управляет плейлистами
 type Manager struct {
-	tracks     []*Track
-	mu         sync.RWMutex
-	loaded     bool
-	logger     *zap.Logger
-	storageDir string
+	tracks        []*types.SpotifyTrack
+	playlistInfo  *types.SpotifyPlaylistInfo
+	playlistURL   string
+	mu            sync.RWMutex
+	loaded        bool
+	logger        *zap.Logger
+	storageDir    string
+	spotifyClient SpotifyClientInterface
 }
 
 var _ PlaylistManager = (*Manager)(nil)
 
 // NewManager создает новый менеджер плейлистов
-func NewManager(logger *zap.Logger, storageDir string) *Manager {
+func NewManager(logger *zap.Logger, storageDir string, spotifyClient SpotifyClientInterface) *Manager {
 	return &Manager{
-		tracks:     make([]*Track, 0),
-		logger:     logger,
-		storageDir: storageDir,
+		tracks:        make([]*types.SpotifyTrack, 0),
+		logger:        logger,
+		storageDir:    storageDir,
+		spotifyClient: spotifyClient,
 	}
 }
 
-// LoadPlaylistFromFile загружает плейлист из файла
-func (m *Manager) LoadPlaylistFromFile(filePath string) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to open playlist file: %w", err)
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			m.logger.Error("Failed to close file", zap.Error(err))
-		}
-	}()
-
-	reader := csv.NewReader(file)
-	records, err := reader.ReadAll()
-	if err != nil {
-		return fmt.Errorf("failed to read CSV file: %w", err)
+// LoadPlaylistFromSpotify загружает плейлист из Spotify по URL
+func (m *Manager) LoadPlaylistFromSpotify(playlistURL string) error {
+	if m.spotifyClient == nil {
+		return fmt.Errorf("spotify client is not available")
 	}
 
-	if len(records) < 2 {
-		return fmt.Errorf("CSV file is empty or has no data records")
+	m.logger.Info("Loading playlist from Spotify", zap.String("playlist_url", playlistURL))
+
+	// Загружаем треки плейлиста
+	tracks, err := m.spotifyClient.GetPlaylistTracks(playlistURL)
+	if err != nil {
+		m.logger.Error("Failed to get playlist tracks from Spotify",
+			zap.String("playlist_url", playlistURL), zap.Error(err))
+		return fmt.Errorf("failed to get playlist tracks from Spotify: %w", err)
+	}
+
+	// Загружаем информацию о плейлисте
+	playlistInfo, err := m.spotifyClient.GetPlaylistInfo(playlistURL)
+	if err != nil {
+		m.logger.Error("Failed to get playlist info from Spotify",
+			zap.String("playlist_url", playlistURL), zap.Error(err))
+		return fmt.Errorf("failed to get playlist info from Spotify: %w", err)
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// Очищаем существующие треки
-	m.tracks = make([]*Track, 0)
+	m.tracks = make([]*types.SpotifyTrack, 0)
 
-	// Определяем формат файла по количеству колонок в первой строке данных
-	var isFullFormat bool
-	if len(records) > 1 {
-		firstRecord := records[1]
-		isFullFormat = len(firstRecord) >= 23
+	// Добавляем новые треки
+	for _, track := range tracks {
+		if track.Title != "" && track.Artist != "" {
+			m.tracks = append(m.tracks, track)
+		}
 	}
 
-	// Пропускаем заголовок и обрабатываем данные
-	for _, record := range records[1:] {
-		var track *Track
-
-		if isFullFormat {
-			// Полный формат (23+ колонки): #, Song, Artist, ..., Spotify Track Id, Camelot, ISRC
-			if len(record) < 23 {
-				continue
-			}
-			track = &Track{
-				ID:     record[20], // Spotify Track Id
-				Title:  record[1],  // Song
-				Artist: record[2],  // Artist
-			}
-		} else {
-			// Упрощенный формат (4 колонки): #, Song, Artist, Spotify Track Id
-			if len(record) < 4 {
-				continue
-			}
-			track = &Track{
-				ID:     record[3], // Spotify Track Id
-				Title:  record[1], // Song
-				Artist: record[2], // Artist
-			}
-		}
-
-		// Проверяем, что у трека есть все необходимые данные
-		if track.Title == "" || track.Artist == "" {
-			continue
-		}
-
-		m.tracks = append(m.tracks, track)
-	}
-
+	// Сохраняем информацию о плейлисте и URL
+	m.playlistInfo = playlistInfo
+	m.playlistURL = playlistURL
 	m.loaded = true
+
+	m.logger.Info("Playlist loaded from Spotify successfully",
+		zap.String("playlist_url", playlistURL), zap.Int("tracks_count", len(m.tracks)))
+
 	return nil
 }
 
 // GetRandomTrack возвращает случайный трек из плейлиста
-func (m *Manager) GetRandomTrack() (*Track, error) {
+func (m *Manager) GetRandomTrack() (*types.SpotifyTrack, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -137,6 +115,22 @@ func (m *Manager) GetTotalTracks() int {
 	return len(m.tracks)
 }
 
+// GetPlaylistInfo возвращает информацию о плейлисте
+func (m *Manager) GetPlaylistInfo() (*types.SpotifyPlaylistInfo, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if !m.loaded {
+		return nil, fmt.Errorf("playlist not loaded")
+	}
+
+	if m.playlistInfo == nil {
+		return nil, fmt.Errorf("playlist info not available")
+	}
+
+	return m.playlistInfo, nil
+}
+
 // IsLoaded проверяет, загружен ли плейлист
 func (m *Manager) IsLoaded() bool {
 	m.mu.RLock()
@@ -149,81 +143,25 @@ func (m *Manager) Clear() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.tracks = make([]*Track, 0)
+	m.tracks = make([]*types.SpotifyTrack, 0)
+	m.playlistInfo = nil
+	m.playlistURL = ""
 	m.loaded = false
 	m.logger.Info("Playlist cleared")
 }
 
-// SavePlaylistToFile сохраняет плейлист в файл
-func (m *Manager) SavePlaylistToFile(filePath string) error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	if !m.loaded || len(m.tracks) == 0 {
-		return fmt.Errorf("no tracks to save")
-	}
-
-	// Создаем директорию, если она не существует
-	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	file, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to create playlist file: %w", err)
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			m.logger.Error("Failed to close file", zap.Error(err))
-		}
-	}()
-
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-
-	// Записываем заголовок
-	header := []string{"#", "Song", "Artist", "Spotify Track Id"}
-	if err := writer.Write(header); err != nil {
-		m.logger.Error("Failed to write header", zap.Error(err))
-		return fmt.Errorf("failed to write header: %w", err)
-	}
-
-	// Записываем треки
-	for i, track := range m.tracks {
-		record := []string{
-			fmt.Sprintf("%d", i+1),
-			track.Title,
-			track.Artist,
-			track.ID,
-		}
-		if err := writer.Write(record); err != nil {
-			m.logger.Error("Failed to write track", zap.Int("index", i), zap.Error(err))
-			return fmt.Errorf("failed to write track: %w", err)
-		}
-	}
-
-	m.logger.Info("Playlist saved successfully", zap.String("file_path", filePath), zap.Int("tracks", len(m.tracks)))
-	return nil
-}
-
 // LoadPlaylistFromStorage загружает плейлист из постоянного хранилища
 func (m *Manager) LoadPlaylistFromStorage() error {
-	storagePath := filepath.Join(m.storageDir, "playlist.csv")
-
-	// Проверяем, существует ли файл
-	if _, err := os.Stat(storagePath); os.IsNotExist(err) {
-		m.logger.Info("Playlist file not found in storage, will be loaded via /import_playlist command")
-		return nil // Не возвращаем ошибку, если файл не существует
-	}
-
-	return m.LoadPlaylistFromFile(storagePath)
+	// Плейлисты теперь загружаются только из Spotify
+	m.logger.Info("Playlist storage loading is not supported, use LoadPlaylistFromSpotify instead")
+	return nil
 }
 
 // SavePlaylistToStorage сохраняет плейлист в постоянное хранилище
 func (m *Manager) SavePlaylistToStorage() error {
-	storagePath := filepath.Join(m.storageDir, "playlist.csv")
-	return m.SavePlaylistToFile(storagePath)
+	// Плейлисты теперь сохраняются только в памяти
+	m.logger.Info("Playlist storage saving is not supported")
+	return nil
 }
 
 // randomInt генерирует случайное число

@@ -7,7 +7,6 @@ import (
 	"gemfactory/internal/bot/middleware"
 	"gemfactory/internal/bot/router"
 	"gemfactory/internal/domain/types"
-	"os"
 	"strings"
 	"time"
 )
@@ -19,7 +18,7 @@ func RegisterAdminRoutes(r *router.Router, deps *types.Dependencies) {
 	r.Handle("clearcache", middleware.Wrap(middleware.AdminOnly(deps.Config.GetAdminUsername()), handleClearCache))
 	r.Handle("clearwhitelists", middleware.Wrap(middleware.AdminOnly(deps.Config.GetAdminUsername()), handleClearWhitelists))
 	r.Handle("export", middleware.Wrap(middleware.AdminOnly(deps.Config.GetAdminUsername()), handleExport))
-	r.Handle("import_playlist", middleware.Wrap(middleware.AdminOnly(deps.Config.GetAdminUsername()), handleImportPlaylist))
+
 }
 
 func handleAddArtist(ctx types.Context) error {
@@ -110,32 +109,4 @@ func handleClearWhitelists(ctx types.Context) error {
 func handleExport(ctx types.Context) error {
 	response := ctx.Deps.ArtistService.FormatWhitelistsForExport()
 	return ctx.Deps.BotAPI.SendMessageWithMarkup(ctx.Message.Chat.ID, response, ctx.Deps.Keyboard.GetMainKeyboard())
-}
-
-func handleImportPlaylist(ctx types.Context) error {
-	args := strings.Fields(ctx.Message.Text)[1:]
-	if len(args) < 1 {
-		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
-			"Использование: /import_playlist <путь_к_файлу>\n\n"+
-				"💡 Альтернативный способ: просто отправьте CSV файл боту как вложение!")
-	}
-
-	filePath := args[0]
-
-	// Проверяем существование файла
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID, fmt.Sprintf("Файл не найден: %s", filePath))
-	}
-
-	// Очищаем текущий плейлист и загружаем новый
-	ctx.Deps.PlaylistManager.Clear()
-
-	if err := ctx.Deps.PlaylistManager.LoadPlaylistFromFile(filePath); err != nil {
-		return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID, fmt.Sprintf("Ошибка при загрузке плейлиста: %v", err))
-	}
-
-	// Плейлист автоматически сохраняется в постоянное хранилище при загрузке
-	trackCount := ctx.Deps.PlaylistManager.GetTotalTracks()
-	return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID,
-		fmt.Sprintf("✅ Плейлист успешно загружен и сохранен! Загружено %d треков из файла: %s", trackCount, filePath))
 }
