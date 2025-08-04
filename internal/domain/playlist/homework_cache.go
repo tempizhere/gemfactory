@@ -45,6 +45,11 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 		return true // Первый запрос
 	}
 
+	// Проверяем, что временная зона установлена
+	if c.location == nil {
+		c.location = time.UTC
+	}
+
 	// Проверяем, наступила ли полночь с момента последнего запроса
 	now := time.Now().In(c.location)
 	lastRequestDate := homeworkInfo.RequestTime.In(c.location).Truncate(24 * time.Hour)
@@ -57,6 +62,11 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 func (c *HomeworkCache) RecordRequest(userID int64, track *Track, playCount int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// Проверяем, что временная зона установлена
+	if c.location == nil {
+		c.location = time.UTC
+	}
 
 	c.requests[userID] = &HomeworkInfo{
 		RequestTime: time.Now().In(c.location),
@@ -73,6 +83,11 @@ func (c *HomeworkCache) GetTimeUntilNextRequest(userID int64) time.Duration {
 	homeworkInfo, exists := c.requests[userID]
 	if !exists {
 		return 0 // Можно запросить сразу
+	}
+
+	// Проверяем, что временная зона установлена
+	if c.location == nil {
+		c.location = time.UTC
 	}
 
 	now := time.Now().In(c.location)
