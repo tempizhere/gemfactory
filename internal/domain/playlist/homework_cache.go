@@ -17,13 +17,22 @@ type HomeworkInfo struct {
 type HomeworkCache struct {
 	requests map[int64]*HomeworkInfo // userID -> homework info
 	mu       sync.RWMutex
+	location *time.Location // Временная зона для расчетов
 }
 
 // NewHomeworkCache создает новый кэш домашних заданий
 func NewHomeworkCache() *HomeworkCache {
 	return &HomeworkCache{
 		requests: make(map[int64]*HomeworkInfo),
+		location: time.UTC, // По умолчанию UTC
 	}
+}
+
+// SetLocation устанавливает временную зону для кэша
+func (c *HomeworkCache) SetLocation(location *time.Location) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.location = location
 }
 
 // CanRequest проверяет, может ли пользователь запросить домашнее задание
@@ -37,8 +46,8 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 	}
 
 	// Проверяем, наступила ли полночь с момента последнего запроса
-	now := time.Now()
-	lastRequestDate := homeworkInfo.RequestTime.Truncate(24 * time.Hour)
+	now := time.Now().In(c.location)
+	lastRequestDate := homeworkInfo.RequestTime.In(c.location).Truncate(24 * time.Hour)
 	currentDate := now.Truncate(24 * time.Hour)
 
 	return currentDate.After(lastRequestDate)
@@ -50,7 +59,7 @@ func (c *HomeworkCache) RecordRequest(userID int64, track *Track, playCount int)
 	defer c.mu.Unlock()
 
 	c.requests[userID] = &HomeworkInfo{
-		RequestTime: time.Now(),
+		RequestTime: time.Now().In(c.location),
 		Track:       track,
 		PlayCount:   playCount,
 	}
@@ -66,8 +75,8 @@ func (c *HomeworkCache) GetTimeUntilNextRequest(userID int64) time.Duration {
 		return 0 // Можно запросить сразу
 	}
 
-	now := time.Now()
-	lastRequestDate := homeworkInfo.RequestTime.Truncate(24 * time.Hour)
+	now := time.Now().In(c.location)
+	lastRequestDate := homeworkInfo.RequestTime.In(c.location).Truncate(24 * time.Hour)
 	currentDate := now.Truncate(24 * time.Hour)
 
 	// Если уже новый день, можно запросить
@@ -85,7 +94,7 @@ func (c *HomeworkCache) Cleanup() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	cutoff := time.Now().Add(-48 * time.Hour)
+	cutoff := time.Now().In(c.location).Add(-48 * time.Hour)
 	for userID, homeworkInfo := range c.requests {
 		if homeworkInfo.RequestTime.Before(cutoff) {
 			delete(c.requests, userID)
