@@ -84,8 +84,8 @@ func (c *HomeworkCache) GetTimeUntilNextRequest(userID int64) time.Duration {
 		return 0
 	}
 
-	// Вычисляем время до следующей полуночи
-	nextMidnight := currentDate.Add(24 * time.Hour)
+	// Вычисляем время до ближайшей полуночи от текущего времени
+	nextMidnight := now.Truncate(24 * time.Hour).Add(24 * time.Hour)
 	return nextMidnight.Sub(now)
 }
 
