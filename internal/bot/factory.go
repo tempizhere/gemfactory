@@ -297,6 +297,11 @@ func (f *ComponentFactory) CreateDependencies() (*types.Dependencies, error) {
 
 	// Создаем кэш домашних заданий
 	homeworkCache := playlist.NewHomeworkCache()
+	
+	// Устанавливаем временную зону для кэша домашних заданий
+	location := f.config.LoadLocation(f.logger)
+	homeworkCache.SetLocation(location)
+	f.logger.Info("Homework cache timezone set", zap.String("timezone", f.config.GetTimezone()))
 
 	deps := &types.Dependencies{
 		BotAPI:          api,
