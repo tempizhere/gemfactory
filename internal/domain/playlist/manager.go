@@ -60,16 +60,37 @@ func (m *Manager) LoadPlaylistFromFile(filePath string) error {
 	// Очищаем существующие треки
 	m.tracks = make([]*Track, 0)
 
+	// Определяем формат файла по количеству колонок в первой строке данных
+	var isFullFormat bool
+	if len(records) > 1 {
+		firstRecord := records[1]
+		isFullFormat = len(firstRecord) >= 23
+	}
+
 	// Пропускаем заголовок и обрабатываем данные
 	for _, record := range records[1:] {
-		if len(record) < 23 {
-			continue
-		}
+		var track *Track
 
-		track := &Track{
-			ID:     record[20], // Spotify Track Id
-			Title:  record[1],  // Song
-			Artist: record[2],  // Artist
+		if isFullFormat {
+			// Полный формат (23+ колонки): #, Song, Artist, ..., Spotify Track Id, Camelot, ISRC
+			if len(record) < 23 {
+				continue
+			}
+			track = &Track{
+				ID:     record[20], // Spotify Track Id
+				Title:  record[1],  // Song
+				Artist: record[2],  // Artist
+			}
+		} else {
+			// Упрощенный формат (4 колонки): #, Song, Artist, Spotify Track Id
+			if len(record) < 4 {
+				continue
+			}
+			track = &Track{
+				ID:     record[3], // Spotify Track Id
+				Title:  record[1], // Song
+				Artist: record[2], // Artist
+			}
 		}
 
 		// Проверяем, что у трека есть все необходимые данные
