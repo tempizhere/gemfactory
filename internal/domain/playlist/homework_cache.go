@@ -55,9 +55,19 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 
 	// Проверяем, наступила ли полночь с момента последнего запроса
 	now := time.Now().In(c.location)
+
+	// Получаем дату последнего запроса (начало дня)
 	lastRequestDate := homeworkInfo.RequestTime.In(c.location).Truncate(24 * time.Hour)
+
+	// Получаем текущую дату (начало дня)
 	currentDate := now.Truncate(24 * time.Hour)
 
+	// Отладочная информация
+	// fmt.Printf("DEBUG: userID=%d, now=%v, lastRequest=%v, lastRequestDate=%v, currentDate=%v, canRequest=%v, location=%v\n",
+	// 	userID, now, homeworkInfo.RequestTime, lastRequestDate, currentDate, currentDate.After(lastRequestDate), c.location)
+
+	// Если текущая дата больше даты последнего запроса, то можно запросить
+	// Это означает, что прошла полночь и наступил новый день
 	return currentDate.After(lastRequestDate)
 }
 
