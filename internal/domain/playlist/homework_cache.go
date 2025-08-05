@@ -65,13 +65,9 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 	// Получаем текущую дату (начало дня)
 	currentDate := now.Truncate(24 * time.Hour)
 
-	// Отладочная информация
-	// fmt.Printf("DEBUG: userID=%d, now=%v, lastRequest=%v, lastRequestDate=%v, currentDate=%v, canRequest=%v, location=%v\n",
-	// 	userID, now, homeworkInfo.RequestTime, lastRequestDate, currentDate, currentDate.After(lastRequestDate), c.location)
-
-	// Если текущая дата больше даты последнего запроса, то можно запросить
+	// Если текущая дата НЕ равна дате последнего запроса, то можно запросить
 	// Это означает, что прошла полночь и наступил новый день
-	return currentDate.After(lastRequestDate)
+	return !currentDate.Equal(lastRequestDate)
 }
 
 // RecordRequest записывает запрос пользователя
@@ -101,7 +97,7 @@ func (c *HomeworkCache) GetTimeUntilNextRequest(userID int64) time.Duration {
 	currentDate := now.Truncate(24 * time.Hour)
 
 	// Если уже новый день, можно запросить
-	if currentDate.After(lastRequestDate) {
+	if !currentDate.Equal(lastRequestDate) {
 		return 0
 	}
 
