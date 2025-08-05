@@ -11,8 +11,6 @@ import (
 	"net/url"
 	"strings"
 
-	"gemfactory/internal/types"
-
 	"github.com/zmb3/spotify/v2"
 	"go.uber.org/zap"
 )
@@ -154,7 +152,7 @@ func (c *Client) ExtractPlaylistID(playlistURL string) (string, error) {
 }
 
 // GetPlaylistTracks получает треки из публичного плейлиста
-func (c *Client) GetPlaylistTracks(playlistURL string) ([]*types.SpotifyTrack, error) {
+func (c *Client) GetPlaylistTracks(playlistURL string) ([]*Track, error) {
 	playlistID, err := c.ExtractPlaylistID(playlistURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract playlist ID: %w", err)
@@ -170,7 +168,7 @@ func (c *Client) GetPlaylistTracks(playlistURL string) ([]*types.SpotifyTrack, e
 
 	ctx := context.Background()
 
-	var allTracks []*types.SpotifyTrack
+	var allTracks []*Track
 	offset := 0
 	limit := 100 // Максимальный размер страницы для Spotify API
 
@@ -211,7 +209,7 @@ func (c *Client) GetPlaylistTracks(playlistURL string) ([]*types.SpotifyTrack, e
 				artistName = item.Track.Track.Artists[0].Name
 			}
 
-			allTracks = append(allTracks, &types.SpotifyTrack{
+			allTracks = append(allTracks, &Track{
 				ID:     string(item.Track.Track.ID),
 				Title:  item.Track.Track.Name,
 				Artist: artistName,
@@ -234,7 +232,7 @@ func (c *Client) GetPlaylistTracks(playlistURL string) ([]*types.SpotifyTrack, e
 }
 
 // GetPlaylistInfo получает информацию о плейлисте
-func (c *Client) GetPlaylistInfo(playlistURL string) (*types.SpotifyPlaylistInfo, error) {
+func (c *Client) GetPlaylistInfo(playlistURL string) (*PlaylistInfo, error) {
 	playlistID, err := c.ExtractPlaylistID(playlistURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract playlist ID: %w", err)
@@ -255,7 +253,7 @@ func (c *Client) GetPlaylistInfo(playlistURL string) (*types.SpotifyPlaylistInfo
 		return nil, fmt.Errorf("failed to get playlist: %w", err)
 	}
 
-	return &types.SpotifyPlaylistInfo{
+	return &PlaylistInfo{
 		ID:          string(playlist.ID),
 		Name:        playlist.Name,
 		Description: playlist.Description,

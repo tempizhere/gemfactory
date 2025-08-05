@@ -6,15 +6,15 @@ import (
 	"math/rand"
 	"sync"
 
-	"gemfactory/internal/types"
+	"gemfactory/internal/gateway/spotify"
 
 	"go.uber.org/zap"
 )
 
 // Manager управляет плейлистами
 type Manager struct {
-	tracks        []*types.SpotifyTrack
-	playlistInfo  *types.SpotifyPlaylistInfo
+	tracks        []*spotify.Track
+	playlistInfo  *spotify.PlaylistInfo
 	playlistURL   string
 	mu            sync.RWMutex
 	loaded        bool
@@ -28,7 +28,7 @@ var _ PlaylistManager = (*Manager)(nil)
 // NewManager создает новый менеджер плейлистов
 func NewManager(logger *zap.Logger, storageDir string, spotifyClient SpotifyClientInterface) *Manager {
 	return &Manager{
-		tracks:        make([]*types.SpotifyTrack, 0),
+		tracks:        make([]*spotify.Track, 0),
 		logger:        logger,
 		storageDir:    storageDir,
 		spotifyClient: spotifyClient,
@@ -63,7 +63,7 @@ func (m *Manager) LoadPlaylistFromSpotify(playlistURL string) error {
 	defer m.mu.Unlock()
 
 	// Очищаем существующие треки
-	m.tracks = make([]*types.SpotifyTrack, 0)
+	m.tracks = make([]*spotify.Track, 0)
 
 	// Добавляем новые треки
 	for _, track := range tracks {
@@ -84,7 +84,7 @@ func (m *Manager) LoadPlaylistFromSpotify(playlistURL string) error {
 }
 
 // GetRandomTrack возвращает случайный трек из плейлиста
-func (m *Manager) GetRandomTrack() (*types.SpotifyTrack, error) {
+func (m *Manager) GetRandomTrack() (*spotify.Track, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -116,7 +116,7 @@ func (m *Manager) GetTotalTracks() int {
 }
 
 // GetPlaylistInfo возвращает информацию о плейлисте
-func (m *Manager) GetPlaylistInfo() (*types.SpotifyPlaylistInfo, error) {
+func (m *Manager) GetPlaylistInfo() (*spotify.PlaylistInfo, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -143,7 +143,7 @@ func (m *Manager) Clear() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.tracks = make([]*types.SpotifyTrack, 0)
+	m.tracks = make([]*spotify.Track, 0)
 	m.playlistInfo = nil
 	m.playlistURL = ""
 	m.loaded = false

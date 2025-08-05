@@ -193,26 +193,27 @@ The bot can be deployed using Docker Compose or as a standalone Docker container
 
 ```
 gemfactory/
-├── bin/                           # Compiled binaries
-├── build/                         # Build artifacts and scripts
-├── cmd/                           # Application entry points
-│   └── bot/
-├── deploy/                        # Deployment configurations
+├── bin/                          # Compiled binaries
+├── cmd/                          # Application entry points
+│   └── bot/                     # Bot application
+├── deploy/                       # Deployment configurations
 ├── internal/                     # Private application code
-│   ├── bot/                      # Bot core components
+│   ├── bot/                     # Bot core components
 │   │   ├── handlers/            # Command handlers
 │   │   ├── keyboard/            # Keyboard management
 │   │   ├── middleware/          # Middleware components
 │   │   ├── router/              # Request routing
 │   │   └── service/             # Business logic services
-│   ├── config/                   # Configuration management
-│   ├── domain/                   # Domain models and business logic
+│   ├── config/                  # Configuration management
+│   ├── domain/                  # Domain models and business logic
 │   │   ├── artist/              # Artist domain
+│   │   ├── playlist/            # Playlist domain
 │   │   ├── release/             # Release domain
 │   │   ├── service/             # Service domain
 │   │   └── types/               # Common domain types
-│   ├── gateway/                  # External service integrations
+│   ├── gateway/                 # External service integrations
 │   │   ├── scraper/             # Web scraping gateway
+│   │   ├── spotify/             # Spotify API integration
 │   │   └── telegram/            # Telegram API gateway
 │   │       └── botapi/
 │   └── infrastructure/          # Infrastructure components
@@ -223,10 +224,12 @@ gemfactory/
 │       ├── middleware/          # Infrastructure middleware
 │       ├── updater/             # Cache updating system
 │       └── worker/              # Worker pool system
-├── pkg/                          # Public library code
-│   └── log/                      # Logging utilities
-├── data/                         # Runtime data storage (created at runtime)
-└── README.md                     # Project documentation
+├── pkg/                         # Public library code
+│   └── log/                     # Logging utilities
+├── data/                        # Runtime data storage
+├── Dockerfile                   # Docker container configuration
+├── Makefile                     # Build and deployment scripts
+└── README.md                    # Project documentation
 ```
 
 ## Development
@@ -244,10 +247,20 @@ The project follows Clean Architecture principles with clear separation of conce
 
 #### Bot Core
 
+- **Factory**: Component factory and dependency injection
 - **Router**: Command routing and middleware pipeline
-- **Handlers**: Command processing logic
+- **Handlers**: Command processing logic (user, admin, registration)
 - **Services**: Business logic implementation
 - **Keyboard Manager**: Dynamic inline keyboard generation
+
+#### Domain Layer
+
+- **Artist Domain**: Whitelist management and artist filtering
+- **Playlist Domain**: Playlist management with Spotify integration
+  - **Manager**: Playlist operations and track management
+  - **Scheduler**: Automatic playlist updates from Spotify
+  - **Homework Cache**: User assignment tracking with cooldown
+- **Release Domain**: Release data management and filtering
 
 #### Infrastructure
 
@@ -256,12 +269,16 @@ The project follows Clean Architecture principles with clear separation of conce
 - **Health Check**: Container health monitoring endpoints
 - **Metrics**: System performance and usage tracking
 - **Rate Limiter**: Request throttling and abuse prevention
+- **Graceful Shutdown**: Proper resource cleanup and signal handling
 
 #### External Integrations
 
 - **Telegram Bot API**: Official Telegram API wrapper with optimizations
+- **Spotify Web API**: Direct integration for playlist management
+  - **Client**: Spotify API client with Client Credentials Flow
+  - **Adapter**: Domain layer integration
 - **Web Scraper**: Resilient HTTP client with retry logic and connection pooling
-- **Data Persistence**: JSON-based whitelist storage with atomic operations
+- **Data Persistence**: JSON-based whitelist and playlist storage
 
 ## Contributing
 

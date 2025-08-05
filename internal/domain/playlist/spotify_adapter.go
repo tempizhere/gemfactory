@@ -2,27 +2,27 @@
 package playlist
 
 import (
-	"gemfactory/internal/types"
+	"gemfactory/internal/gateway/spotify"
 )
 
 // SpotifyAdapter адаптирует Spotify клиент из gateway слоя к domain интерфейсу
 type SpotifyAdapter struct {
 	client interface {
-		GetPlaylistTracks(playlistURL string) ([]*types.SpotifyTrack, error)
-		GetPlaylistInfo(playlistURL string) (*types.SpotifyPlaylistInfo, error)
+		GetPlaylistTracks(playlistURL string) ([]*spotify.Track, error)
+		GetPlaylistInfo(playlistURL string) (*spotify.PlaylistInfo, error)
 	}
 }
 
 // NewSpotifyAdapter создает новый адаптер для Spotify клиента
 func NewSpotifyAdapter(client interface {
-	GetPlaylistTracks(playlistURL string) ([]*types.SpotifyTrack, error)
-	GetPlaylistInfo(playlistURL string) (*types.SpotifyPlaylistInfo, error)
+	GetPlaylistTracks(playlistURL string) ([]*spotify.Track, error)
+	GetPlaylistInfo(playlistURL string) (*spotify.PlaylistInfo, error)
 }) SpotifyClientInterface {
 	return &SpotifyAdapter{client: client}
 }
 
 // GetPlaylistTracks получает треки из публичного плейлиста
-func (a *SpotifyAdapter) GetPlaylistTracks(playlistURL string) ([]*types.SpotifyTrack, error) {
+func (a *SpotifyAdapter) GetPlaylistTracks(playlistURL string) ([]*spotify.Track, error) {
 	gatewayTracks, err := a.client.GetPlaylistTracks(playlistURL)
 	if err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func (a *SpotifyAdapter) GetPlaylistTracks(playlistURL string) ([]*types.Spotify
 }
 
 // GetPlaylistInfo получает информацию о плейлисте
-func (a *SpotifyAdapter) GetPlaylistInfo(playlistURL string) (*types.SpotifyPlaylistInfo, error) {
+func (a *SpotifyAdapter) GetPlaylistInfo(playlistURL string) (*spotify.PlaylistInfo, error) {
 	gatewayPlaylistInfo, err := a.client.GetPlaylistInfo(playlistURL)
 	if err != nil {
 		return nil, err

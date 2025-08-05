@@ -7,7 +7,6 @@ import (
 	"gemfactory/internal/bot/keyboard"
 	"gemfactory/internal/bot/service"
 	"gemfactory/internal/config"
-	"gemfactory/internal/domain/playlist"
 	"gemfactory/internal/gateway/telegram/botapi"
 	cachemodule "gemfactory/internal/infrastructure/cache"
 	"gemfactory/internal/infrastructure/debounce"
@@ -124,10 +123,10 @@ type Dependencies struct {
 	Debouncer         debounce.DebouncerInterface
 	Cache             cachemodule.Cache
 	WorkerPool        worker.PoolInterface
-	PlaylistService   playlist.PlaylistService
-	PlaylistManager   playlist.PlaylistManager
-	PlaylistScheduler *playlist.Scheduler
-	HomeworkCache     *playlist.HomeworkCache
+	PlaylistService   PlaylistServiceInterface
+	PlaylistManager   PlaylistManagerInterface
+	PlaylistScheduler PlaylistSchedulerInterface
+	HomeworkCache     HomeworkCacheInterface
 
 	Metrics metrics.Interface
 }

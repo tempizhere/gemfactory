@@ -1,12 +1,12 @@
 // Package playlist содержит типы данных для работы с плейлистами.
 package playlist
 
-import "gemfactory/internal/types"
+import "gemfactory/internal/gateway/spotify"
 
 // PlaylistService определяет интерфейс для работы с плейлистами
 type PlaylistService interface {
 	// GetRandomTrack возвращает случайный трек из плейлиста
-	GetRandomTrack() (*types.SpotifyTrack, error)
+	GetRandomTrack() (*spotify.Track, error)
 
 	// GetTotalTracks возвращает общее количество треков в плейлисте
 	GetTotalTracks() int
@@ -21,13 +21,13 @@ type PlaylistService interface {
 // PlaylistManager определяет интерфейс для управления плейлистами
 type PlaylistManager interface {
 	// GetRandomTrack возвращает случайный трек из плейлиста
-	GetRandomTrack() (*types.SpotifyTrack, error)
+	GetRandomTrack() (*spotify.Track, error)
 
-	// GetTotalTracks возвращает общее количество треков в плейлисте
+	// GetTotalTracks возвращает общее количество треков в плейлиста
 	GetTotalTracks() int
 
 	// GetPlaylistInfo возвращает информацию о плейлисте
-	GetPlaylistInfo() (*types.SpotifyPlaylistInfo, error)
+	GetPlaylistInfo() (*spotify.PlaylistInfo, error)
 
 	// LoadPlaylistFromSpotify загружает плейлист из Spotify по URL
 	LoadPlaylistFromSpotify(playlistURL string) error

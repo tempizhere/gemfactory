@@ -6,14 +6,14 @@ import (
 	"math/rand"
 	"sync"
 
-	"gemfactory/internal/types"
+	"gemfactory/internal/gateway/spotify"
 
 	"go.uber.org/zap"
 )
 
 // playlistServiceImpl реализует интерфейс PlaylistService
 type playlistServiceImpl struct {
-	tracks        []*types.SpotifyTrack
+	tracks        []*spotify.Track
 	mu            sync.RWMutex
 	loaded        bool
 	logger        *zap.Logger
@@ -23,7 +23,7 @@ type playlistServiceImpl struct {
 // NewPlaylistService создает новый экземпляр PlaylistService
 func NewPlaylistService(logger *zap.Logger, spotifyClient SpotifyClientInterface) PlaylistService {
 	return &playlistServiceImpl{
-		tracks:        make([]*types.SpotifyTrack, 0),
+		tracks:        make([]*spotify.Track, 0),
 		logger:        logger,
 		spotifyClient: spotifyClient,
 	}
@@ -48,7 +48,7 @@ func (p *playlistServiceImpl) LoadPlaylistFromSpotify(playlistURL string) error 
 	defer p.mu.Unlock()
 
 	// Очищаем существующие треки
-	p.tracks = make([]*types.SpotifyTrack, 0)
+	p.tracks = make([]*spotify.Track, 0)
 
 	// Добавляем новые треки
 	for _, track := range tracks {
@@ -65,7 +65,7 @@ func (p *playlistServiceImpl) LoadPlaylistFromSpotify(playlistURL string) error 
 }
 
 // GetRandomTrack возвращает случайный трек из плейлиста
-func (p *playlistServiceImpl) GetRandomTrack() (*types.SpotifyTrack, error) {
+func (p *playlistServiceImpl) GetRandomTrack() (*spotify.Track, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
