@@ -7,7 +7,7 @@ services:
     environment:
       # Обязательные настройки
       - BOT_TOKEN=${BOT_TOKEN}
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-fullofsarang}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
       - TZ=${TZ:-Europe/Moscow}
 
       # Настройки кэша
