@@ -2,101 +2,70 @@
 package playlist
 
 import (
-	"encoding/csv"
 	"fmt"
 	"math/rand"
-	"os"
 	"sync"
+
+	"gemfactory/internal/gateway/spotify"
 
 	"go.uber.org/zap"
 )
 
 // playlistServiceImpl реализует интерфейс PlaylistService
 type playlistServiceImpl struct {
-	tracks []*Track
-	mu     sync.RWMutex
-	loaded bool
-	logger *zap.Logger
+	tracks        []*spotify.Track
+	mu            sync.RWMutex
+	loaded        bool
+	logger        *zap.Logger
+	spotifyClient SpotifyClientInterface
 }
 
 // NewPlaylistService создает новый экземпляр PlaylistService
-func NewPlaylistService(logger *zap.Logger) PlaylistService {
+func NewPlaylistService(logger *zap.Logger, spotifyClient SpotifyClientInterface) PlaylistService {
 	return &playlistServiceImpl{
-		tracks: make([]*Track, 0),
-		logger: logger,
+		tracks:        make([]*spotify.Track, 0),
+		logger:        logger,
+		spotifyClient: spotifyClient,
 	}
 }
 
-// LoadPlaylist загружает плейлист из CSV файла
-func (p *playlistServiceImpl) LoadPlaylist(filePath string) error {
+// LoadPlaylistFromSpotify загружает плейлист из Spotify по URL
+func (p *playlistServiceImpl) LoadPlaylistFromSpotify(playlistURL string) error {
+	if p.spotifyClient == nil {
+		return fmt.Errorf("spotify client is not available")
+	}
+
+	p.logger.Info("Loading playlist from Spotify", zap.String("playlist_url", playlistURL))
+
+	tracks, err := p.spotifyClient.GetPlaylistTracks(playlistURL)
+	if err != nil {
+		p.logger.Error("Failed to get playlist tracks from Spotify",
+			zap.String("playlist_url", playlistURL), zap.Error(err))
+		return fmt.Errorf("failed to get playlist tracks from Spotify: %w", err)
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.logger.Info("Loading playlist from CSV file", zap.String("file_path", filePath))
+	// Очищаем существующие треки
+	p.tracks = make([]*spotify.Track, 0)
 
-	file, err := os.Open(filePath)
-	if err != nil {
-		p.logger.Error("Failed to open CSV file", zap.String("file_path", filePath), zap.Error(err))
-		return fmt.Errorf("failed to open CSV file: %w", err)
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			p.logger.Error("Failed to close file", zap.Error(err))
+	// Добавляем новые треки
+	for _, track := range tracks {
+		if track.Title != "" && track.Artist != "" {
+			p.tracks = append(p.tracks, track)
 		}
-	}()
-
-	reader := csv.NewReader(file)
-	records, err := reader.ReadAll()
-	if err != nil {
-		p.logger.Error("Failed to read CSV file", zap.String("file_path", filePath), zap.Error(err))
-		return fmt.Errorf("failed to read CSV file: %w", err)
 	}
 
-	if len(records) < 2 {
-		p.logger.Error("CSV file is empty or contains only header", zap.String("file_path", filePath))
-		return fmt.Errorf("CSV file is empty or contains only header")
-	}
-
-	// Пропускаем заголовок (первую строку)
-	tracks := make([]*Track, 0, len(records)-1)
-
-	for i, record := range records[1:] {
-		if len(record) < 22 {
-			p.logger.Warn("Skipping invalid record", zap.Int("row", i+2), zap.Int("columns", len(record)))
-			continue
-		}
-
-		// Колонки: 0=#, 1=Song, 2=Artist, 20=Spotify Track Id
-		track := &Track{
-			ID:     record[20], // Spotify Track Id
-			Title:  record[1],  // Song
-			Artist: record[2],  // Artist
-		}
-
-		// Валидация данных
-		if track.Title == "" || track.Artist == "" {
-			p.logger.Warn("Skipping track with empty title or artist",
-				zap.Int("row", i+2),
-				zap.String("title", track.Title),
-				zap.String("artist", track.Artist))
-			continue
-		}
-
-		tracks = append(tracks, track)
-	}
-
-	p.tracks = tracks
 	p.loaded = true
-
-	p.logger.Info("Playlist loaded successfully",
-		zap.Int("total_tracks", len(p.tracks)),
-		zap.String("file_path", filePath))
+	p.logger.Info("Playlist loaded from Spotify successfully",
+		zap.String("playlist_url", playlistURL), zap.Int("tracks_count", len(p.tracks)))
 
 	return nil
 }
 
 // GetRandomTrack возвращает случайный трек из плейлиста
-func (p *playlistServiceImpl) GetRandomTrack() (*Track, error) {
+func (p *playlistServiceImpl) GetRandomTrack() (*spotify.Track, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 

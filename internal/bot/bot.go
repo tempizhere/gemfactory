@@ -13,9 +13,6 @@ import (
 	"gemfactory/internal/gateway/telegram/botapi"
 	"gemfactory/internal/infrastructure/health"
 	"gemfactory/internal/infrastructure/worker"
-	"io"
-	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -415,14 +412,16 @@ func (b *Bot) Stop() error {
 
 	// Отменяем контекст для остановки всех горутин
 	if b.cancel != nil {
+		b.logger.Debug("Cancelling bot context")
 		b.cancel()
 	}
 
 	// Отправляем сигнал остановки (для обратной совместимости)
 	select {
 	case <-b.stopChan:
-		// Канал уже закрыт
+		b.logger.Debug("Stop channel already closed")
 	default:
+		b.logger.Debug("Closing stop channel")
 		close(b.stopChan)
 	}
 
@@ -430,11 +429,17 @@ func (b *Bot) Stop() error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), b.config.GetGracefulShutdownTimeout())
 	defer shutdownCancel()
 
+	b.logger.Debug("Graceful shutdown timeout set",
+		zap.Duration("timeout", b.config.GetGracefulShutdownTimeout()))
+
 	// Останавливаем health check сервер с контекстом
 	if b.health != nil {
+		b.logger.Debug("Stopping health check server")
 		go func() {
 			if err := b.health.Stop(shutdownCtx); err != nil {
 				b.logger.Error("Failed to stop health check server", zap.Error(err))
+			} else {
+				b.logger.Debug("Health check server stopped successfully")
 			}
 		}()
 	}
@@ -443,6 +448,7 @@ func (b *Bot) Stop() error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		b.logger.Debug("Waiting for all goroutines to complete")
 		b.wg.Wait()
 	}()
 
@@ -454,14 +460,27 @@ func (b *Bot) Stop() error {
 	}
 
 	// Останавливаем worker pool
+	b.logger.Debug("Stopping worker pool")
 	b.workerPool.Stop()
 
 	// Останавливаем keyboard manager
+	b.logger.Debug("Stopping keyboard manager")
 	b.keyboard.Stop()
+
+	// Останавливаем планировщик обновлений плейлиста
+	if b.deps.PlaylistScheduler != nil {
+		b.logger.Debug("Stopping playlist scheduler")
+		b.deps.PlaylistScheduler.Stop()
+	} else {
+		b.logger.Debug("No playlist scheduler to stop")
+	}
 
 	// Очищаем кэш
 	if b.deps.Cache != nil {
+		b.logger.Debug("Clearing cache")
 		b.deps.Cache.Clear()
+	} else {
+		b.logger.Debug("No cache to clear")
 	}
 
 	b.logger.Info("Bot stopped successfully")
@@ -489,113 +508,11 @@ func getUserID(update tgbotapi.Update) int64 {
 
 // handleDocument обрабатывает вложения файлов
 func (b *Bot) handleDocument(ctx types.Context) {
-	document := ctx.Message.Document
-
-	// Проверяем, что это CSV файл
-	if !strings.HasSuffix(strings.ToLower(document.FileName), ".csv") {
-		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Пожалуйста, отправьте CSV файл."); err != nil {
-			b.logger.Error("Failed to send message", zap.Error(err))
-		}
-		return
-	}
-
-	// Проверяем права администратора
-	if ctx.Message.From.UserName != b.config.GetAdminUsername() {
-		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Только администратор может загружать плейлисты."); err != nil {
-			b.logger.Error("Failed to send message", zap.Error(err))
-		}
-		return
-	}
-
-	// Получаем информацию о файле
-	file, err := b.api.GetFile(document.FileID)
-	if err != nil {
-		b.logger.Error("Failed to get file info", zap.Error(err))
-		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при получении файла."); err != nil {
-			b.logger.Error("Failed to send message", zap.Error(err))
-		}
-		return
-	}
-
-	// Скачиваем файл
-	fileURL := file.Link(b.api.(*botapi.TelegramBotAPI).GetAPI().Token)
-	resp, err := http.Get(fileURL)
-	if err != nil {
-		b.logger.Error("Failed to download file", zap.Error(err))
-		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при скачивании файла."); err != nil {
-			b.logger.Error("Failed to send message", zap.Error(err))
-		}
-		return
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			b.logger.Error("Failed to close response body", zap.Error(err))
-		}
-	}()
-
-	// Создаем временный файл
-	tempFile, err := os.CreateTemp("", "playlist_*.csv")
-	if err != nil {
-		b.logger.Error("Failed to create temp file", zap.Error(err))
-		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при создании временного файла."); err != nil {
-			b.logger.Error("Failed to send message", zap.Error(err))
-		}
-		return
-	}
-	defer func() {
-		if err := os.Remove(tempFile.Name()); err != nil {
-			b.logger.Error("Failed to remove temp file", zap.Error(err))
-		}
-	}()
-	defer func() {
-		if err := tempFile.Close(); err != nil {
-			b.logger.Error("Failed to close temp file", zap.Error(err))
-		}
-	}()
-
-	// Копируем содержимое файла
-	_, err = io.Copy(tempFile, resp.Body)
-	if err != nil {
-		b.logger.Error("Failed to copy file content", zap.Error(err))
-		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Ошибка при копировании файла."); err != nil {
-			b.logger.Error("Failed to send message", zap.Error(err))
-		}
-		return
-	}
-
-	// Загружаем плейлист
-	b.logger.Info("Starting playlist import process")
-	b.deps.PlaylistManager.Clear()
-	if err := b.deps.PlaylistManager.LoadPlaylistFromFile(tempFile.Name()); err != nil {
-		b.logger.Error("Failed to load playlist", zap.Error(err))
-		if err := b.api.SendMessage(ctx.Message.Chat.ID, fmt.Sprintf("❌ Ошибка при загрузке плейлиста: %v", err)); err != nil {
-			b.logger.Error("Failed to send message", zap.Error(err))
-		}
-		return
-	}
-
-	// Сохраняем плейлист в постоянное хранилище
-	if err := b.deps.PlaylistManager.SavePlaylistToStorage(); err != nil {
-		b.logger.Error("Failed to save playlist to storage", zap.Error(err))
-		if err := b.api.SendMessage(ctx.Message.Chat.ID, "❌ Плейлист загружен, но не сохранен в постоянное хранилище."); err != nil {
-			b.logger.Error("Failed to send message", zap.Error(err))
-		}
-		return
-	}
-
-	b.logger.Info("Playlist import process completed successfully")
-
-	// Проверяем, что плейлист загружен и сохранен
-	trackCount := b.deps.PlaylistManager.GetTotalTracks()
-	isLoaded := b.deps.PlaylistManager.IsLoaded()
-
-	b.logger.Info("Playlist import completed",
-		zap.String("file_name", document.FileName),
-		zap.Int("tracks_loaded", trackCount),
-		zap.Bool("is_loaded", isLoaded))
-
+	// Плейлисты теперь загружаются только через Spotify API
 	if err := b.api.SendMessage(ctx.Message.Chat.ID,
-		fmt.Sprintf("✅ Плейлист успешно загружен и сохранен! Загружено %d треков из файла: %s", trackCount, document.FileName)); err != nil {
+		"❌ Загрузка плейлистов через файлы больше не поддерживается.\n\n"+
+			"💡 Используйте команду /import_playlist <spotify_playlist_url>\n"+
+			"Пример: /import_playlist https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"); err != nil {
 		b.logger.Error("Failed to send message", zap.Error(err))
 	}
 }

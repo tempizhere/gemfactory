@@ -1,23 +1,18 @@
 // Package playlist содержит типы данных для работы с плейлистами.
 package playlist
 
-// Track представляет трек из плейлиста
-type Track struct {
-	ID     string // Spotify Track ID
-	Title  string // Название трека
-	Artist string // Исполнитель
-}
+import "gemfactory/internal/gateway/spotify"
 
 // PlaylistService определяет интерфейс для работы с плейлистами
 type PlaylistService interface {
 	// GetRandomTrack возвращает случайный трек из плейлиста
-	GetRandomTrack() (*Track, error)
+	GetRandomTrack() (*spotify.Track, error)
 
 	// GetTotalTracks возвращает общее количество треков в плейлисте
 	GetTotalTracks() int
 
-	// LoadPlaylist загружает плейлист из CSV файла
-	LoadPlaylist(filePath string) error
+	// LoadPlaylistFromSpotify загружает плейлист из Spotify по URL
+	LoadPlaylistFromSpotify(playlistURL string) error
 
 	// IsLoaded проверяет, загружен ли плейлист
 	IsLoaded() bool
@@ -26,16 +21,16 @@ type PlaylistService interface {
 // PlaylistManager определяет интерфейс для управления плейлистами
 type PlaylistManager interface {
 	// GetRandomTrack возвращает случайный трек из плейлиста
-	GetRandomTrack() (*Track, error)
+	GetRandomTrack() (*spotify.Track, error)
 
-	// GetTotalTracks возвращает общее количество треков в плейлисте
+	// GetTotalTracks возвращает общее количество треков в плейлиста
 	GetTotalTracks() int
 
-	// LoadPlaylistFromFile загружает плейлист из файла
-	LoadPlaylistFromFile(filePath string) error
+	// GetPlaylistInfo возвращает информацию о плейлисте
+	GetPlaylistInfo() (*spotify.PlaylistInfo, error)
 
-	// SavePlaylistToFile сохраняет плейлист в файл
-	SavePlaylistToFile(filePath string) error
+	// LoadPlaylistFromSpotify загружает плейлист из Spotify по URL
+	LoadPlaylistFromSpotify(playlistURL string) error
 
 	// LoadPlaylistFromStorage загружает плейлист из постоянного хранилища
 	LoadPlaylistFromStorage() error
