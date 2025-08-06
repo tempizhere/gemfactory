@@ -53,9 +53,31 @@ func (u *Impl) InitializeCache(ctx context.Context) error {
 	// Fetch links for all months once
 	monthLinks := make(map[string][]string)
 	requestCount := 0
+
+	// Проверяем контекст перед запросом ссылок
+	select {
+	case <-ctx.Done():
+		u.logger.Debug("Context cancelled before fetching links", zap.Error(ctx.Err()))
+		if u.metrics != nil {
+			u.metrics.SetCacheUpdateStatus(false)
+		}
+		return ctx.Err()
+	default:
+	}
+
 	links, err := u.scraper.FetchMonthlyLinks(ctx, months)
 	if err != nil {
+		if ctx.Err() != nil {
+			u.logger.Debug("FetchMonthlyLinks cancelled due to context cancellation", zap.Error(ctx.Err()))
+			if u.metrics != nil {
+				u.metrics.SetCacheUpdateStatus(false)
+			}
+			return ctx.Err()
+		}
 		u.logger.Error("Failed to fetch links for months", zap.Error(err))
+		if u.metrics != nil {
+			u.metrics.SetCacheUpdateStatus(false)
+		}
 		return fmt.Errorf("failed to fetch links: %w", err)
 	}
 	requestCount++
@@ -81,7 +103,7 @@ func (u *Impl) InitializeCache(ctx context.Context) error {
 		// Проверяем контекст перед обработкой каждого месяца
 		select {
 		case <-ctx.Done():
-			u.logger.Info("Context cancelled, stopping month processing early")
+			u.logger.Info("Context cancelled, stopping month processing early", zap.Error(ctx.Err()))
 			if u.metrics != nil {
 				u.metrics.SetCacheUpdateStatus(false)
 			}
@@ -174,11 +196,12 @@ func (u *Impl) processMonth(ctx context.Context, month string, monthlyLinks []st
 	var allReleases []release.Release
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+
 	for _, link := range monthlyLinks {
 		// Проверяем контекст перед запуском новой горутины
 		select {
 		case <-ctx.Done():
-			u.logger.Info("Context cancelled, stopping processMonth early", zap.String("month", month))
+			u.logger.Debug("Context cancelled, stopping processMonth early", zap.String("month", month), zap.Error(ctx.Err()))
 			return ctx.Err()
 		default:
 		}
@@ -200,6 +223,10 @@ func (u *Impl) processMonth(ctx context.Context, month string, monthlyLinks []st
 				func() error {
 					rels, err := u.scraper.ParseMonthlyPage(ctx, link, month, whitelistMap)
 					if err != nil {
+						if ctx.Err() != nil {
+							u.logger.Debug("ParseMonthlyPage cancelled due to context cancellation", zap.String("url", link), zap.Error(ctx.Err()))
+							return ctx.Err()
+						}
 						u.logger.Error("Failed to parse page", zap.String("url", link), zap.Error(err))
 						return err
 					}
@@ -214,7 +241,7 @@ func (u *Impl) processMonth(ctx context.Context, month string, monthlyLinks []st
 					return nil
 				},
 			)
-			if err != nil {
+			if err != nil && ctx.Err() == nil {
 				u.logger.Error("Failed to process page", zap.String("url", link), zap.Error(err))
 			}
 		}()
@@ -229,7 +256,7 @@ func (u *Impl) processMonth(ctx context.Context, month string, monthlyLinks []st
 
 	select {
 	case <-ctx.Done():
-		u.logger.Info("Context cancelled while waiting for month processing", zap.String("month", month))
+		u.logger.Debug("Context cancelled while waiting for month processing", zap.String("month", month), zap.Error(ctx.Err()))
 		return ctx.Err()
 	case <-done:
 		// Продолжаем обработку результатов

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"gemfactory/internal/bot"
 	"gemfactory/internal/config"
-	"gemfactory/pkg/log"
 	"os"
 	"os/signal"
 	"runtime"
@@ -137,7 +136,7 @@ func main() {
 	}
 
 	// Инициализация логгера с конфигурацией
-	logger, err = log.InitWithConfig(logConfig)
+	logger, err = config.InitLoggerWithConfig(logConfig)
 	if err != nil {
 		// Критическая ошибка - используем stderr и завершаем приложение
 		fmt.Fprintf(os.Stderr, "FATAL: Failed to initialize logger: %v\n", err)

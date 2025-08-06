@@ -85,10 +85,33 @@ func (cm *Manager) ScheduleUpdate(ctx context.Context) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	if cm.isUpdating {
+	// Проверяем, не слишком ли часто запрашивается обновление
+	if time.Since(cm.lastUpdateTime) < 30*time.Second {
+		cm.logger.Debug("Cache update requested too frequently, using debounce",
+			zap.Duration("time_since_last", time.Since(cm.lastUpdateTime)))
+
+		// Отменяем предыдущий таймер если он существует
+		if cm.updateDebounce != nil {
+			cm.updateDebounce.Stop()
+		}
+
+		// Создаем новый таймер для дебаунса
+		cm.updateDebounce = time.AfterFunc(30*time.Second, func() {
+			cm.mu.Lock()
+			cm.isUpdating = false // Сбрасываем флаг для следующего обновления
+			cm.mu.Unlock()
+			cm.ScheduleUpdate(ctx)
+		})
 		return
 	}
 
+	if cm.isUpdating {
+		cm.logger.Debug("Cache update already in progress, skipping")
+		return
+	}
+
+	cm.isUpdating = true
+	cm.lastUpdateTime = time.Now()
 	cm.logger.Info("Scheduled cache update")
 
 	// Создаем задачу для обновления кэша
@@ -105,13 +128,22 @@ func (cm *Manager) ScheduleUpdate(ctx context.Context) {
 				cm.logger.Error("Cache update failed", zap.Error(err))
 				return err
 			}
+
+			// Сбрасываем флаг обновления после завершения
+			cm.mu.Lock()
+			cm.isUpdating = false
+			cm.mu.Unlock()
+
 			return nil
 		},
 	}
 
 	if err := cm.workerPool.Submit(job); err != nil {
 		cm.logger.Error("Failed to submit cache update job", zap.Error(err))
-
+		// Сбрасываем флаг в случае ошибки
+		cm.mu.Lock()
+		cm.isUpdating = false
+		cm.mu.Unlock()
 	}
 }
 
