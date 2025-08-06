@@ -172,23 +172,29 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 	// Проверяем, наступила ли полночь с момента последнего запроса
 	now := time.Now().In(c.location)
 
-	// Получаем дату последнего запроса (начало дня)
-	lastRequestDate := homeworkInfo.RequestTime.In(c.location).Truncate(24 * time.Hour)
+	// Получаем компоненты даты последнего запроса
+	lastYear, lastMonth, lastDay := homeworkInfo.RequestTime.In(c.location).Date()
 
-	// Получаем текущую дату (начало дня)
-	currentDate := now.Truncate(24 * time.Hour)
+	// Получаем компоненты текущей даты
+	currentYear, currentMonth, currentDay := now.Date()
 
-	// Если текущая дата НЕ равна дате последнего запроса, то можно запросить
-	// Это означает, что прошла полночь и наступил новый день
-	canRequest := !currentDate.Equal(lastRequestDate)
+	// Сравниваем даты: если текущая дата больше даты последнего запроса, то можно запросить
+	canRequest := currentYear > lastYear ||
+		(currentYear == lastYear && currentMonth > lastMonth) ||
+		(currentYear == lastYear && currentMonth == lastMonth && currentDay > lastDay)
 
 	if c.logger != nil {
 		c.logger.Debug("Homework request check",
 			zap.Int64("user_id", userID),
 			zap.Time("last_request", homeworkInfo.RequestTime),
-			zap.Time("last_request_date", lastRequestDate),
-			zap.Time("current_date", currentDate),
-			zap.Bool("can_request", canRequest))
+			zap.Int("last_year", lastYear),
+			zap.String("last_month", lastMonth.String()),
+			zap.Int("last_day", lastDay),
+			zap.Int("current_year", currentYear),
+			zap.String("current_month", currentMonth.String()),
+			zap.Int("current_day", currentDay),
+			zap.Bool("can_request", canRequest),
+			zap.String("timezone", c.location.String()))
 	}
 
 	return canRequest
@@ -237,11 +243,17 @@ func (c *HomeworkCache) GetTimeUntilNextRequest(userID int64) time.Duration {
 	}
 
 	now := time.Now().In(c.location)
-	lastRequestDate := homeworkInfo.RequestTime.In(c.location).Truncate(24 * time.Hour)
-	currentDate := now.Truncate(24 * time.Hour)
 
-	// Если уже новый день, можно запросить
-	if !currentDate.Equal(lastRequestDate) {
+	// Получаем компоненты даты последнего запроса
+	lastYear, lastMonth, lastDay := homeworkInfo.RequestTime.In(c.location).Date()
+
+	// Получаем компоненты текущей даты
+	currentYear, currentMonth, currentDay := now.Date()
+
+	// Если текущая дата больше даты последнего запроса, можно запросить
+	if currentYear > lastYear ||
+		(currentYear == lastYear && currentMonth > lastMonth) ||
+		(currentYear == lastYear && currentMonth == lastMonth && currentDay > lastDay) {
 		return 0
 	}
 
@@ -250,6 +262,20 @@ func (c *HomeworkCache) GetTimeUntilNextRequest(userID int64) time.Duration {
 	year, month, day := now.Date()
 	nextMidnight := time.Date(year, month, day+1, 0, 0, 0, 0, c.location)
 	duration := nextMidnight.Sub(now)
+
+	if c.logger != nil {
+		c.logger.Debug("Time until next request calculation",
+			zap.Int64("user_id", userID),
+			zap.Time("now", now),
+			zap.Int("last_year", lastYear),
+			zap.String("last_month", lastMonth.String()),
+			zap.Int("last_day", lastDay),
+			zap.Int("current_year", currentYear),
+			zap.String("current_month", currentMonth.String()),
+			zap.Int("current_day", currentDay),
+			zap.Time("next_midnight", nextMidnight),
+			zap.Duration("duration", duration))
+	}
 
 	return duration
 }
