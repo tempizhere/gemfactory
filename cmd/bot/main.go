@@ -129,8 +129,15 @@ func main() {
 	var logger *zap.Logger
 	var err error
 
-	// Инициализация логгера с обработкой ошибок
-	logger, err = log.Init()
+	// Загружаем настройки логирования
+	logConfig, err := config.LoadLogConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: Failed to load log configuration: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Инициализация логгера с конфигурацией
+	logger, err = log.InitWithConfig(logConfig)
 	if err != nil {
 		// Критическая ошибка - используем stderr и завершаем приложение
 		fmt.Fprintf(os.Stderr, "FATAL: Failed to initialize logger: %v\n", err)

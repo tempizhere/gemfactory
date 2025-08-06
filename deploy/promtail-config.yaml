@@ -1,0 +1,42 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Конфигурация для gemfactory логов
+  - job_name: gemfactory
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: gemfactory
+          service: telegram_bot
+          environment: local
+          __path__: /var/log/gemfactory/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            timestamp: ts
+            message: msg
+            user_id: user_id
+            command: command
+            duration: duration
+            error: error
+            track_id: track_id
+            track_title: track_title
+            track_artist: track_artist
+            play_count: play_count
+            service: service
+            component: component
+      - labels:
+          level:
+          command:
+          service:
+          component:

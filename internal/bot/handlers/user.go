@@ -7,6 +7,9 @@ import (
 	"gemfactory/internal/domain/types"
 	"math/rand"
 	"strings"
+	"time"
+
+	"go.uber.org/zap"
 )
 
 // RegisterUserRoutes registers user command handlers
@@ -152,7 +155,15 @@ func handleMetricsCommand(ctx types.Context) error {
 
 // handleHomework обрабатывает команду /homework
 func handleHomework(ctx types.Context) error {
+	startTime := time.Now()
 	userID := ctx.Message.From.ID
+
+	ctx.Deps.Logger.Info("Homework command received",
+		zap.String("command", "/homework"),
+		zap.Int64("user_id", userID),
+		zap.String("username", ctx.Message.From.UserName),
+		zap.String("service", "telegram_bot"),
+		zap.String("component", "homework_handler"))
 
 	if !ctx.Deps.HomeworkCache.CanRequest(userID) {
 		timeUntilNext := ctx.Deps.HomeworkCache.GetTimeUntilNextRequest(userID)
@@ -188,17 +199,52 @@ func handleHomework(ctx types.Context) error {
 				homeworkInfo.Track.Artist, homeworkInfo.Track.Title, spotifyLink, homeworkInfo.PlayCount, timesWord)
 		}
 
+		// Логируем отказ в выдаче домашнего задания
+		duration := time.Since(startTime)
+		ctx.Deps.Logger.Info("Homework request denied - already received today",
+			zap.String("command", "/homework"),
+			zap.Int64("user_id", userID),
+			zap.String("username", ctx.Message.From.UserName),
+			zap.Duration("duration", duration),
+			zap.String("result", "denied"),
+			zap.Duration("time_until_next", timeUntilNext),
+			zap.String("service", "telegram_bot"),
+			zap.String("component", "homework_handler"))
+
 		return ctx.Deps.BotAPI.SendMessageWithReplyAndMarkup(ctx.Message.Chat.ID,
 			fmt.Sprintf("⏰ Вы уже получили домашнее задание сегодня! Следующее задание будет доступно через %s.%s", timeMessage, currentHomework), ctx.Message.MessageID, nil)
 	}
 
 	if !ctx.Deps.PlaylistManager.IsLoaded() {
+		duration := time.Since(startTime)
+		ctx.Deps.Logger.Error("Homework request failed - playlist not loaded",
+			zap.String("command", "/homework"),
+			zap.Int64("user_id", userID),
+			zap.String("username", ctx.Message.From.UserName),
+			zap.Duration("duration", duration),
+			zap.String("result", "error"),
+			zap.String("error", "playlist_not_loaded"),
+			zap.String("service", "telegram_bot"),
+			zap.String("component", "homework_handler"))
+
 		return ctx.Deps.BotAPI.SendMessageWithReply(ctx.Message.Chat.ID,
 			"❌ Плейлист не загружен. Обратитесь к администратору для загрузки плейлиста.", ctx.Message.MessageID)
 	}
 
 	track, err := ctx.Deps.PlaylistManager.GetRandomTrack()
 	if err != nil {
+		duration := time.Since(startTime)
+		ctx.Deps.Logger.Error("Homework request failed - failed to get random track",
+			zap.String("command", "/homework"),
+			zap.Int64("user_id", userID),
+			zap.String("username", ctx.Message.From.UserName),
+			zap.Duration("duration", duration),
+			zap.String("result", "error"),
+			zap.String("error", "failed_to_get_track"),
+			zap.Error(err),
+			zap.String("service", "telegram_bot"),
+			zap.String("component", "homework_handler"))
+
 		return ctx.Deps.BotAPI.SendMessageWithReply(ctx.Message.Chat.ID,
 			"❌ Ошибка при получении трека из плейлиста. Попробуйте позже.", ctx.Message.MessageID)
 	}
@@ -230,6 +276,21 @@ func handleHomework(ctx types.Context) error {
 
 	// Записываем запрос в кэш
 	ctx.Deps.HomeworkCache.RecordRequest(userID, track, playCount)
+
+	// Логируем успешное выполнение
+	duration := time.Since(startTime)
+	ctx.Deps.Logger.Info("Homework request processed",
+		zap.String("command", "/homework"),
+		zap.Int64("user_id", userID),
+		zap.String("username", ctx.Message.From.UserName),
+		zap.Duration("duration", duration),
+		zap.String("result", "success"),
+		zap.String("track_id", track.ID),
+		zap.String("track_title", track.Title),
+		zap.String("track_artist", track.Artist),
+		zap.Int("play_count", playCount),
+		zap.String("service", "telegram_bot"),
+		zap.String("component", "homework_handler"))
 
 	// Отправляем сообщение с reply к исходному сообщению
 	return ctx.Deps.BotAPI.SendMessageWithReplyAndMarkup(ctx.Message.Chat.ID, message, ctx.Message.MessageID, nil)
