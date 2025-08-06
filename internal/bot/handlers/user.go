@@ -165,7 +165,12 @@ func handleHomework(ctx types.Context) error {
 		zap.String("service", "telegram_bot"),
 		zap.String("component", "homework_handler"))
 
-	if !ctx.Deps.HomeworkCache.CanRequest(userID) {
+	canRequest := ctx.Deps.HomeworkCache.CanRequest(userID)
+	ctx.Deps.Logger.Debug("Homework request check result",
+		zap.Int64("user_id", userID),
+		zap.Bool("can_request", canRequest))
+
+	if !canRequest {
 		timeUntilNext := ctx.Deps.HomeworkCache.GetTimeUntilNextRequest(userID)
 		hours := int(timeUntilNext.Hours())
 		minutes := int(timeUntilNext.Minutes()) % 60
