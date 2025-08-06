@@ -22,5 +22,4 @@ RUN mkdir -p /app/data /app/logs && \
 COPY --from=builder --chown=appuser:appgroup /app/gemfactory .
 # Настраиваем HEALTHCHECK
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 CMD pgrep gemfactory || exit 1
-USER appuser
 ENTRYPOINT ["./gemfactory"]
