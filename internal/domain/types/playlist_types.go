@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"gemfactory/internal/gateway/spotify"
+
+	"go.uber.org/zap"
 )
 
 // PlaylistServiceInterface определяет интерфейс для работы с плейлистами
@@ -31,6 +33,8 @@ type PlaylistManagerInterface interface {
 type PlaylistSchedulerInterface interface {
 	Start()
 	Stop()
+	GetLastUpdateTime() time.Time
+	GetNextUpdateTime() time.Time
 }
 
 // HomeworkInfo содержит информацию о выданном домашнем задании
@@ -49,4 +53,8 @@ type HomeworkCacheInterface interface {
 	GetTotalRequests() int
 	GetUniqueUsers() int
 	GetHomeworkInfo(userID int64) *HomeworkInfo
+	SetStoragePath(path string)
+	SetLogger(logger *zap.Logger)
+	LoadFromStorage() error
+	SaveToStorage() error
 }

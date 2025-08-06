@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"gemfactory/pkg/log"
+
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
@@ -46,7 +48,8 @@ type Config struct {
 	CommandCacheTTL     time.Duration
 
 	// Логирование
-	LogLevel string
+	LogLevel  string
+	LogConfig log.LogConfig
 
 	// Дополнительные настройки
 	MetricsEnabled          bool
@@ -192,6 +195,10 @@ func Load() (*Config, error) {
 	}
 
 	if err := config.loadAppInfo(); err != nil {
+		return nil, err
+	}
+
+	if err := config.loadLogSettings(); err != nil {
 		return nil, err
 	}
 
@@ -525,6 +532,50 @@ func (c *Config) loadPlaylistSettings() error {
 	c.PlaylistURL = os.Getenv("PLAYLIST_URL")
 	c.PlaylistUpdateHours = getEnvInt("PLAYLIST_UPDATE_HOURS", 24) // По умолчанию обновляем каждые 24 часа
 	return nil
+}
+
+// loadLogSettings загружает настройки логирования
+func (c *Config) loadLogSettings() error {
+	c.LogConfig.Level = os.Getenv("LOG_LEVEL")
+	if c.LogConfig.Level == "" {
+		c.LogConfig.Level = "info"
+	}
+
+	c.LogConfig.Format = os.Getenv("LOG_FORMAT")
+	if c.LogConfig.Format == "" {
+		c.LogConfig.Format = "json"
+	}
+
+	c.LogConfig.Output = os.Getenv("LOG_OUTPUT")
+	if c.LogConfig.Output == "" {
+		c.LogConfig.Output = "both" // stdout + file
+	}
+
+	c.LogConfig.FilePath = os.Getenv("LOG_FILE_PATH")
+	if c.LogConfig.FilePath == "" {
+		c.LogConfig.FilePath = "logs/gemfactory.log"
+	}
+
+	c.LogConfig.MaxSize = getEnvInt("LOG_MAX_SIZE", 100)
+	c.LogConfig.MaxBackups = getEnvInt("LOG_MAX_BACKUPS", 3)
+	c.LogConfig.MaxAge = getEnvInt("LOG_MAX_AGE", 28)
+
+	return nil
+}
+
+// LoadLogConfig загружает только настройки логирования
+func LoadLogConfig() (log.LogConfig, error) {
+	config := &Config{}
+
+	if err := config.loadBasicSettings(); err != nil {
+		return log.LogConfig{}, err
+	}
+
+	if err := config.loadLogSettings(); err != nil {
+		return log.LogConfig{}, err
+	}
+
+	return config.LogConfig, nil
 }
 
 // LoadLocation loads the timezone specified in the config

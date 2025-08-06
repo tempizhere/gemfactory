@@ -2,6 +2,7 @@
 package playlist
 
 import (
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -17,6 +18,8 @@ type Scheduler struct {
 	stopChan       chan struct{}
 	isRunning      bool
 	doneChan       chan struct{}
+	lastUpdate     time.Time
+	mu             sync.RWMutex
 }
 
 // NewScheduler создает новый планировщик обновлений плейлиста
@@ -115,8 +118,27 @@ func (s *Scheduler) updatePlaylist() {
 		return
 	}
 
+	// Записываем время последнего обновления
+	s.mu.Lock()
+	s.lastUpdate = time.Now()
+	s.mu.Unlock()
+
 	trackCount := s.manager.GetTotalTracks()
 	s.logger.Info("Playlist updated successfully",
 		zap.String("playlist_url", s.playlistURL),
 		zap.Int("tracks_count", trackCount))
+}
+
+// GetLastUpdateTime возвращает время последнего обновления плейлиста
+func (s *Scheduler) GetLastUpdateTime() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastUpdate
+}
+
+// GetNextUpdateTime возвращает время следующего обновления плейлиста
+func (s *Scheduler) GetNextUpdateTime() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastUpdate.Add(s.updateInterval)
 }

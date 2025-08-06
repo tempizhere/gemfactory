@@ -33,6 +33,12 @@ services:
 
       # Логирование
       - LOG_LEVEL=${LOG_LEVEL}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - LOG_OUTPUT=${LOG_OUTPUT:-both}
+      - LOG_FILE_PATH=${LOG_FILE_PATH:-logs/gemfactory.log}
+      - LOG_MAX_SIZE=${LOG_MAX_SIZE:-100}
+      - LOG_MAX_BACKUPS=${LOG_MAX_BACKUPS:-3}
+      - LOG_MAX_AGE=${LOG_MAX_AGE:-28}
 
       # Настройки health check
       - HEALTH_CHECK_ENABLED=${HEALTH_CHECK_ENABLED}
@@ -42,6 +48,7 @@ services:
       - METRICS_ENABLED=${METRICS_ENABLED}
     volumes:
       - app_data:/app/data
+      - /var/log/gemfactory:/app/logs
     healthcheck:
       test: [ "CMD", "pgrep", "gemfactory" ]
       interval: 30s

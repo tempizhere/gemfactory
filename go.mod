@@ -33,4 +33,5 @@ require (
 	golang.org/x/oauth2 v0.0.0-20210810183815-faf39c7919d5 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
