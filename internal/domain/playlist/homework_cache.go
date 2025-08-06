@@ -2,11 +2,16 @@
 package playlist
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"gemfactory/internal/domain/types"
 	"gemfactory/internal/gateway/spotify"
+
+	"go.uber.org/zap"
 )
 
 // HomeworkInfo содержит информацию о выданном домашнем задании
@@ -18,9 +23,11 @@ type HomeworkInfo struct {
 
 // HomeworkCache кэширует запросы домашних заданий пользователей
 type HomeworkCache struct {
-	requests map[int64]*HomeworkInfo // userID -> homework info
-	mu       sync.RWMutex
-	location *time.Location // Временная зона для расчетов
+	requests    map[int64]*HomeworkInfo // userID -> homework info
+	mu          sync.RWMutex
+	location    *time.Location // Временная зона для расчетов
+	storagePath string         // Путь для сохранения кэша
+	logger      *zap.Logger
 }
 
 // NewHomeworkCache создает новый кэш домашних заданий
@@ -31,19 +38,122 @@ func NewHomeworkCache() *HomeworkCache {
 	}
 }
 
+// SetStoragePath устанавливает путь для сохранения кэша
+func (c *HomeworkCache) SetStoragePath(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.storagePath = path
+}
+
+// SetLogger устанавливает логгер для кэша
+func (c *HomeworkCache) SetLogger(logger *zap.Logger) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logger = logger
+}
+
+// LoadFromStorage загружает кэш из файла
+func (c *HomeworkCache) LoadFromStorage() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.storagePath == "" {
+		return nil // Нет пути для сохранения
+	}
+
+	// Создаем директорию если не существует
+	dir := filepath.Dir(c.storagePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		if c.logger != nil {
+			c.logger.Error("Failed to create storage directory", zap.Error(err))
+		}
+		return err
+	}
+
+	// Проверяем существование файла
+	if _, err := os.Stat(c.storagePath); os.IsNotExist(err) {
+		if c.logger != nil {
+			c.logger.Info("Homework cache file does not exist, starting with empty cache")
+		}
+		return nil
+	}
+
+	// Читаем файл
+	data, err := os.ReadFile(c.storagePath)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Error("Failed to read homework cache file", zap.Error(err))
+		}
+		return err
+	}
+
+	// Десериализуем данные
+	var cacheData map[int64]*HomeworkInfo
+	if err := json.Unmarshal(data, &cacheData); err != nil {
+		if c.logger != nil {
+			c.logger.Error("Failed to unmarshal homework cache data", zap.Error(err))
+		}
+		return err
+	}
+
+	c.requests = cacheData
+	if c.logger != nil {
+		c.logger.Info("Homework cache loaded from storage", zap.Int("entries", len(c.requests)))
+	}
+
+	return nil
+}
+
+// SaveToStorage сохраняет кэш в файл
+func (c *HomeworkCache) SaveToStorage() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.storagePath == "" {
+		return nil // Нет пути для сохранения
+	}
+
+	// Создаем директорию если не существует
+	dir := filepath.Dir(c.storagePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		if c.logger != nil {
+			c.logger.Error("Failed to create storage directory", zap.Error(err))
+		}
+		return err
+	}
+
+	// Сериализуем данные
+	data, err := json.MarshalIndent(c.requests, "", "  ")
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Error("Failed to marshal homework cache data", zap.Error(err))
+		}
+		return err
+	}
+
+	// Записываем в файл
+	if err := os.WriteFile(c.storagePath, data, 0644); err != nil {
+		if c.logger != nil {
+			c.logger.Error("Failed to write homework cache file", zap.Error(err))
+		}
+		return err
+	}
+
+	if c.logger != nil {
+		c.logger.Debug("Homework cache saved to storage", zap.Int("entries", len(c.requests)))
+	}
+
+	return nil
+}
+
 // SetLocation устанавливает временную зону для кэша
 func (c *HomeworkCache) SetLocation(location *time.Location) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Очищаем кэш если устанавливается не UTC временная зона
-	// Это гарантирует, что все новые записи будут в правильной временной зоне
-	if location != time.UTC {
-		c.requests = make(map[int64]*HomeworkInfo)
-	}
-
+	// Просто устанавливаем новую временную зону без очистки кэша
+	// Существующие записи будут корректно работать с новой временной зоной
 	c.location = location
-
 }
 
 // CanRequest проверяет, может ли пользователь запросить домашнее задание
@@ -53,6 +163,9 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 
 	homeworkInfo, exists := c.requests[userID]
 	if !exists {
+		if c.logger != nil {
+			c.logger.Debug("User has no previous homework request", zap.Int64("user_id", userID))
+		}
 		return true // Первый запрос
 	}
 
@@ -67,7 +180,18 @@ func (c *HomeworkCache) CanRequest(userID int64) bool {
 
 	// Если текущая дата НЕ равна дате последнего запроса, то можно запросить
 	// Это означает, что прошла полночь и наступил новый день
-	return !currentDate.Equal(lastRequestDate)
+	canRequest := !currentDate.Equal(lastRequestDate)
+
+	if c.logger != nil {
+		c.logger.Debug("Homework request check",
+			zap.Int64("user_id", userID),
+			zap.Time("last_request", homeworkInfo.RequestTime),
+			zap.Time("last_request_date", lastRequestDate),
+			zap.Time("current_date", currentDate),
+			zap.Bool("can_request", canRequest))
+	}
+
+	return canRequest
 }
 
 // RecordRequest записывает запрос пользователя
@@ -75,11 +199,31 @@ func (c *HomeworkCache) RecordRequest(userID int64, track *spotify.Track, playCo
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	requestTime := time.Now().In(c.location)
 	c.requests[userID] = &HomeworkInfo{
-		RequestTime: time.Now().In(c.location),
+		RequestTime: requestTime,
 		Track:       track,
 		PlayCount:   playCount,
 	}
+
+	if c.logger != nil {
+		c.logger.Info("Homework request recorded",
+			zap.Int64("user_id", userID),
+			zap.String("track_id", track.ID),
+			zap.String("track_title", track.Title),
+			zap.String("track_artist", track.Artist),
+			zap.Int("play_count", playCount),
+			zap.Time("request_time", requestTime))
+	}
+
+	// Сохраняем кэш в фоновом режиме
+	go func() {
+		if err := c.SaveToStorage(); err != nil {
+			if c.logger != nil {
+				c.logger.Error("Failed to save homework cache", zap.Error(err))
+			}
+		}
+	}()
 }
 
 // GetTimeUntilNextRequest возвращает время до следующего возможного запроса (до полуночи)

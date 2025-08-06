@@ -19,6 +19,7 @@ import (
 	"gemfactory/internal/infrastructure/updater"
 	"gemfactory/internal/infrastructure/worker"
 	"os"
+	"path/filepath"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -320,6 +321,17 @@ func (f *ComponentFactory) CreateDependencies() (*types.Dependencies, error) {
 
 	// Создаем кэш домашних заданий
 	homeworkCache := playlist.NewHomeworkCache()
+
+	// Настраиваем персистентность кэша домашних заданий
+	homeworkCache.SetLogger(f.logger)
+	homeworkCache.SetStoragePath(filepath.Join(f.config.GetAppDataDir(), "homework_cache.json"))
+
+	// Загружаем кэш из хранилища
+	if err := homeworkCache.LoadFromStorage(); err != nil {
+		f.logger.Warn("Failed to load homework cache from storage", zap.Error(err))
+	} else {
+		f.logger.Info("Homework cache loaded from storage")
+	}
 
 	// Устанавливаем временную зону для кэша домашних заданий
 	location := f.config.LoadLocation(f.logger)

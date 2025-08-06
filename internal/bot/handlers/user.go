@@ -117,8 +117,30 @@ func handleMetricsCommand(ctx types.Context) error {
 	system := stats["system"].(map[string]interface{})
 	response.WriteString("🔄 Статус системы:\n")
 	response.WriteString(fmt.Sprintf("  • Время работы: %v\n", system["uptime"]))
-	response.WriteString(fmt.Sprintf("  • Последнее обновление: %v\n", system["last_cache_update"]))
-	response.WriteString(fmt.Sprintf("  • Следующее обновление: %v\n", system["next_cache_update"]))
+	response.WriteString(fmt.Sprintf("  • Последнее обновление релизов: %v\n", system["last_cache_update"]))
+	response.WriteString(fmt.Sprintf("  • Следующее обновление релизов: %v\n", system["next_cache_update"]))
+
+	// Плейлист
+	if ctx.Deps.PlaylistScheduler != nil {
+		lastUpdate := ctx.Deps.PlaylistScheduler.GetLastUpdateTime()
+		nextUpdate := ctx.Deps.PlaylistScheduler.GetNextUpdateTime()
+
+		response.WriteString("\n🎵 Плейлист:\n")
+		if ctx.Deps.PlaylistManager.IsLoaded() {
+			response.WriteString(fmt.Sprintf("  • Статус: Загружен (%d треков)\n", ctx.Deps.PlaylistManager.GetTotalTracks()))
+		} else {
+			response.WriteString("  • Статус: Не загружен\n")
+		}
+		if !lastUpdate.IsZero() {
+			response.WriteString(fmt.Sprintf("  • Последнее обновление: %s\n", lastUpdate.Format("02.01.06 15:04")))
+			response.WriteString(fmt.Sprintf("  • Следующее обновление: %s\n", nextUpdate.Format("02.01.06 15:04")))
+		} else {
+			response.WriteString("  • Планировщик не запущен\n")
+		}
+	} else {
+		response.WriteString("\n🎵 Плейлист:\n")
+		response.WriteString("  • Планировщик не настроен\n")
+	}
 
 	// Домашние задания
 	response.WriteString("\n📚 Домашние задания:\n")
