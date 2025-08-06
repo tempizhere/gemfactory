@@ -16,7 +16,7 @@ RUN apk add --no-cache tzdata=2025b-r0 && \
 # Создаем non-root пользователя и группу
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 # Создаем директории и устанавливаем права
-RUN mkdir -p /app/data && \
+RUN mkdir -p /app/data /app/logs && \
     chown -R appuser:appgroup /app
 # Копируем бинарник
 COPY --from=builder --chown=appuser:appgroup /app/gemfactory .
