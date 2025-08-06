@@ -51,12 +51,23 @@ func (f *fetcherImpl) FetchMonthlyLinks(ctx context.Context, months []string) ([
 	var links []string
 	uniqueLinks := make(map[string]struct{})
 	var mu sync.Mutex
+	var contextCancelled bool
 
 	collector := f.newCollector()
 	collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
+		// Проверяем контекст только один раз в начале обработки
+		if contextCancelled {
+			return
+		}
+
 		select {
 		case <-ctx.Done():
-			f.logger.Warn("OnHTML processing stopped", zap.String("url", e.Request.URL.String()), zap.Error(ctx.Err()))
+			if !contextCancelled {
+				contextCancelled = true
+				f.logger.Debug("HTML processing cancelled due to context cancellation",
+					zap.String("url", e.Request.URL.String()),
+					zap.Error(ctx.Err()))
+			}
 			return
 		default:
 			link := e.Attr("href")
@@ -99,12 +110,15 @@ func (f *fetcherImpl) FetchMonthlyLinks(ctx context.Context, months []string) ([
 	})
 
 	if err != nil {
-		f.logger.Error("Failed to visit main page after retries", zap.String("url", url), zap.Error(err))
-		return nil, fmt.Errorf("failed to visit main page after retries: %w", err)
+		if ctx.Err() != nil {
+			f.logger.Debug("FetchMonthlyLinks cancelled due to context cancellation", zap.Error(ctx.Err()))
+			return nil, ctx.Err()
+		}
+		f.logger.Error("Failed to fetch monthly links after retries", zap.Error(err))
+		return nil, fmt.Errorf("failed to fetch monthly links after retries: %w", err)
 	}
-	collector.Wait()
 
-	f.logger.Info("Fetched links", zap.Int("link_count", len(links)))
+	collector.Wait()
 	return links, nil
 }
 
@@ -121,12 +135,23 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month string, w
 	allReleases := make([]release.Release, 0, len(artistReleases))
 	var mu sync.Mutex
 	rowCount := 0
+	var contextCancelled bool
 
 	collector := f.newCollector()
 	collector.OnHTML("tr", func(e *colly.HTMLElement) {
+		// Проверяем контекст только один раз в начале обработки
+		if contextCancelled {
+			return
+		}
+
 		select {
 		case <-ctx.Done():
-			f.logger.Warn("OnHTML processing stopped", zap.String("url", e.Request.URL.String()), zap.Error(ctx.Err()))
+			if !contextCancelled {
+				contextCancelled = true
+				f.logger.Debug("HTML processing cancelled due to context cancellation",
+					zap.String("url", e.Request.URL.String()),
+					zap.Error(ctx.Err()))
+			}
 			return
 		default:
 			rowCount++
@@ -151,6 +176,10 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month string, w
 	})
 
 	if err != nil {
+		if ctx.Err() != nil {
+			f.logger.Debug("ParseMonthlyPage cancelled due to context cancellation", zap.Error(ctx.Err()))
+			return nil, ctx.Err()
+		}
 		f.logger.Error("Failed to visit page after retries", zap.String("url", url), zap.Error(err))
 		return nil, fmt.Errorf("failed to visit page after retries: %w", err)
 	}

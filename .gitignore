@@ -17,6 +17,7 @@ vendor/
 # Logs and temporary files
 *.log
 tmp/
+/logs/
 
 # IDE-specific files
 .vscode/
@@ -39,5 +40,5 @@ coverage.html
 # Игнорируем JSON файлы
 *.json
 
-# temp
+# Data
 /data/

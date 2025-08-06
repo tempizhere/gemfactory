@@ -4,14 +4,26 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
-	"gemfactory/pkg/log"
-
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
+
+// LogConfig представляет конфигурацию логирования
+type LogConfig struct {
+	Level      string `env:"LOG_LEVEL" envDefault:"info"`
+	Format     string `env:"LOG_FORMAT" envDefault:"json"`
+	Output     string `env:"LOG_OUTPUT" envDefault:"stdout"`
+	FilePath   string `env:"LOG_FILE_PATH" envDefault:"logs/gemfactory.log"`
+	MaxSize    int    `env:"LOG_MAX_SIZE" envDefault:"100"`
+	MaxBackups int    `env:"LOG_MAX_BACKUPS" envDefault:"3"`
+	MaxAge     int    `env:"LOG_MAX_AGE" envDefault:"28"`
+}
 
 // Config представляет конфигурацию приложения
 type Config struct {
@@ -49,7 +61,7 @@ type Config struct {
 
 	// Логирование
 	LogLevel  string
-	LogConfig log.LogConfig
+	LogConfig LogConfig
 
 	// Дополнительные настройки
 	MetricsEnabled          bool
@@ -564,15 +576,15 @@ func (c *Config) loadLogSettings() error {
 }
 
 // LoadLogConfig загружает только настройки логирования
-func LoadLogConfig() (log.LogConfig, error) {
+func LoadLogConfig() (LogConfig, error) {
 	config := &Config{}
 
 	if err := config.loadBasicSettings(); err != nil {
-		return log.LogConfig{}, err
+		return LogConfig{}, err
 	}
 
 	if err := config.loadLogSettings(); err != nil {
-		return log.LogConfig{}, err
+		return LogConfig{}, err
 	}
 
 	return config.LogConfig, nil
@@ -793,4 +805,71 @@ func getEnvFloat(key string, defaultValue float64) float64 {
 		}
 	}
 	return defaultValue
+}
+
+// InitLoggerWithConfig инициализирует логгер с кастомной конфигурацией
+func InitLoggerWithConfig(config LogConfig) (*zap.Logger, error) {
+	// Настройка энкодера
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.TimeKey = "ts"
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	encoderConfig.MessageKey = "msg"
+	encoderConfig.LevelKey = "level"
+
+	// Выбор формата (JSON или Console)
+	var encoder zapcore.Encoder
+	if config.Format == "json" {
+		encoder = zapcore.NewJSONEncoder(encoderConfig)
+	} else {
+		encoder = zapcore.NewConsoleEncoder(encoderConfig)
+	}
+
+	// Настройка уровня логирования
+	level, err := zapcore.ParseLevel(config.Level)
+	if err != nil {
+		level = zapcore.InfoLevel
+	}
+
+	// Настройка вывода
+	var cores []zapcore.Core
+
+	// Console output
+	if config.Output == "stdout" || config.Output == "both" {
+		consoleCore := zapcore.NewCore(
+			encoder,
+			zapcore.AddSync(os.Stdout),
+			level,
+		)
+		cores = append(cores, consoleCore)
+	}
+
+	// File output
+	if config.Output == "file" || config.Output == "both" {
+		// Создаем директорию для логов
+		if err := os.MkdirAll(filepath.Dir(config.FilePath), 0755); err != nil {
+			return nil, err
+		}
+
+		// Настройка ротации логов
+		rotator := &lumberjack.Logger{
+			Filename:   config.FilePath,
+			MaxSize:    config.MaxSize, // MB
+			MaxBackups: config.MaxBackups,
+			MaxAge:     config.MaxAge, // days
+			Compress:   true,
+		}
+
+		fileCore := zapcore.NewCore(
+			encoder,
+			zapcore.AddSync(rotator),
+			level,
+		)
+		cores = append(cores, fileCore)
+	}
+
+	// Создаем логгер с несколькими ядрами
+	core := zapcore.NewTee(cores...)
+	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
+
+	return logger, nil
 }

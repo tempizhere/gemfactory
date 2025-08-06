@@ -25,7 +25,9 @@ scrape_configs:
             level: level
             timestamp: ts
             message: msg
+            caller: caller
             user_id: user_id
+            username: username
             command: command
             duration: duration
             error: error
@@ -35,8 +37,67 @@ scrape_configs:
             play_count: play_count
             service: service
             component: component
+            handler: handler
+            operation: operation
+            result: result
+            error_type: error_type
+            request_id: request_id
+            bot_username: bot_username
+            female_artists: female_artists
+            male_artists: male_artists
+            total_artists: total_artists
+            playlist_url: playlist_url
+            tracks_count: tracks_count
+            playlist_id: playlist_id
+            total_tracks: total_tracks
+            link_count: link_count
+            month: month
+            release_count: release_count
+            port: port
+            chat_id: chat_id
+            update_id: update_id
+            user: user
+            count: count
+            isFemale: isFemale
+            time_until_next: time_until_next
+            data: data
+            requests: requests
+            window: window
+            current_month: current_month
+            months: months
+            total_releases: total_releases
+            worker_id: worker_id
+            stacktrace: stacktrace
       - labels:
           level:
           command:
           service:
           component:
+          handler:
+          operation:
+          result:
+          error_type:
+          bot_username:
+          female_artists:
+          male_artists:
+          total_artists:
+          tracks_count:
+          playlist_id:
+          total_tracks:
+          link_count:
+          month:
+          release_count:
+          port:
+          chat_id:
+          update_id:
+          user:
+          count:
+          isFemale:
+          time_until_next:
+          data:
+          requests:
+          window:
+          current_month:
+          months:
+          total_releases:
+          worker_id:

@@ -54,6 +54,9 @@ type Manager struct {
 	updater        Updater
 	workerPool     worker.PoolInterface
 	metrics        metrics.Interface
+	// Поля для дебаунса обновлений
+	lastUpdateTime time.Time
+	updateDebounce *time.Timer
 }
 
 var _ Cache = (*Manager)(nil)

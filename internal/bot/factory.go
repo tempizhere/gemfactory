@@ -295,7 +295,7 @@ func (f *ComponentFactory) CreateDependencies() (*types.Dependencies, error) {
 	} else {
 		// Создаем адаптер для конвертации типов
 		spotifyClient = playlist.NewSpotifyAdapter(spotifyClientInstance)
-		f.logger.Info("Spotify client created successfully")
+		// Убираем дублирующий лог - Spotify client уже залогирован в CreateSpotifyClient()
 	}
 
 	// Создаем playlist service (для обратной совместимости)

@@ -62,9 +62,8 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 		return nil, fmt.Errorf("failed to create dependencies: %w", err)
 	}
 
-	// Проверяем наличие артистов в whitelist
-	whitelistManager := factory.CreateWhitelistManager()
-	if len(whitelistManager.GetFemaleWhitelist()) == 0 && len(whitelistManager.GetMaleWhitelist()) == 0 {
+	// Проверяем наличие артистов в whitelist используя уже созданный ArtistService
+	if len(deps.ArtistService.GetFemaleWhitelist()) == 0 && len(deps.ArtistService.GetMaleWhitelist()) == 0 {
 		logger.Warn("Both female and male whitelists are empty; populate at least one whitelist using /add_artist")
 	}
 
@@ -105,7 +104,7 @@ func NewBot(config *config.Config, logger *zap.Logger) (*Bot, error) {
 	}
 
 	// Запускаем обновление кэша если есть данные
-	if len(whitelistManager.GetFemaleWhitelist()) > 0 || len(whitelistManager.GetMaleWhitelist()) > 0 {
+	if len(deps.ArtistService.GetFemaleWhitelist()) > 0 || len(deps.ArtistService.GetMaleWhitelist()) > 0 {
 		logger.Info("Starting cache updater")
 		go deps.Cache.StartUpdater(ctx)
 	} else {
