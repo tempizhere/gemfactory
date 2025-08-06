@@ -134,6 +134,13 @@ setup: ## Настроить проект (создать docker-compose.yml и�
 		echo "$(YELLOW)deploy/docker-compose.yml уже существует$(NC)"; \
 	fi
 
+setup-logs: ## Подготовить папку для логов
+	@echo "$(GREEN)Подготовка папки для логов...$(NC)"
+	@sudo mkdir -p /var/log/gemfactory
+	@sudo chown 1000:1000 /var/log/gemfactory
+	@sudo chmod 755 /var/log/gemfactory
+	@echo "$(GREEN)Папка /var/log/gemfactory готова$(NC)"
+
 # Мониторинг
 logs: ## Показать логи
 	@echo "$(GREEN)Показать логи...$(NC)"

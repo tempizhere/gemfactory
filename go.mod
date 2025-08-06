@@ -12,6 +12,7 @@ require (
 	github.com/zmb3/spotify/v2 v2.4.3
 	go.uber.org/zap v1.27.0
 	golang.org/x/text v0.27.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (
@@ -33,5 +34,4 @@ require (
 	golang.org/x/oauth2 v0.0.0-20210810183815-faf39c7919d5 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
-	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
