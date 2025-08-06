@@ -49,7 +49,6 @@ services:
     volumes:
       - app_data:/app/data
       - /var/log/gemfactory:/app/logs
-    user: "1000:1000"
     healthcheck:
       test: [ "CMD", "pgrep", "gemfactory" ]
       interval: 30s
