@@ -2,13 +2,11 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"gemfactory/internal/bot/middleware"
 	"gemfactory/internal/bot/router"
 	"gemfactory/internal/domain/types"
 	"strings"
-	"time"
 )
 
 // RegisterAdminRoutes registers admin command handlers
@@ -54,10 +52,7 @@ func handleAddArtist(ctx types.Context) error {
 	} else if addedCount >= 5 {
 		artistWord = "артистов"
 	}
-	updateCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
-	ctx.Deps.Cache.ScheduleUpdate(updateCtx)
-	return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID, fmt.Sprintf("Добавлено %d %s в %s whitelist", addedCount, artistWord, gender))
+	return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID, fmt.Sprintf("Добавлено %d %s в %s whitelist. Изменения будут применены при следующем обновлении кэша.", addedCount, artistWord, gender))
 }
 
 func handleRemoveArtist(ctx types.Context) error {
@@ -87,10 +82,7 @@ func handleRemoveArtist(ctx types.Context) error {
 	} else if removedCount >= 5 {
 		artistWord = "артистов"
 	}
-	updateCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
-	ctx.Deps.Cache.ScheduleUpdate(updateCtx)
-	return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID, fmt.Sprintf("Удалено %d %s из whitelist", removedCount, artistWord))
+	return ctx.Deps.BotAPI.SendMessage(ctx.Message.Chat.ID, fmt.Sprintf("Удалено %d %s из whitelist. Изменения будут применены при следующем обновлении кэша.", removedCount, artistWord))
 }
 
 func handleClearCache(ctx types.Context) error {
