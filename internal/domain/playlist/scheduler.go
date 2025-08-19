@@ -10,19 +10,16 @@ import (
 
 // Scheduler управляет автоматическим обновлением плейлиста
 type Scheduler struct {
-	manager         PlaylistManager
-	spotifyClient   SpotifyClientInterface
-	playlistURL     string
-	updateInterval  time.Duration
-	logger          *zap.Logger
-	stopChan        chan struct{}
-	isRunning       bool
-	doneChan        chan struct{}
-	lastUpdate      time.Time
-	mu              sync.RWMutex
-	botAPI          BotAPIInterface // Для отправки уведомлений админу
-	adminUsername   string          // Username админа
-	lastFailureTime time.Time       // Время последней неудачи (для предотвращения спама)
+	manager        PlaylistManager
+	spotifyClient  SpotifyClientInterface
+	playlistURL    string
+	updateInterval time.Duration
+	logger         *zap.Logger
+	stopChan       chan struct{}
+	isRunning      bool
+	doneChan       chan struct{}
+	lastUpdate     time.Time
+	mu             sync.RWMutex
 }
 
 // NewScheduler создает новый планировщик обновлений плейлиста
@@ -32,8 +29,6 @@ func NewScheduler(
 	playlistURL string,
 	updateHours int,
 	logger *zap.Logger,
-	botAPI BotAPIInterface,
-	adminUsername string,
 ) *Scheduler {
 	return &Scheduler{
 		manager:        manager,
@@ -43,8 +38,6 @@ func NewScheduler(
 		logger:         logger,
 		stopChan:       make(chan struct{}),
 		doneChan:       make(chan struct{}),
-		botAPI:         botAPI,
-		adminUsername:  adminUsername,
 	}
 }
 
@@ -150,9 +143,6 @@ func (s *Scheduler) updatePlaylist() {
 				zap.Int("current_tracks", currentTrackCount),
 				zap.Bool("was_loaded", wasLoaded),
 				zap.Error(lastErr))
-
-			// Отправляем уведомление админу (не чаще раза в час)
-			s.notifyAdminOnFailure(lastErr)
 			return
 		}
 
@@ -183,35 +173,4 @@ func (s *Scheduler) GetNextUpdateTime() time.Time {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lastUpdate.Add(s.updateInterval)
-}
-
-// notifyAdminOnFailure отправляет уведомление админу о неудачном обновлении плейлиста
-func (s *Scheduler) notifyAdminOnFailure(err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Проверяем, не отправляли ли уведомление недавно (не чаще раза в час)
-	if time.Since(s.lastFailureTime) < time.Hour {
-		s.logger.Debug("Skipping admin notification - too soon since last failure notification")
-		return
-	}
-
-	if s.botAPI == nil || s.adminUsername == "" {
-		s.logger.Warn("Cannot notify admin - botAPI or adminUsername not configured")
-		return
-	}
-
-	message := "🚨 *Ошибка обновления плейлиста*\n\n" +
-		"Не удалось обновить плейлист из Spotify после 3 попыток.\n" +
-		"Бот продолжает работать с текущим плейлистом.\n\n" +
-		"*Проверьте логи для деталей.*\n\n" +
-		"Ошибка: `" + err.Error() + "`"
-
-	if err := s.botAPI.SendMessageToAdmin(message); err != nil {
-		s.logger.Error("Failed to send admin notification", zap.Error(err))
-		return
-	}
-
-	s.lastFailureTime = time.Now()
-	s.logger.Info("Admin notification sent about playlist update failure")
 }

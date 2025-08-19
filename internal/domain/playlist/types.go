@@ -44,9 +44,3 @@ type PlaylistManager interface {
 	// Clear очищает плейлист
 	Clear()
 }
-
-// BotAPIInterface определяет интерфейс для отправки сообщений через бота
-type BotAPIInterface interface {
-	// SendMessageToAdmin отправляет сообщение администратору
-	SendMessageToAdmin(message string) error
-}
