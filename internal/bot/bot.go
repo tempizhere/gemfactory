@@ -345,8 +345,8 @@ func (b *Bot) processUpdate(update tgbotapi.Update) {
 		return
 	}
 
-	// Обрабатываем команды и вложения файлов
-	if !update.Message.IsCommand() && update.Message.Document == nil {
+	// Обрабатываем только команды
+	if !update.Message.IsCommand() {
 		return
 	}
 
@@ -388,9 +388,8 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 		Deps:     b.deps,
 	}
 
-	// Обрабатываем вложения файлов
+	// Пропускаем вложения файлов (не обрабатываем)
 	if update.Message.Document != nil {
-		b.handleDocument(ctx)
 		return
 	}
 
@@ -503,17 +502,6 @@ func getUserID(update tgbotapi.Update) int64 {
 		return update.CallbackQuery.From.ID
 	}
 	return 0
-}
-
-// handleDocument обрабатывает вложения файлов
-func (b *Bot) handleDocument(ctx types.Context) {
-	// Плейлисты теперь загружаются только через Spotify API
-	if err := b.api.SendMessage(ctx.Message.Chat.ID,
-		"❌ Загрузка плейлистов через файлы больше не поддерживается.\n\n"+
-			"💡 Используйте команду /import_playlist <spotify_playlist_url>\n"+
-			"Пример: /import_playlist https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"); err != nil {
-		b.logger.Error("Failed to send message", zap.Error(err))
-	}
 }
 
 // extractCommand извлекает команду из обновления

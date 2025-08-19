@@ -10,16 +10,19 @@ import (
 
 // Scheduler управляет автоматическим обновлением плейлиста
 type Scheduler struct {
-	manager        PlaylistManager
-	spotifyClient  SpotifyClientInterface
-	playlistURL    string
-	updateInterval time.Duration
-	logger         *zap.Logger
-	stopChan       chan struct{}
-	isRunning      bool
-	doneChan       chan struct{}
-	lastUpdate     time.Time
-	mu             sync.RWMutex
+	manager         PlaylistManager
+	spotifyClient   SpotifyClientInterface
+	playlistURL     string
+	updateInterval  time.Duration
+	logger          *zap.Logger
+	stopChan        chan struct{}
+	isRunning       bool
+	doneChan        chan struct{}
+	lastUpdate      time.Time
+	mu              sync.RWMutex
+	botAPI          BotAPIInterface // Для отправки уведомлений админу
+	adminUsername   string          // Username админа
+	lastFailureTime time.Time       // Время последней неудачи (для предотвращения спама)
 }
 
 // NewScheduler создает новый планировщик обновлений плейлиста
@@ -29,6 +32,8 @@ func NewScheduler(
 	playlistURL string,
 	updateHours int,
 	logger *zap.Logger,
+	botAPI BotAPIInterface,
+	adminUsername string,
 ) *Scheduler {
 	return &Scheduler{
 		manager:        manager,
@@ -38,6 +43,8 @@ func NewScheduler(
 		logger:         logger,
 		stopChan:       make(chan struct{}),
 		doneChan:       make(chan struct{}),
+		botAPI:         botAPI,
+		adminUsername:  adminUsername,
 	}
 }
 
@@ -107,26 +114,61 @@ func (s *Scheduler) updatePlaylist() {
 	s.logger.Info("Starting scheduled playlist update",
 		zap.String("playlist_url", s.playlistURL))
 
-	// Очищаем текущий плейлист
-	s.manager.Clear()
+	// Сохраняем текущее состояние плейлиста
+	currentTrackCount := s.manager.GetTotalTracks()
+	wasLoaded := s.manager.IsLoaded()
 
-	// Загружаем новый плейлист
-	if err := s.manager.LoadPlaylistFromSpotify(s.playlistURL); err != nil {
-		s.logger.Error("Failed to update playlist",
+	const maxRetries = 3
+	const baseDelay = 30 * time.Second
+
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		// Пытаемся загрузить новый плейлист (БЕЗ очистки текущего)
+		if err := s.manager.LoadPlaylistFromSpotify(s.playlistURL); err != nil {
+			lastErr = err
+			s.logger.Warn("Failed to update playlist from Spotify",
+				zap.String("playlist_url", s.playlistURL),
+				zap.Int("current_tracks", currentTrackCount),
+				zap.Bool("was_loaded", wasLoaded),
+				zap.Int("attempt", attempt),
+				zap.Int("max_retries", maxRetries),
+				zap.Error(err))
+
+			// Если это не последняя попытка, ждем и пробуем еще раз
+			if attempt < maxRetries {
+				delay := time.Duration(attempt) * baseDelay
+				s.logger.Info("Retrying playlist update after delay",
+					zap.Duration("delay", delay),
+					zap.Int("next_attempt", attempt+1))
+				time.Sleep(delay)
+				continue
+			}
+
+			// Все попытки исчерпаны
+			s.logger.Error("All playlist update attempts failed, keeping current version",
+				zap.String("playlist_url", s.playlistURL),
+				zap.Int("current_tracks", currentTrackCount),
+				zap.Bool("was_loaded", wasLoaded),
+				zap.Error(lastErr))
+
+			// Отправляем уведомление админу (не чаще раза в час)
+			s.notifyAdminOnFailure(lastErr)
+			return
+		}
+
+		// Успешное обновление
+		s.mu.Lock()
+		s.lastUpdate = time.Now()
+		s.mu.Unlock()
+
+		trackCount := s.manager.GetTotalTracks()
+		s.logger.Info("Playlist updated successfully",
 			zap.String("playlist_url", s.playlistURL),
-			zap.Error(err))
+			zap.Int("tracks_count", trackCount),
+			zap.Int("previous_tracks", currentTrackCount),
+			zap.Int("attempt", attempt))
 		return
 	}
-
-	// Записываем время последнего обновления
-	s.mu.Lock()
-	s.lastUpdate = time.Now()
-	s.mu.Unlock()
-
-	trackCount := s.manager.GetTotalTracks()
-	s.logger.Info("Playlist updated successfully",
-		zap.String("playlist_url", s.playlistURL),
-		zap.Int("tracks_count", trackCount))
 }
 
 // GetLastUpdateTime возвращает время последнего обновления плейлиста
@@ -141,4 +183,35 @@ func (s *Scheduler) GetNextUpdateTime() time.Time {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lastUpdate.Add(s.updateInterval)
+}
+
+// notifyAdminOnFailure отправляет уведомление админу о неудачном обновлении плейлиста
+func (s *Scheduler) notifyAdminOnFailure(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Проверяем, не отправляли ли уведомление недавно (не чаще раза в час)
+	if time.Since(s.lastFailureTime) < time.Hour {
+		s.logger.Debug("Skipping admin notification - too soon since last failure notification")
+		return
+	}
+
+	if s.botAPI == nil || s.adminUsername == "" {
+		s.logger.Warn("Cannot notify admin - botAPI or adminUsername not configured")
+		return
+	}
+
+	message := "🚨 *Ошибка обновления плейлиста*\n\n" +
+		"Не удалось обновить плейлист из Spotify после 3 попыток.\n" +
+		"Бот продолжает работать с текущим плейлистом.\n\n" +
+		"*Проверьте логи для деталей.*\n\n" +
+		"Ошибка: `" + err.Error() + "`"
+
+	if err := s.botAPI.SendMessageToAdmin(message); err != nil {
+		s.logger.Error("Failed to send admin notification", zap.Error(err))
+		return
+	}
+
+	s.lastFailureTime = time.Now()
+	s.logger.Info("Admin notification sent about playlist update failure")
 }

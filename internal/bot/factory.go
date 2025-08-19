@@ -341,12 +341,17 @@ func (f *ComponentFactory) CreateDependencies() (*types.Dependencies, error) {
 	// Создаем планировщик обновлений плейлиста только если есть Spotify клиент
 	var playlistScheduler *playlist.Scheduler
 	if spotifyClient != nil {
+		// Создаем уведомитель админа
+		adminNotifier := playlist.NewAdminNotifier(api, f.config.GetAdminUsername(), f.logger)
+
 		playlistScheduler = playlist.NewScheduler(
 			playlistManager,
 			spotifyClient,
 			f.config.GetPlaylistURL(),
 			f.config.GetPlaylistUpdateHours(),
 			f.logger,
+			adminNotifier,
+			f.config.GetAdminUsername(),
 		)
 	} else {
 		f.logger.Warn("Spotify client not available, playlist scheduler will not be created")
