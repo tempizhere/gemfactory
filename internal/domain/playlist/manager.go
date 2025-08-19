@@ -59,20 +59,19 @@ func (m *Manager) LoadPlaylistFromSpotify(playlistURL string) error {
 		return fmt.Errorf("failed to get playlist info from Spotify: %w", err)
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Очищаем существующие треки
-	m.tracks = make([]*spotify.Track, 0)
-
-	// Добавляем новые треки
+	// Подготавливаем новые треки
+	var newTracks []*spotify.Track
 	for _, track := range tracks {
 		if track.Title != "" && track.Artist != "" {
-			m.tracks = append(m.tracks, track)
+			newTracks = append(newTracks, track)
 		}
 	}
 
-	// Сохраняем информацию о плейлисте и URL
+	// Только после успешной подготовки всех данных обновляем состояние
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.tracks = newTracks
 	m.playlistInfo = playlistInfo
 	m.playlistURL = playlistURL
 	m.loaded = true

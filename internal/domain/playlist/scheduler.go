@@ -107,26 +107,58 @@ func (s *Scheduler) updatePlaylist() {
 	s.logger.Info("Starting scheduled playlist update",
 		zap.String("playlist_url", s.playlistURL))
 
-	// Очищаем текущий плейлист
-	s.manager.Clear()
+	// Сохраняем текущее состояние плейлиста
+	currentTrackCount := s.manager.GetTotalTracks()
+	wasLoaded := s.manager.IsLoaded()
 
-	// Загружаем новый плейлист
-	if err := s.manager.LoadPlaylistFromSpotify(s.playlistURL); err != nil {
-		s.logger.Error("Failed to update playlist",
+	const maxRetries = 3
+	const baseDelay = 30 * time.Second
+
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		// Пытаемся загрузить новый плейлист (БЕЗ очистки текущего)
+		if err := s.manager.LoadPlaylistFromSpotify(s.playlistURL); err != nil {
+			lastErr = err
+			s.logger.Warn("Failed to update playlist from Spotify",
+				zap.String("playlist_url", s.playlistURL),
+				zap.Int("current_tracks", currentTrackCount),
+				zap.Bool("was_loaded", wasLoaded),
+				zap.Int("attempt", attempt),
+				zap.Int("max_retries", maxRetries),
+				zap.Error(err))
+
+			// Если это не последняя попытка, ждем и пробуем еще раз
+			if attempt < maxRetries {
+				delay := time.Duration(attempt) * baseDelay
+				s.logger.Info("Retrying playlist update after delay",
+					zap.Duration("delay", delay),
+					zap.Int("next_attempt", attempt+1))
+				time.Sleep(delay)
+				continue
+			}
+
+			// Все попытки исчерпаны
+			s.logger.Error("All playlist update attempts failed, keeping current version",
+				zap.String("playlist_url", s.playlistURL),
+				zap.Int("current_tracks", currentTrackCount),
+				zap.Bool("was_loaded", wasLoaded),
+				zap.Error(lastErr))
+			return
+		}
+
+		// Успешное обновление
+		s.mu.Lock()
+		s.lastUpdate = time.Now()
+		s.mu.Unlock()
+
+		trackCount := s.manager.GetTotalTracks()
+		s.logger.Info("Playlist updated successfully",
 			zap.String("playlist_url", s.playlistURL),
-			zap.Error(err))
+			zap.Int("tracks_count", trackCount),
+			zap.Int("previous_tracks", currentTrackCount),
+			zap.Int("attempt", attempt))
 		return
 	}
-
-	// Записываем время последнего обновления
-	s.mu.Lock()
-	s.lastUpdate = time.Now()
-	s.mu.Unlock()
-
-	trackCount := s.manager.GetTotalTracks()
-	s.logger.Info("Playlist updated successfully",
-		zap.String("playlist_url", s.playlistURL),
-		zap.Int("tracks_count", trackCount))
 }
 
 // GetLastUpdateTime возвращает время последнего обновления плейлиста
