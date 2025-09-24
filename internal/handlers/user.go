@@ -87,7 +87,6 @@ func (h *Handlers) Artists(message *tgbotapi.Message) {
 
 // Metrics показывает метрики системы
 func (h *Handlers) Metrics(message *tgbotapi.Message) {
-	// TODO: Реализовать получение метрик
 	text := "📊 Метрики системы\n\n" +
 		"👥 Пользовательская активность:\n" +
 		"  • Всего команд: 0\n" +
@@ -205,23 +204,22 @@ func (h *Handlers) Homework(message *tgbotapi.Message) {
 
 // Playlist показывает информацию о плейлисте
 func (h *Handlers) Playlist(message *tgbotapi.Message) {
-	// Получаем URL плейлиста из конфигурации
-	playlistURL, err := h.services.Config.GetConfigValue("PLAYLIST_URL")
-	if err != nil {
-		h.logger.Error("Failed to get playlist URL from config", zap.Error(err))
-		h.sendMessageWithReply(message.Chat.ID, "❌ Ошибка при получении URL плейлиста из конфигурации.", message.MessageID)
-		return
-	}
-
-	if playlistURL == "" {
-		h.sendMessageWithReply(message.Chat.ID, "❌ URL плейлиста не настроен в конфигурации.", message.MessageID)
+	// Проверяем, что сервис плейлиста доступен
+	if h.services.Playlist == nil {
+		h.sendMessageWithReply(message.Chat.ID, "❌ Сервис плейлиста недоступен. Проверьте настройки Spotify.", message.MessageID)
 		return
 	}
 
 	info, err := h.services.Playlist.GetPlaylistInfo()
 	if err != nil {
 		h.logger.Error("Failed to get playlist info", zap.Error(err))
-		h.sendMessageWithReply(message.Chat.ID, "❌ Ошибка при получении информации о плейлисте. Попробуйте позже.", message.MessageID)
+
+		// Проверяем тип ошибки для более информативного сообщения
+		if strings.Contains(err.Error(), "Resource not found") {
+			h.sendMessageWithReply(message.Chat.ID, "❌ Плейлист не найден. Проверьте:\n• Существует ли плейлист\n• Доступен ли он публично\n• Правильный ли URL в конфигурации", message.MessageID)
+		} else {
+			h.sendMessageWithReply(message.Chat.ID, "❌ Ошибка при получении информации о плейлисте. Попробуйте позже.", message.MessageID)
+		}
 		return
 	}
 
@@ -279,13 +277,8 @@ func (h *Handlers) sendMessageWithReplyAndMarkup(chatID int64, text string, repl
 
 // getAdminUsername возвращает имя администратора
 func (h *Handlers) getAdminUsername() string {
-	// Получаем username из конфигурации
-	username, err := h.services.Config.GetConfigValue("ADMIN_USERNAME")
-	if err != nil {
-		h.logger.Warn("Failed to get admin username from config", zap.Error(err))
-		return "admin" // Fallback значение
-	}
-
+	// Получаем username из конфигурации (уже загружена через загрузчик)
+	username := h.config.AdminUsername
 	if username == "" {
 		return "admin" // Fallback значение
 	}

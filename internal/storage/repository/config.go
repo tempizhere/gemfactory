@@ -30,7 +30,13 @@ func (r *ConfigRepository) Get(key string) (*model.Config, error) {
 	ctx := context.Background()
 	config := new(model.Config)
 
-	err := r.db.NewSelect().
+	// Устанавливаем search_path для этого запроса
+	_, err := r.db.ExecContext(ctx, "SET search_path TO gemfactory, public")
+	if err != nil {
+		r.logger.Warn("Failed to set search_path", zap.Error(err))
+	}
+
+	err = r.db.NewSelect().
 		Model(config).
 		Where("key = ?", key).
 		Scan(ctx)
@@ -50,7 +56,13 @@ func (r *ConfigRepository) GetAll() ([]model.Config, error) {
 	ctx := context.Background()
 	var configs []model.Config
 
-	err := r.db.NewSelect().
+	// Устанавливаем search_path для этого запроса
+	_, err := r.db.ExecContext(ctx, "SET search_path TO gemfactory, public")
+	if err != nil {
+		r.logger.Warn("Failed to set search_path", zap.Error(err))
+	}
+
+	err = r.db.NewSelect().
 		Model(&configs).
 		Order("key ASC").
 		Scan(ctx)
@@ -66,12 +78,18 @@ func (r *ConfigRepository) GetAll() ([]model.Config, error) {
 func (r *ConfigRepository) Set(key, value string) error {
 	ctx := context.Background()
 
+	// Устанавливаем search_path для этого запроса
+	_, err := r.db.ExecContext(ctx, "SET search_path TO gemfactory, public")
+	if err != nil {
+		r.logger.Warn("Failed to set search_path", zap.Error(err))
+	}
+
 	config := &model.Config{
 		Key:   key,
 		Value: value,
 	}
 
-	_, err := r.db.NewInsert().
+	_, err = r.db.NewInsert().
 		Model(config).
 		On("CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()").
 		Exec(ctx)
@@ -87,7 +105,13 @@ func (r *ConfigRepository) Set(key, value string) error {
 func (r *ConfigRepository) Delete(key string) error {
 	ctx := context.Background()
 
-	_, err := r.db.NewDelete().
+	// Устанавливаем search_path для этого запроса
+	_, err := r.db.ExecContext(ctx, "SET search_path TO gemfactory, public")
+	if err != nil {
+		r.logger.Warn("Failed to set search_path", zap.Error(err))
+	}
+
+	_, err = r.db.NewDelete().
 		Model((*model.Config)(nil)).
 		Where("key = ?", key).
 		Exec(ctx)
@@ -103,15 +127,19 @@ func (r *ConfigRepository) Delete(key string) error {
 func (r *ConfigRepository) Reset() error {
 	ctx := context.Background()
 
-	// Удаляем все существующие конфигурации
-	_, err := r.db.NewDelete().
+	// Устанавливаем search_path для этого запроса
+	_, err := r.db.ExecContext(ctx, "SET search_path TO gemfactory, public")
+	if err != nil {
+		r.logger.Warn("Failed to set search_path", zap.Error(err))
+	}
+
+	_, err = r.db.NewDelete().
 		Model((*model.Config)(nil)).
 		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to delete config: %w", err)
 	}
 
-	// Вставляем конфигурации по умолчанию
 	defaultConfig := r.GetDefaultConfig()
 	for key, value := range defaultConfig {
 		err := r.Set(key, value)
@@ -131,7 +159,6 @@ func (r *ConfigRepository) GetDefaultConfig() map[string]string {
 		"SCRAPER_DELAY":         "1",
 		"SCRAPER_TIMEOUT":       "30",
 		"LOG_LEVEL":             "info",
-		"PLAYLIST_UPDATE_HOURS": "24",
 		"BOT_TOKEN":             "",
 		"ADMIN_USERNAME":        "",
 		"SPOTIFY_CLIENT_ID":     "",

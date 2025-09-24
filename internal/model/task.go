@@ -1,4 +1,7 @@
 // Package model содержит модели данных приложения.
+//
+// Группа: ENTITIES - Основные сущности
+// Содержит: Task, TaskType, TaskStatus, TaskRepository
 package model
 
 import (
@@ -46,7 +49,7 @@ func (t *TaskType) UnmarshalText(data []byte) error {
 
 // Task представляет задачу в системе
 type Task struct {
-	bun.BaseModel `bun:"table:tasks"`
+	bun.BaseModel `bun:"table:gemfactory.tasks"`
 
 	TaskID         int                    `bun:"task_id,pk,autoincrement" json:"task_id"`
 	Name           string                 `bun:"name,unique,notnull" json:"name"`
@@ -175,5 +178,6 @@ type TaskRepository interface {
 	GetByType(taskType TaskType) ([]Task, error)
 	GetActive() ([]Task, error)
 	GetDueTasks() ([]Task, error)
+	GetByName(name string) (*Task, error)
 	UpdateRunStats(taskID int, success bool, err error) error
 }

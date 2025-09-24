@@ -61,7 +61,7 @@ func (f *fetcherImpl) newCollector() *colly.Collector {
 	}
 
 	// Настраиваем задержки
-	collector.Limit(&colly.LimitRule{
+	_ = collector.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
 		Parallelism: 1,
 		Delay:       f.config.RequestDelay,
@@ -102,5 +102,3 @@ func (f *fetcherImpl) getMonthNumber(month string) (string, bool) {
 	monthNum, ok := months[month]
 	return monthNum, ok
 }
-
-// WithRetry и filterReleasesByParsingMonth реализованы в других файлах

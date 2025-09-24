@@ -12,7 +12,7 @@ import (
 
 // Config представляет конфигурацию приложения
 type Config struct {
-	bun.BaseModel `bun:"table:config"`
+	bun.BaseModel `bun:"table:gemfactory.config"`
 
 	ID          int       `bun:"id,pk,autoincrement" json:"id"`
 	Key         string    `bun:"key,unique,notnull" json:"key"`

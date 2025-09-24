@@ -52,34 +52,6 @@ func New() *zap.Logger {
 	return logger
 }
 
-// NewDevelopment создает логгер для разработки
-func NewDevelopment() *zap.Logger {
-	config := zap.NewDevelopmentConfig()
-	config.EncoderConfig.TimeKey = "timestamp"
-	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-
-	logger, err := config.Build()
-	if err != nil {
-		panic(err)
-	}
-
-	return logger
-}
-
-// NewProduction создает логгер для продакшена
-func NewProduction() *zap.Logger {
-	config := zap.NewProductionConfig()
-	config.EncoderConfig.TimeKey = "timestamp"
-	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-
-	logger, err := config.Build()
-	if err != nil {
-		panic(err)
-	}
-
-	return logger
-}
-
 // getLogLevel получает уровень логирования из переменной окружения
 func getLogLevel() zapcore.Level {
 	level := os.Getenv("LOG_LEVEL")

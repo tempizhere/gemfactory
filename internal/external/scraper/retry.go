@@ -35,7 +35,6 @@ func WithRetry(ctx context.Context, logger *zap.Logger, config RetryConfig, fn f
 
 		lastErr = err
 
-		// Если это последняя попытка, не ждем
 		if attempt == config.MaxRetries {
 			break
 		}
@@ -52,7 +51,6 @@ func WithRetry(ctx context.Context, logger *zap.Logger, config RetryConfig, fn f
 			zap.Duration("delay", delay),
 			zap.Error(err))
 
-		// Ждем с возможностью отмены через контекст
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

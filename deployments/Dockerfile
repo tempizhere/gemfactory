@@ -1,14 +1,10 @@
-# Многоэтапная сборка для продакшена
-FROM golang:1.24.1-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Устанавливаем необходимые пакеты
 RUN apk add --no-cache git ca-certificates tzdata
 
-# Создаем пользователя для сборки
-RUN adduser -D -g '' appuser
-
-# Устанавливаем рабочую директорию
-WORKDIR /build
+# Создаем рабочую директорию
+WORKDIR /app
 
 # Копируем go.mod и go.sum
 COPY go.mod go.sum ./
@@ -20,26 +16,32 @@ RUN go mod download
 COPY . .
 
 # Собираем приложение
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags='-w -s -extldflags "-static"' \
-    -a -installsuffix cgo \
-    -o gemfactory cmd/bot/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gemfactory cmd/bot/main.go
 
 # Финальный образ
-FROM scratch
+FROM alpine:3.18
 
-# Копируем сертификаты и временную зону
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+# Устанавливаем необходимые пакеты
+RUN apk add --no-cache ca-certificates tzdata postgresql-client
 
-# Копируем пользователя
-COPY --from=builder /etc/passwd /etc/passwd
+# Создаем пользователя
+RUN adduser -D -s /bin/sh appuser
 
-# Копируем собранное приложение
-COPY --from=builder /build/gemfactory /app/gemfactory
+# Копируем бинарник
+COPY --from=builder /app/gemfactory /app/gemfactory
 
-# Создаем директорию для логов
-RUN mkdir -p /app/logs
+# Копируем миграции
+COPY --from=builder /app/migrations /app/migrations
+
+# Копируем скрипт запуска
+COPY deployments/start.sh /app/start.sh
+
+# Создаем папку для данных
+RUN mkdir -p /app/data
+
+# Устанавливаем права
+RUN chmod +x /app/start.sh /app/gemfactory && \
+    chown -R appuser:appuser /app
 
 # Переключаемся на непривилегированного пользователя
 USER appuser
@@ -47,8 +49,8 @@ USER appuser
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Открываем порт для health check
+# Открываем порт
 EXPOSE 8080
 
 # Запускаем приложение
-CMD ["./gemfactory"]
+CMD ["/app/start.sh"]

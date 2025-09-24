@@ -12,18 +12,16 @@ import (
 
 // PlaylistTracks представляет трек в плейлисте
 type PlaylistTracks struct {
-	bun.BaseModel `bun:"table:playlist_tracks"`
+	bun.BaseModel `bun:"table:gemfactory.playlist_tracks"`
 
-	ID         int       `bun:"id,pk,autoincrement" json:"id"`
-	SpotifyID  string    `bun:"spotify_id,notnull" json:"spotify_id"`
-	TrackID    string    `bun:"track_id,notnull" json:"track_id"`
-	Artist     string    `bun:"artist,notnull" json:"artist"`
-	Title      string    `bun:"title,notnull" json:"title"`
-	Album      string    `bun:"album" json:"album"`
-	DurationMs int       `bun:"duration_ms" json:"duration_ms"`
-	AddedAt    time.Time `bun:"added_at,notnull,default:current_timestamp" json:"added_at"`
-	CreatedAt  time.Time `bun:"created_at,notnull,default:current_timestamp" json:"created_at"`
-	UpdatedAt  time.Time `bun:"updated_at,notnull,default:current_timestamp" json:"updated_at"`
+	ID        int       `bun:"id,pk,autoincrement" json:"id"`
+	SpotifyID string    `bun:"spotify_id,notnull" json:"spotify_id"`
+	TrackID   string    `bun:"track_id,notnull" json:"track_id"`
+	Artist    string    `bun:"artist,notnull" json:"artist"`
+	Title     string    `bun:"title,notnull" json:"title"`
+	AddedAt   time.Time `bun:"added_at,notnull,default:current_timestamp" json:"added_at"`
+	CreatedAt time.Time `bun:"created_at,notnull,default:current_timestamp" json:"created_at"`
+	UpdatedAt time.Time `bun:"updated_at,notnull,default:current_timestamp" json:"updated_at"`
 }
 
 // PlaylistTracksRepository определяет интерфейс для работы с треками плейлиста

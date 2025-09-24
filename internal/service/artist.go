@@ -192,7 +192,6 @@ func (s *ArtistService) Export() (string, error) {
 		}
 	}
 
-	// Форматируем как в FormatArtists
 	var response strings.Builder
 
 	response.WriteString("<b>Женские артисты:</b>\n")

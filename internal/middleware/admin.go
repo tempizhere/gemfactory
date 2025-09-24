@@ -18,10 +18,6 @@ func AdminOnlyMiddleware(adminUsername string, logger *zap.Logger) func(update t
 
 		if update.Message.From == nil {
 			logger.Warn("No user information in message")
-			// TODO: Отправить сообщение об ошибке
-			// if err := sendMessage(update.Message.Chat.ID, "❌ Невозможно определить пользователя"); err != nil {
-			// 	logger.Error("Failed to send error message", zap.Error(err))
-			// }
 			return
 		}
 
@@ -31,11 +27,6 @@ func AdminOnlyMiddleware(adminUsername string, logger *zap.Logger) func(update t
 				zap.String("command", update.Message.Command()),
 				zap.String("user", user),
 				zap.String("expected_admin", adminUsername))
-
-			// TODO: Отправить сообщение об отказе в доступе
-			// if err := sendMessage(update.Message.Chat.ID, "🔒 Эта команда доступна только администратору"); err != nil {
-			// 	logger.Error("Failed to send access denied message", zap.Error(err))
-			// }
 			return
 		}
 
@@ -52,10 +43,6 @@ func AdminOnlyMiddlewareWithError(adminUsername string, logger *zap.Logger) func
 
 		if update.Message.From == nil {
 			logger.Warn("No user information in message")
-			// TODO: Отправить сообщение об ошибке
-			// if err := sendMessage(update.Message.Chat.ID, "❌ Невозможно определить пользователя"); err != nil {
-			// 	logger.Error("Failed to send error message", zap.Error(err))
-			// }
 			return nil
 		}
 
@@ -65,11 +52,6 @@ func AdminOnlyMiddlewareWithError(adminUsername string, logger *zap.Logger) func
 				zap.String("command", update.Message.Command()),
 				zap.String("user", user),
 				zap.String("expected_admin", adminUsername))
-
-			// TODO: Отправить сообщение об отказе в доступе
-			// if err := sendMessage(update.Message.Chat.ID, "🔒 Эта команда доступна только администратору"); err != nil {
-			// 	logger.Error("Failed to send access denied message", zap.Error(err))
-			// }
 			return nil
 		}
 

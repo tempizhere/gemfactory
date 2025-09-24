@@ -12,7 +12,7 @@ import (
 type RateLimiterInterface interface {
 	// AllowRequest проверяет, можно ли обработать запрос
 	AllowRequest(userID int64) bool
-	// Allow проверяет, разрешен ли запрос (для совместимости)
+	// Allow проверяет, разрешен ли запрос
 	Allow(userID int64) bool
 	// Cleanup очищает устаревшие записи
 	Cleanup()
@@ -44,7 +44,7 @@ func (rl *RateLimiter) AllowRequest(userID int64) bool {
 	return rl.allowRequest(userID)
 }
 
-// Allow проверяет, разрешен ли запрос (для совместимости)
+// Allow проверяет, разрешен ли запрос
 func (rl *RateLimiter) Allow(userID int64) bool {
 	return rl.allowRequest(userID)
 }

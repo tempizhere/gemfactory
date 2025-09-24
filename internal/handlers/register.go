@@ -17,7 +17,7 @@ func RegisterRoutes(services *service.Services, config *config.Config, logger *z
 	keyboardManager := keyboard.NewKeyboardManager(services, config, logger)
 
 	// Создаем обработчики с клавиатурой (BotAPI будет установлен позже)
-	handlers := New(services, keyboardManager, logger)
+	handlers := New(services, config, keyboardManager, logger)
 
 	return handlers
 }
@@ -31,7 +31,7 @@ func RegisterRoutesWithBotAPI(services *service.Services, config *config.Config,
 	keyboardManager.SetBotAPI(botAPI)
 
 	// Создаем обработчики с клавиатурой и BotAPI
-	handlers := New(services, keyboardManager, logger)
+	handlers := New(services, config, keyboardManager, logger)
 	handlers.botAPI = botAPI
 
 	return handlers

@@ -251,40 +251,33 @@ func (s *Scheduler) GetStatus() map[string]interface{} {
 // UpdatePlaylistTaskExecutor реализует TaskExecutor для обновления плейлистов
 type UpdatePlaylistTaskExecutor struct {
 	playlistService *PlaylistService
-	configService   *ConfigService
 	logger          *zap.Logger
 }
 
 // NewUpdatePlaylistTaskExecutor создает новый исполнитель задач обновления плейлистов
-func NewUpdatePlaylistTaskExecutor(playlistService *PlaylistService, configService *ConfigService, logger *zap.Logger) *UpdatePlaylistTaskExecutor {
+func NewUpdatePlaylistTaskExecutor(playlistService *PlaylistService, logger *zap.Logger) *UpdatePlaylistTaskExecutor {
 	return &UpdatePlaylistTaskExecutor{
 		playlistService: playlistService,
-		configService:   configService,
 		logger:          logger,
 	}
 }
 
 // Execute выполняет задачу обновления плейлиста
 func (e *UpdatePlaylistTaskExecutor) Execute(ctx context.Context, task *model.Task) error {
-	// Получаем URL плейлиста из конфигурации
-	playlistURL, err := e.configService.GetConfigValue("PLAYLIST_URL")
-	if err != nil {
-		return fmt.Errorf("failed to get PLAYLIST_URL from config: %w", err)
-	}
-
-	if playlistURL == "" {
-		return fmt.Errorf("PLAYLIST_URL is not configured")
+	// Проверяем, что PlaylistService доступен
+	if e.playlistService == nil {
+		return fmt.Errorf("playlist service not available")
 	}
 
 	// Обновляем плейлист
-	err = e.playlistService.ReloadPlaylist()
+	err := e.playlistService.ReloadPlaylist()
 	if err != nil {
 		return fmt.Errorf("failed to update playlist: %w", err)
 	}
 
 	e.logger.Info("Playlist update task completed successfully",
 		zap.String("task_name", task.Name),
-		zap.String("playlist_url", playlistURL))
+		zap.String("task_type", string(task.TaskType)))
 
 	return nil
 }

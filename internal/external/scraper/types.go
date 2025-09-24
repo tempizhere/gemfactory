@@ -66,8 +66,6 @@ func (r *Release) ToModelRelease() *model.Release {
 		Date:       r.Date,
 		TimeMSK:    r.TimeMSK,
 		MV:         r.MV,
-		Month:      "", // Будет определено позже
-		Year:       0,  // Будет определено позже
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 
 // Homework представляет домашнее задание
 type Homework struct {
-	bun.BaseModel `bun:"table:homework"`
+	bun.BaseModel `bun:"table:gemfactory.homeworks"`
 
 	HomeworkID int       `bun:"homework_id,pk,autoincrement" json:"homework_id"`
 	UserID     int64     `bun:"user_id,notnull" json:"user_id"`

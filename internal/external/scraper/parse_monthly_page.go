@@ -8,35 +8,63 @@ import (
 	"sync"
 	"time"
 
+	"gemfactory/internal/model"
 	"github.com/gocolly/colly/v2"
 	"go.uber.org/zap"
 )
+
+// cleanYouTubeURL очищает YouTube URL от лишних параметров
+func cleanYouTubeURL(url string) string {
+	// Удаляем параметры типа ?si=... и другие tracking параметры
+	url = regexp.MustCompile(`\?si=[^&]*`).ReplaceAllString(url, "")
+	url = regexp.MustCompile(`&si=[^&]*`).ReplaceAllString(url, "")
+	url = regexp.MustCompile(`\?t=[^&]*`).ReplaceAllString(url, "")
+	url = regexp.MustCompile(`&t=[^&]*`).ReplaceAllString(url, "")
+	url = regexp.MustCompile(`\?list=[^&]*`).ReplaceAllString(url, "")
+	url = regexp.MustCompile(`&list=[^&]*`).ReplaceAllString(url, "")
+
+	// Удаляем оставшиеся пустые параметры
+	url = regexp.MustCompile(`\?&`).ReplaceAllString(url, "?")
+	url = regexp.MustCompile(`\?$`).ReplaceAllString(url, "")
+
+	return url
+}
 
 // cleanHTMLBlock очищает HTML блок по описанному паттерну
 func cleanHTMLBlock(html string) string {
 	// 1. Удаляем все атрибуты из тегов
 	html = regexp.MustCompile(`\s+(class|style|data-[^=]+)="[^"]*"`).ReplaceAllString(html, "")
 
-	// 2. Удаляем теги форматирования, оставляя содержимое
-	html = regexp.MustCompile(`</?(mark|strong|span)[^>]*>`).ReplaceAllString(html, "")
-
-	// 3. Удаляем ненужные ссылки (все кроме YouTube)
+	// 2. Обрабатываем ссылки (сохраняем YouTube с названиями треков) - ДО удаления span тегов
 	allLinksRegex := regexp.MustCompile(`<a[^>]*href="[^"]*"[^>]*>.*?</a>`)
 	html = allLinksRegex.ReplaceAllStringFunc(html, func(match string) string {
 		// Проверяем, является ли это YouTube ссылкой
 		if strings.Contains(match, "youtube.com") || strings.Contains(match, "youtu.be") {
-			// Извлекаем URL из YouTube ссылки
+			// Извлекаем URL и текст из YouTube ссылки
 			urlRegex := regexp.MustCompile(`href="(https?://[^"]*)"`)
 			urlMatch := urlRegex.FindStringSubmatch(match)
+
+			// Извлекаем текст из ссылки (название трека)
+			textRegex := regexp.MustCompile(`>([^<]+)<`)
+			textMatch := textRegex.FindStringSubmatch(match)
+
 			if len(urlMatch) > 1 {
-				return fmt.Sprintf(`<a href="%s"></a>`, urlMatch[1])
+				url := cleanYouTubeURL(urlMatch[1]) // Очищаем URL от параметров
+				text := ""
+				if len(textMatch) > 1 {
+					text = strings.TrimSpace(textMatch[1])
+				}
+				return fmt.Sprintf(`<a href="%s">%s</a>`, url, text)
 			}
 			return match
 		}
 		return "" // Удаляем все остальные ссылки
 	})
 
-	// 4. Удаляем текст после артиста (в скобках)
+	// 3. Удаляем теги форматирования, оставляя содержимое
+	html = regexp.MustCompile(`</?(mark|strong|span)[^>]*>`).ReplaceAllString(html, "")
+
+	// Удаляем текст после артиста в скобках
 	html = regexp.MustCompile(`\s*\([^)]*\)`).ReplaceAllString(html, "")
 
 	// 5. Заменяем HTML entities
@@ -47,10 +75,41 @@ func cleanHTMLBlock(html string) string {
 	html = strings.ReplaceAll(html, "&quot;", "\"")
 	html = strings.ReplaceAll(html, "&#39;", "'")
 
-	// 6. Заменяем <br> на переносы строк
+	// 6. Заменяем <br> на переносы строк для лучшей структуры
 	html = regexp.MustCompile(`<br\s*/?>`).ReplaceAllString(html, "\n")
 
-	// 7. Удаляем множественные пробелы и переносы
+	// 7. Улучшаем структуру для множественных треков
+	// Заменяем "– " на "• " для лучшего понимания списков
+	html = regexp.MustCompile(`\n\s*–\s*`).ReplaceAllString(html, "\n• ")
+
+	// 8. Удаляем дни недели из первого <td>
+	html = regexp.MustCompile(`<td>([^<]*)(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)([^<]*)</td>`).ReplaceAllStringFunc(html, func(match string) string {
+		// Извлекаем содержимое первого <td> и удаляем день недели
+		tdRegex := regexp.MustCompile(`<td>([^<]*)(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)([^<]*)</td>`)
+		tdMatch := tdRegex.FindStringSubmatch(match)
+		if len(tdMatch) >= 4 {
+			beforeDay := strings.TrimSpace(tdMatch[1])
+			afterDay := strings.TrimSpace(tdMatch[3])
+			content := strings.TrimSpace(beforeDay + " " + afterDay)
+			return fmt.Sprintf(`<event>%s</event>`, content)
+		}
+		return match
+	})
+
+	// 9. Переименовываем теги для лучшей структуры
+	html = regexp.MustCompile(`<td>([^<]*)</td><td>([^<]*)</td>`).ReplaceAllStringFunc(html, func(match string) string {
+		// Извлекаем содержимое обоих <td>
+		tdRegex := regexp.MustCompile(`<td>([^<]*)</td><td>([^<]*)</td>`)
+		tdMatch := tdRegex.FindStringSubmatch(match)
+		if len(tdMatch) >= 3 {
+			eventContent := strings.TrimSpace(tdMatch[1])
+			releasesContent := strings.TrimSpace(tdMatch[2])
+			return fmt.Sprintf(`<event>%s</event><releases>%s</releases>`, eventContent, releasesContent)
+		}
+		return match
+	})
+
+	// 10. Удаляем множественные пробелы и переносы
 	html = regexp.MustCompile(`\s+`).ReplaceAllString(html, " ")
 	html = regexp.MustCompile(`\n\s*`).ReplaceAllString(html, "\n")
 
@@ -89,9 +148,9 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month, year str
 			return
 		default:
 			rowCount++
-			// Получаем HTML блока <td>
-			blockHTML, _ := e.DOM.Html()
-			f.collectArtistBlock(blockHTML, monthNum, year, artists, &artistBlocks, &mu, rowCount)
+			// Получаем HTML всей строки <tr>
+			rowHTML, _ := e.DOM.Html()
+			f.collectArtistBlock(rowHTML, artists, &artistBlocks, &mu, rowCount)
 		}
 	})
 
@@ -121,7 +180,6 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month, year str
 	}
 	collector.Wait()
 
-	// Обрабатываем все собранные блоки через LLM
 	if len(artistBlocks) > 0 && f.llmClient != nil {
 		f.logger.Info("Processing artist blocks with LLM", zap.Int("blocks_count", len(artistBlocks)))
 
@@ -140,11 +198,10 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month, year str
 			}
 		}
 
-		// Объединяем все блоки через точку с запятой
 		allBlocksText := strings.Join(htmlBlocks, "; ")
 
 		// Отправляем батч в LLM
-		llmResponse, err := f.llmClient.ParseMultiRelease(ctx, allBlocksText)
+		llmResponse, err := f.llmClient.ParseMultiRelease(ctx, allBlocksText, month)
 		if err != nil {
 			f.logger.Error("Failed to parse artist blocks with LLM", zap.Error(err))
 			return nil, fmt.Errorf("failed to parse artist blocks with LLM: %w", err)
@@ -154,7 +211,7 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month, year str
 		var allReleases []Release
 		for _, releaseData := range llmResponse.Releases {
 			// Преобразуем дату в нужный формат
-			parsedDate, err := FormatDateWithYear(releaseData.Date, year, f.logger)
+			parsedDate, err := model.FormatDateWithYear(releaseData.Date, year, f.logger)
 			if err != nil {
 				f.logger.Error("Failed to parse date from LLM", zap.String("date", releaseData.Date), zap.Error(err))
 				continue

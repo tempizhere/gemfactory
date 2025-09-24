@@ -83,9 +83,9 @@ func NewClient(config Config, logger *zap.Logger) *Client {
 }
 
 // ParseMultiRelease парсит мультирелиз через LLM
-func (c *Client) ParseMultiRelease(ctx context.Context, htmlBlock string) (*MultiReleaseResponse, error) {
+func (c *Client) ParseMultiRelease(ctx context.Context, htmlBlock string, month string) (*MultiReleaseResponse, error) {
 	// Создаем промпт для парсинга мультирелиза
-	prompt := c.createMultiReleasePrompt(htmlBlock)
+	prompt := c.createMultiReleasePrompt(htmlBlock, month)
 
 	// Показываем полный промпт
 	c.logger.Info("Sending request to LLM",
@@ -115,12 +115,15 @@ func (c *Client) ParseMultiRelease(ctx context.Context, htmlBlock string) (*Mult
 }
 
 // createMultiReleasePrompt создает промпт для парсинга мультирелиза
-func (c *Client) createMultiReleasePrompt(htmlBlocks string) string {
+func (c *Client) createMultiReleasePrompt(htmlBlocks string, month string) string {
 	return fmt.Sprintf(`Extract ALL releases from HTML blocks. Each block may contain multiple releases. Return ONLY JSON.
 
 IMPORTANT:
 1. ALWAYS preserve YouTube links! If you see <a href="https://youtube.com/..."> or <a href="https://youtu.be/...">, extract the full URL.
 2. Date format: "Month Day, Year" (e.g., "October 8, 2025") - NO day of week like "Wednesday" or "Monday"!
+3. Structure: <event> contains date info, <releases> contains artist and track info
+4. FILTER: Only return releases for %s month - ignore releases from other months
+5. DEDUPLICATION: Remove duplicate releases (same artist + same date + same track)
 
 HTML blocks (separated by semicolons):
 %s
@@ -143,19 +146,37 @@ CRITICAL RULES:
 - Each HTML block may contain MULTIPLE releases (e.g., one artist with several release dates)
 - Extract EVERY release as a separate entry in the releases array
 - Look for multiple dates in the same block (e.g., "January 15, 2025", "January 20, 2025", "January 25, 2025")
+- Look for multiple tracks in the same block (marked with "• " or "– ")
 - Each date + track combination = separate release entry
+- If multiple tracks have the same date, create separate entries for each track
    - Date format: "January 1, 2025" (full month name, day, year) - NO day of week (Monday, Tuesday, etc.)
 - Artist: exact name (first word/name in the block)
-- Track: extract from "Title Track:" field or track names after dates
+- Track: extract from "Title Track:" field, track names after dates, or bullet points (• / –)
 - Album: extract from "Album:" field if available, empty string if not
    - YouTube URL: extract from <a href="https://youtu.be/..."> or <a href="https://www.youtube.com/..."> links, even if the <a> tag is empty (no text content), ALWAYS extract the full URL if found, never leave empty if YouTube link exists
+
+DATE RULES:
+- If <releases> contains specific dates (e.g., "January 15, 2025", "January 20, 2025"), use <event> date
+- If <releases> has NO specific dates, use the date from <event> for ALL releases in that block
+- If <releases> contains multiple dates, extract release only for date from <event>
+- YouTube links always come AFTER the track name in the same line
+
+DEDUPLICATION RULES:
+- If you find multiple releases with the same artist + same date + same track, keep only ONE
+- Prefer releases with YouTube URLs over those without
+- If multiple releases have the same data, keep the first one found
 
 EXAMPLES:
 - Block with 1 release: 1 entry in releases array
 - Block with multiple releases: multiple entries in releases array (one per date+track)
 - Block with multiple dates: create separate entry for each date+track combination
 
-Return ONLY valid JSON, no explanations, no markdown.`, htmlBlocks)
+DATE EXAMPLES:
+- <event>January 15, 2025</event><releases>Artist • Track 1 • Track 2</releases> → 2 releases with date "January 15, 2025"
+- <event>January 15, 2025</event><releases>Artist • January 15: Track 1 • January 25: Track 2</releases> → 1 release with date "January 15, 2025"
+- <event>January 15, 2025 at 6 PM KST</event><releases>Artist • Track 1</releases> → 1 release with date "January 15, 2025"
+
+Return ONLY valid JSON, no explanations, no markdown.`, month, htmlBlocks)
 }
 
 // sendRequest отправляет запрос к LLM API
@@ -197,7 +218,11 @@ func (c *Client) sendRequest(ctx context.Context, prompt string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.logger.Warn("Failed to close response body", zap.Error(err))
+		}
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -245,8 +270,7 @@ func (c *Client) parseResponse(response string) (*MultiReleaseResponse, error) {
 		}
 	}
 
-	// Убираем мусор - ищем последний валидный JSON
-	// Ищем последнюю закрывающую скобку }
+	// Ищем последний валидный JSON объект
 	lastBrace := bytes.LastIndex([]byte(cleanedResponse), []byte("}"))
 	if lastBrace != -1 {
 		// Ищем соответствующую открывающую скобку {

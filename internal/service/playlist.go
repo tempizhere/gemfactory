@@ -18,34 +18,42 @@ type PlaylistService struct {
 	playlistRepo  model.PlaylistTracksRepository
 	configRepo    model.ConfigRepository
 	spotifyClient spotify.Client
+	playlistURL   string
 	logger        *zap.Logger
 }
 
 // NewPlaylistService создает новый сервис плейлистов
-func NewPlaylistService(db *bun.DB, spotifyClient spotify.Client, logger *zap.Logger) *PlaylistService {
+func NewPlaylistService(db *bun.DB, spotifyClient spotify.Client, playlistURL string, logger *zap.Logger) *PlaylistService {
 	return &PlaylistService{
 		playlistRepo:  repository.NewPlaylistTracksRepository(db, logger),
 		configRepo:    repository.NewConfigRepository(db, logger),
 		spotifyClient: spotifyClient,
+		playlistURL:   playlistURL,
 		logger:        logger,
 	}
 }
 
 // ReloadPlaylist перезагружает плейлист из Spotify
 func (s *PlaylistService) ReloadPlaylist() error {
-	// Получаем URL плейлиста из конфигурации
-	playlistURL, err := s.configRepo.Get("PLAYLIST_URL")
-	if err != nil {
-		return fmt.Errorf("failed to get playlist URL from config: %w", err)
+	playlistURL := s.playlistURL
+	if playlistURL == "" {
+		// Fallback на базу данных если нет в конструкторе
+		config, err := s.configRepo.Get("PLAYLIST_URL")
+		if err != nil {
+			return fmt.Errorf("failed to get playlist URL from config: %w", err)
+		}
+		if config != nil {
+			playlistURL = config.Value
+		}
 	}
 
-	if playlistURL == nil || playlistURL.Value == "" {
+	if playlistURL == "" {
 		return fmt.Errorf("playlist URL not configured")
 	}
 
 	// Извлекаем Spotify ID из URL
-	spotifyID := s.extractSpotifyID(playlistURL.Value)
-	s.logger.Info("Extracted Spotify ID in PlaylistService", zap.String("playlist_url", playlistURL.Value), zap.String("spotify_id", spotifyID))
+	spotifyID := s.extractSpotifyID(playlistURL)
+	s.logger.Info("Extracted Spotify ID in PlaylistService", zap.String("playlist_url", playlistURL), zap.String("spotify_id", spotifyID))
 	if spotifyID == "" {
 		return fmt.Errorf("failed to extract Spotify ID from playlist URL")
 	}
@@ -53,7 +61,7 @@ func (s *PlaylistService) ReloadPlaylist() error {
 	s.logger.Info("Starting playlist reload", zap.String("spotify_id", spotifyID))
 
 	// Получаем информацию о плейлисте
-	playlistInfo, err := s.spotifyClient.GetPlaylistInfo(playlistURL.Value)
+	playlistInfo, err := s.spotifyClient.GetPlaylistInfo(playlistURL)
 	if err != nil {
 		return fmt.Errorf("failed to get playlist info: %w", err)
 	}
@@ -71,7 +79,7 @@ func (s *PlaylistService) ReloadPlaylist() error {
 	s.logger.Info("Deleted old tracks")
 
 	// Получаем треки из плейлиста
-	tracks, err := s.spotifyClient.GetPlaylistTracks(playlistURL.Value)
+	tracks, err := s.spotifyClient.GetPlaylistTracks(playlistURL)
 	if err != nil {
 		return fmt.Errorf("failed to get playlist tracks: %w", err)
 	}
@@ -82,13 +90,11 @@ func (s *PlaylistService) ReloadPlaylist() error {
 	savedCount := 0
 	for _, track := range tracks {
 		playlistTrack := &model.PlaylistTracks{
-			SpotifyID:  spotifyID,
-			TrackID:    track.ID,
-			Artist:     track.Artist,
-			Title:      track.Title,
-			Album:      "", // Пока не получаем из Spotify API
-			DurationMs: 0,  // Пока не получаем из Spotify API
-			AddedAt:    time.Now(),
+			SpotifyID: spotifyID,
+			TrackID:   track.ID,
+			Artist:    track.Artist,
+			Title:     track.Title,
+			AddedAt:   time.Now(),
 		}
 
 		err = s.playlistRepo.Create(playlistTrack)
@@ -114,18 +120,24 @@ func (s *PlaylistService) ReloadPlaylist() error {
 
 // GetPlaylistInfo возвращает информацию о плейлисте
 func (s *PlaylistService) GetPlaylistInfo() (*spotify.PlaylistInfo, error) {
-	// Получаем URL плейлиста из конфигурации
-	playlistURL, err := s.configRepo.Get("PLAYLIST_URL")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get playlist URL from config: %w", err)
+	playlistURL := s.playlistURL
+	if playlistURL == "" {
+		// Fallback на базу данных если нет в конструкторе
+		config, err := s.configRepo.Get("PLAYLIST_URL")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get playlist URL from config: %w", err)
+		}
+		if config != nil {
+			playlistURL = config.Value
+		}
 	}
 
-	if playlistURL == nil || playlistURL.Value == "" {
+	if playlistURL == "" {
 		return nil, fmt.Errorf("playlist URL not configured")
 	}
 
 	// Получаем информацию о плейлисте
-	playlistInfo, err := s.spotifyClient.GetPlaylistInfo(playlistURL.Value)
+	playlistInfo, err := s.spotifyClient.GetPlaylistInfo(playlistURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get playlist info: %w", err)
 	}
@@ -148,7 +160,6 @@ func (s *PlaylistService) extractSpotifyID(playlistURL string) string {
 		if len(parts) != 2 {
 			return ""
 		}
-		// Убираем возможные параметры после ID
 		playlistID := strings.Split(parts[1], "?")[0]
 		return playlistID
 	}

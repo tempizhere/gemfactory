@@ -13,21 +13,6 @@ const (
 	ReleaseTypeEP     ReleaseType = "ep"
 )
 
-// String возвращает строковое представление типа релиза
-func (rt ReleaseType) String() string {
-	return string(rt)
-}
-
-// IsValid проверяет валидность типа релиза
-func (rt ReleaseType) IsValid() bool {
-	switch rt {
-	case ReleaseTypeSingle, ReleaseTypeAlbum, ReleaseTypeEP:
-		return true
-	default:
-		return false
-	}
-}
-
 // Gender представляет пол артиста
 type Gender string
 
@@ -102,8 +87,3 @@ const (
 	ConfigKeyHealthPort          ConfigKey = "health_port"
 	ConfigKeyLogLevel            ConfigKey = "log_level"
 )
-
-// String возвращает строковое представление ключа
-func (ck ConfigKey) String() string {
-	return string(ck)
-}

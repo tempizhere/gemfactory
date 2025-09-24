@@ -38,6 +38,14 @@ func NewPostgres(databaseURL string, logger *zap.Logger) (*Postgres, error) {
 		// Создаем Bun DB
 		db := bun.NewDB(sqldb, pgdialect.New())
 
+		// Устанавливаем схему по умолчанию
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err := db.ExecContext(ctx, "SET search_path TO gemfactory, public")
+		cancel()
+		if err != nil {
+			logger.Warn("Failed to set search_path", zap.Error(err))
+		}
+
 		// Добавляем отладку в режиме разработки
 		if logger.Core().Enabled(zap.DebugLevel) {
 			db.AddQueryHook(bundebug.NewQueryHook(
@@ -47,17 +55,19 @@ func NewPostgres(databaseURL string, logger *zap.Logger) (*Postgres, error) {
 		}
 
 		// Проверяем подключение с таймаутом
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		err := db.PingContext(ctx)
-		cancel()
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		pingErr := db.PingContext(pingCtx)
+		pingCancel()
 
-		if err != nil {
+		if pingErr != nil {
 			logger.Warn("Failed to connect to database",
 				zap.Int("attempt", attempt),
-				zap.Error(err))
+				zap.Error(pingErr))
 
 			// Закрываем неудачное подключение
-			db.Close()
+			if err := db.Close(); err != nil {
+				logger.Warn("Failed to close database connection", zap.Error(err))
+			}
 
 			if attempt == maxRetries {
 				return nil, fmt.Errorf("failed to connect to database after %d attempts: %w", maxRetries, err)
@@ -99,11 +109,6 @@ func (p *Postgres) GetArtistRepository() model.ArtistRepository {
 // GetReleaseRepository возвращает репозиторий релизов
 func (p *Postgres) GetReleaseRepository() model.ReleaseRepository {
 	return repository.NewReleaseRepository(p.db, p.logger)
-}
-
-// GetReleaseTypeRepository возвращает репозиторий типов релизов
-func (p *Postgres) GetReleaseTypeRepository() model.ReleaseTypeRepository {
-	return repository.NewReleaseTypeRepository(p.db, p.logger)
 }
 
 // GetTaskRepository возвращает репозиторий задач

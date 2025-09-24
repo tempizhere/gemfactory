@@ -174,3 +174,20 @@ func (r *TaskRepository) calculateNextRun(cronExpression string) (time.Time, err
 	nextRun := schedule.Next(time.Now())
 	return nextRun, nil
 }
+
+// GetByName получает задачу по имени
+func (r *TaskRepository) GetByName(name string) (*model.Task, error) {
+	ctx := context.Background()
+	var task model.Task
+
+	err := r.db.NewSelect().
+		Model(&task).
+		Where("name = ?", name).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get task by name %s: %w", name, err)
+	}
+
+	return &task, nil
+}

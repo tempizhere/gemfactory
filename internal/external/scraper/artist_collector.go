@@ -9,17 +9,17 @@ import (
 )
 
 // collectArtistBlock собирает блок с артистом для LLM обработки
-func (f *fetcherImpl) collectArtistBlock(blockHTML string, monthNum, year string, artists map[string]bool, artistBlocks *[]ArtistBlock, mu *sync.Mutex, rowCount int) {
-	// Извлекаем артиста из блока - ищем <strong><mark> теги с артистами
+func (f *fetcherImpl) collectArtistBlock(rowHTML string, artists map[string]bool, artistBlocks *[]ArtistBlock, mu *sync.Mutex, rowCount int) {
+	// Извлекаем артиста из строки - ищем <strong><mark> теги с артистами
 	artistPattern := regexp.MustCompile(`<strong><mark[^>]*class="has-inline-color has-red-color"[^>]*>([^<]+)</mark></strong>`)
-	artistMatches := artistPattern.FindAllStringSubmatch(blockHTML, -1)
+	artistMatches := artistPattern.FindAllStringSubmatch(rowHTML, -1)
 
 	if len(artistMatches) == 0 {
-		blockPreview := blockHTML
-		if len(blockHTML) > 500 {
-			blockPreview = blockHTML[:500]
+		blockPreview := rowHTML
+		if len(rowHTML) > 500 {
+			blockPreview = rowHTML[:500]
 		}
-		f.logger.Debug("No artist found in block", zap.String("block", blockPreview))
+		f.logger.Debug("No artist found in row", zap.String("row", blockPreview))
 		return
 	}
 
@@ -34,18 +34,18 @@ func (f *fetcherImpl) collectArtistBlock(blockHTML string, monthNum, year string
 
 		// Проверяем, есть ли артист в списке для фильтрации
 		if _, ok := artists[artistKey]; ok {
-			f.logger.Info("Found active artist in block", zap.String("artist", artist), zap.Int("row", rowCount))
+			f.logger.Info("Found active artist in row", zap.String("artist", artist), zap.Int("row", rowCount))
 
-			// Добавляем блок в коллекцию
+			// Добавляем всю строку в коллекцию
 			mu.Lock()
 			*artistBlocks = append(*artistBlocks, ArtistBlock{
-				HTML:   blockHTML,
+				HTML:   rowHTML,
 				Artist: artist,
 				Row:    rowCount,
 			})
 			mu.Unlock()
 
-			f.logger.Debug("Added artist block for LLM processing",
+			f.logger.Debug("Added artist row for LLM processing",
 				zap.String("artist", artist),
 				zap.Int("row", rowCount),
 				zap.Int("total_blocks", len(*artistBlocks)))
