@@ -107,8 +107,6 @@ func (r *ArtistRepository) GetByName(name string) (*model.Artist, error) {
 func (r *ArtistRepository) Create(artist *model.Artist) error {
 	ctx := context.Background()
 
-	// Сохраняем имя артиста точно как пришло с сайта
-	// Никакой нормализации - только убираем лишние пробелы по краям
 	artist.Name = strings.TrimSpace(artist.Name)
 
 	_, err := r.db.NewInsert().
@@ -126,8 +124,6 @@ func (r *ArtistRepository) Create(artist *model.Artist) error {
 func (r *ArtistRepository) Update(artist *model.Artist) error {
 	ctx := context.Background()
 
-	// Сохраняем имя артиста точно как пришло с сайта
-	// Никакой нормализации - только убираем лишние пробелы по краям
 	artist.Name = strings.TrimSpace(artist.Name)
 
 	_, err := r.db.NewUpdate().

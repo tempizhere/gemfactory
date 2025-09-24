@@ -39,6 +39,7 @@ func LoggingMiddleware(logger *zap.Logger) func(update tgbotapi.Update, next fun
 		logger.Info("Processing command",
 			zap.String("request_id", requestCtx.RequestID),
 			zap.String("command", requestCtx.Command),
+			zap.Int64("user_id", requestCtx.UserID),
 			zap.Int64("chat_id", requestCtx.ChatID),
 			zap.String("user", user),
 			zap.Int("update_id", update.UpdateID))
@@ -75,6 +76,7 @@ func LogRequestWithError(logger *zap.Logger) func(update tgbotapi.Update, next f
 		logger.Info("Processing command",
 			zap.String("request_id", requestCtx.RequestID),
 			zap.String("command", requestCtx.Command),
+			zap.Int64("user_id", requestCtx.UserID),
 			zap.Int64("chat_id", requestCtx.ChatID),
 			zap.String("user", user),
 			zap.Int("update_id", update.UpdateID))

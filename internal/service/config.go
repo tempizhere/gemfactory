@@ -57,11 +57,25 @@ func (s *ConfigService) GetAll() (string, error) {
 		return "", fmt.Errorf("failed to get all configs: %w", err)
 	}
 
+	sensitiveKeys := map[string]bool{
+		"BOT_TOKEN":             true,
+		"LLM_API_KEY":           true,
+		"SPOTIFY_CLIENT_ID":     true,
+		"SPOTIFY_CLIENT_SECRET": true,
+	}
+
 	var result strings.Builder
 	result.WriteString("📋 Текущая конфигурация:\n\n")
 
 	for _, config := range configs {
-		result.WriteString(fmt.Sprintf("🔧 <b>%s</b>: %s\n", config.Key, config.Value))
+		var value string
+		if sensitiveKeys[config.Key] {
+			value = "🔒 [СКРЫТО В ЦЕЛЯХ БЕЗОПАСНОСТИ - СМОТРИТЕ В ОКРУЖЕНИИ]"
+		} else {
+			value = config.Value
+		}
+
+		result.WriteString(fmt.Sprintf("🔧 <b>%s</b>: %s\n", config.Key, value))
 		if config.Description != "" {
 			result.WriteString(fmt.Sprintf("   📝 %s\n", config.Description))
 		}

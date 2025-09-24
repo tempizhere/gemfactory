@@ -18,23 +18,21 @@ import (
 
 // ReleaseService содержит бизнес-логику для работы с релизами
 type ReleaseService struct {
-	repo            model.ReleaseRepository
-	releaseTypeRepo model.ReleaseTypeRepository
-	artistRepo      model.ArtistRepository
-	scraper         scraper.Fetcher
-	logger          *zap.Logger
-	utils           *model.ReleaseUtils
+	repo       model.ReleaseRepository
+	artistRepo model.ArtistRepository
+	scraper    scraper.Fetcher
+	logger     *zap.Logger
+	utils      *model.ReleaseUtils
 }
 
 // NewReleaseService создает новый сервис релизов
 func NewReleaseService(db *bun.DB, scraper scraper.Fetcher, logger *zap.Logger) *ReleaseService {
 	return &ReleaseService{
-		repo:            repository.NewReleaseRepository(db, logger),
-		releaseTypeRepo: repository.NewReleaseTypeRepository(db, logger),
-		artistRepo:      repository.NewArtistRepository(db, logger),
-		scraper:         scraper,
-		logger:          logger,
-		utils:           model.NewReleaseUtils(),
+		repo:       repository.NewReleaseRepository(db, logger),
+		artistRepo: repository.NewArtistRepository(db, logger),
+		scraper:    scraper,
+		logger:     logger,
+		utils:      model.NewReleaseUtils(),
 	}
 }
 
@@ -43,7 +41,6 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 	// Нормализуем месяц
 	month = strings.ToLower(month)
 
-	// Парсим месяц и год из строки (например, "september-2024")
 	var year int
 	if strings.Contains(month, "-") {
 		parts := strings.Split(month, "-")
@@ -64,36 +61,59 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 	}
 
 	// Получаем релизы
-	var releases []model.Release
-	var err error
-
-	if gender != "" {
-		var genderType model.Gender
-		switch gender {
-		case "female":
-			genderType = model.GenderFemale
-		case "male":
-			genderType = model.GenderMale
-		default:
-			genderType = model.GenderMixed
-		}
-
-		if year > 0 {
-			releases, err = s.repo.GetByMonthYearAndGender(month, year, genderType)
-		} else {
-			releases, err = s.repo.GetByMonthAndGender(month, genderType)
-		}
-	} else {
-		if year > 0 {
-			releases, err = s.repo.GetByMonthAndYear(month, year)
-		} else {
-			releases, err = s.repo.GetByMonth(month)
-		}
-	}
-
+	// Получаем все релизы с артистами и фильтруем по месяцу
+	allReleases, err := s.repo.GetWithRelations()
 	if err != nil {
-		return "", fmt.Errorf("failed to get releases for month %s: %w", month, err)
+		return "", fmt.Errorf("failed to get all releases: %w", err)
 	}
+
+	s.logger.Info("Retrieved releases for filtering",
+		zap.String("month", month),
+		zap.Int("year", year),
+		zap.String("gender", gender),
+		zap.Int("total_releases", len(allReleases)))
+
+	// Фильтруем релизы по месяцу и году
+	var releases []model.Release
+	for _, release := range allReleases {
+		// Парсим дату релиза
+		if parsedDate, err := s.utils.ParseReleaseDate(release.Date); err == nil {
+			releaseMonth := strings.ToLower(parsedDate.Month().String())
+			releaseYear := parsedDate.Year()
+
+			s.logger.Debug("Parsing release date",
+				zap.String("original_date", release.Date),
+				zap.String("parsed_month", releaseMonth),
+				zap.Int("parsed_year", releaseYear),
+				zap.String("requested_month", month),
+				zap.Int("requested_year", year))
+
+			// Проверяем соответствие месяцу
+			if releaseMonth == month {
+				// Если указан год, проверяем и его
+				if year == 0 || releaseYear == year {
+					// Если указан пол, проверяем и его
+					if gender == "" || (release.Artist != nil && strings.ToLower(string(release.Artist.Gender)) == gender) {
+						releases = append(releases, release)
+						s.logger.Debug("Added release to results",
+							zap.String("artist", release.Artist.Name),
+							zap.String("date", release.Date),
+							zap.String("title", release.Title))
+					}
+				}
+			}
+		} else {
+			s.logger.Warn("Failed to parse release date",
+				zap.String("date", release.Date),
+				zap.Error(err))
+		}
+	}
+
+	s.logger.Info("Filtered releases",
+		zap.String("month", month),
+		zap.Int("year", year),
+		zap.String("gender", gender),
+		zap.Int("filtered_count", len(releases)))
 
 	// Форматируем ответ
 	var result strings.Builder
@@ -110,7 +130,6 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 			artistName = release.Artist.Name
 		}
 
-		// Форматируем релиз в нужном формате: дата | <b>АРТИСТ</b> | название (ссылка)
 		line := fmt.Sprintf("%s | <b>%s</b>", release.Date, html.EscapeString(artistName))
 
 		// Добавляем название релиза
@@ -118,14 +137,12 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 			line += fmt.Sprintf(" | %s", html.EscapeString(release.Title))
 		}
 
-		// Добавляем ссылку на MV если есть (встраиваем в TitleTrack)
 		if release.MV != "" && release.MV != "N/A" {
 			// Очищаем TitleTrack
 			cleanedTitleTrack := strings.ReplaceAll(release.TitleTrack, "Title Track:", "")
 			cleanedTitleTrack = strings.TrimSpace(cleanedTitleTrack)
 
 			if cleanedTitleTrack != "" && cleanedTitleTrack != "N/A" {
-				// Встраиваем ссылку в название трека
 				trackName := html.EscapeString(cleanedTitleTrack)
 				line += fmt.Sprintf(" | <a href=\"%s\">%s</a>", release.MV, trackName)
 			} else {
@@ -157,28 +174,8 @@ func (s *ReleaseService) CreateOrUpdateRelease(release *model.Release) error {
 	release.AlbumName = s.utils.CleanReleaseTitle(release.AlbumName)
 	release.TitleTrack = s.utils.CleanReleaseTitle(release.TitleTrack)
 
-	// Определяем тип релиза, если не указан
-	if release.ReleaseTypeID == 0 {
-		// Получаем тип релиза по умолчанию (single)
-		releaseType, err := s.releaseTypeRepo.GetByName("single")
-		if err != nil {
-			return fmt.Errorf("failed to get default release type: %w", err)
-		}
-		if releaseType != nil {
-			release.ReleaseTypeID = releaseType.ReleaseTypeID
-		}
-	}
-
-	// Парсим дату для извлечения месяца и года
-	if release.Date != "" {
-		if parsedDate, err := s.utils.ParseReleaseDate(release.Date); err == nil {
-			release.Month = s.utils.ExtractMonthFromDate(parsedDate)
-			release.Year = s.utils.ExtractYearFromDate(parsedDate)
-		}
-	}
-
-	// Проверяем, существует ли релиз по артисту и дате
-	existingRelease, err := s.repo.GetByArtistAndDate(release.ArtistID, release.Date)
+	// Проверяем, существует ли релиз по артисту, дате и треку
+	existingRelease, err := s.repo.GetByArtistDateAndTrack(release.ArtistID, release.Date, release.TitleTrack)
 	if err != nil {
 		return fmt.Errorf("failed to check for existing release: %w", err)
 	}
@@ -188,8 +185,7 @@ func (s *ReleaseService) CreateOrUpdateRelease(release *model.Release) error {
 		s.logger.Info("Release exists, updating",
 			zap.String("artist_id", fmt.Sprintf("%d", release.ArtistID)),
 			zap.String("date", release.Date),
-			zap.String("old_track", existingRelease.TitleTrack),
-			zap.String("new_track", release.TitleTrack),
+			zap.String("track", release.TitleTrack),
 			zap.String("old_youtube", existingRelease.MV),
 			zap.String("new_youtube", release.MV))
 
@@ -198,7 +194,6 @@ func (s *ReleaseService) CreateOrUpdateRelease(release *model.Release) error {
 		existingRelease.TitleTrack = release.TitleTrack
 		existingRelease.MV = release.MV
 		existingRelease.TimeMSK = release.TimeMSK
-		existingRelease.ReleaseTypeID = release.ReleaseTypeID
 		existingRelease.UpdatedAt = time.Now()
 
 		s.logger.Info("Updated release fields",
@@ -216,6 +211,7 @@ func (s *ReleaseService) CreateOrUpdateRelease(release *model.Release) error {
 			zap.String("artist_id", fmt.Sprintf("%d", release.ArtistID)),
 			zap.String("date", release.Date),
 			zap.String("track", release.TitleTrack),
+			zap.String("album", release.AlbumName),
 			zap.String("youtube", release.MV))
 
 		return s.repo.Create(release)
@@ -362,7 +358,6 @@ func (s *ReleaseService) GetAllReleases() ([]model.Release, error) {
 func (s *ReleaseService) ParseReleasesForMonth(ctx context.Context, month string) (int, error) {
 	s.logger.Info("Starting to parse releases", zap.String("month", month))
 
-	// Получаем всех активных артистов для фильтрации
 	artists, err := s.artistRepo.GetActive()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get artists: %w", err)
@@ -419,7 +414,6 @@ func (s *ReleaseService) ParseReleasesForMonth(ctx context.Context, month string
 	// Конвертируем и сохраняем релизы
 	savedCount := 0
 	for _, scrapedRelease := range scrapedReleases {
-		// Находим артиста в базе (GetByName теперь сам нормализует имя)
 		artist, err := s.artistRepo.GetByName(scrapedRelease.Artist)
 		if err != nil {
 			s.logger.Warn("Failed to get artist from database",
@@ -433,8 +427,6 @@ func (s *ReleaseService) ParseReleasesForMonth(ctx context.Context, month string
 			s.logger.Info("Artist not found in database, creating new",
 				zap.String("artist", scrapedRelease.Artist))
 
-			// Создаем нового артиста с полом "mixed" по умолчанию
-			// Админ сможет потом изменить пол через команды
 			newArtist := &model.Artist{
 				Name:   scrapedRelease.Artist,
 				Gender: model.GenderMixed, // По умолчанию mixed
@@ -453,8 +445,6 @@ func (s *ReleaseService) ParseReleasesForMonth(ctx context.Context, month string
 				zap.String("artist", scrapedRelease.Artist),
 				zap.String("gender", artist.Gender.String()))
 		} else {
-			// Проверяем, нужно ли обновить имя артиста
-			// Обновляем если имя отличается (включая регистр)
 			if artist.Name != scrapedRelease.Artist {
 				s.logger.Info("Updating artist name",
 					zap.String("old_name", artist.Name),
@@ -473,36 +463,16 @@ func (s *ReleaseService) ParseReleasesForMonth(ctx context.Context, month string
 			}
 		}
 
-		// Получаем тип релиза по умолчанию
-		releaseType, err := s.releaseTypeRepo.GetByName("single")
-		if err != nil {
-			s.logger.Warn("Failed to get default release type", zap.Error(err))
-			continue
-		}
-		if releaseType == nil {
-			s.logger.Warn("Default release type not found")
-			continue
-		}
-
 		// Создаем релиз
 		release := &model.Release{
-			ArtistID:      artist.ArtistID,
-			ReleaseTypeID: releaseType.ReleaseTypeID,
-			Title:         scrapedRelease.AlbumName, // Используем AlbumName как Title
-			TitleTrack:    scrapedRelease.TitleTrack,
-			AlbumName:     scrapedRelease.AlbumName,
-			MV:            scrapedRelease.MV,
-			Date:          scrapedRelease.Date,
-			TimeMSK:       scrapedRelease.TimeMSK,
-			IsActive:      true,
-		}
-
-		// Парсим дату для извлечения месяца и года
-		if release.Date != "" {
-			if parsedDate, err := s.utils.ParseReleaseDate(release.Date); err == nil {
-				release.Month = s.utils.ExtractMonthFromDate(parsedDate)
-				release.Year = s.utils.ExtractYearFromDate(parsedDate)
-			}
+			ArtistID:   artist.ArtistID,
+			Title:      scrapedRelease.AlbumName, // Используем AlbumName как Title
+			TitleTrack: scrapedRelease.TitleTrack,
+			AlbumName:  scrapedRelease.AlbumName,
+			MV:         scrapedRelease.MV,
+			Date:       scrapedRelease.Date,
+			TimeMSK:    scrapedRelease.TimeMSK,
+			IsActive:   true,
 		}
 
 		// Сохраняем релиз
@@ -554,7 +524,6 @@ func (s *ReleaseService) GetReleasesByArtistName(artistName string) (string, err
 			artistName = release.Artist.Name
 		}
 
-		// Форматируем релиз в нужном формате: дата | <b>АРТИСТ</b> | название (ссылка)
 		line := fmt.Sprintf("%s | <b>%s</b>", release.Date, html.EscapeString(artistName))
 
 		// Добавляем название релиза
@@ -562,14 +531,12 @@ func (s *ReleaseService) GetReleasesByArtistName(artistName string) (string, err
 			line += fmt.Sprintf(" | %s", html.EscapeString(release.Title))
 		}
 
-		// Добавляем ссылку на MV если есть (встраиваем в TitleTrack)
 		if release.MV != "" && release.MV != "N/A" {
 			// Очищаем TitleTrack
 			cleanedTitleTrack := strings.ReplaceAll(release.TitleTrack, "Title Track:", "")
 			cleanedTitleTrack = strings.TrimSpace(cleanedTitleTrack)
 
 			if cleanedTitleTrack != "" && cleanedTitleTrack != "N/A" {
-				// Встраиваем ссылку в название трека
 				trackName := html.EscapeString(cleanedTitleTrack)
 				line += fmt.Sprintf(" | <a href=\"%s\">%s</a>", release.MV, trackName)
 			} else {

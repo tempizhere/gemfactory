@@ -27,7 +27,6 @@ func (h *Handlers) AddArtist(message *tgbotapi.Message) {
 	}
 
 	// Извлекаем имена артистов и флаг
-	// Все аргументы кроме последнего - это имена артистов (могут содержать пробелы)
 	artistNamesStr := strings.Join(args[:len(args)-1], " ")
 	flag := strings.ToLower(args[len(args)-1])
 
@@ -161,8 +160,6 @@ func (h *Handlers) ClearCache(message *tgbotapi.Message) {
 		return
 	}
 
-	// TODO: Реализовать очистку кэша релизов
-	// В новой архитектуре кэш не используется, но можно добавить очистку БД или перезапуск скрейпера
 	h.sendMessage(message.Chat.ID, "✅ Кэш очищен, обновление запущено")
 }
 

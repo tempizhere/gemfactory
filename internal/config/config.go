@@ -74,9 +74,7 @@ type RetryConfig struct {
 // Load загружает конфигурацию из переменных окружения
 func Load() (*Config, error) {
 	// Загружаем .env файл если он существует
-	if err := godotenv.Load(); err != nil {
-		// Игнорируем ошибку если файл не найден
-	}
+	_ = godotenv.Load()
 
 	config := &Config{
 		DatabaseURL:         getEnv("DB_DSN", ""),
@@ -144,29 +142,17 @@ func (c *Config) GetAppDataDir() string {
 }
 
 func (c *Config) Validate() error {
+	// Критически важные переменные - блокируют старт приложения
 	if c.DatabaseURL == "" {
 		return fmt.Errorf("DB_DSN is required")
-	}
-
-	if c.BotToken == "" {
-		return fmt.Errorf("BOT_TOKEN is required")
 	}
 
 	if c.AdminUsername == "" {
 		return fmt.Errorf("ADMIN_USERNAME is required")
 	}
 
-	if c.SpotifyClientID == "" {
-		return fmt.Errorf("SPOTIFY_CLIENT_ID is required")
-	}
-
-	if c.SpotifyClientSecret == "" {
-		return fmt.Errorf("SPOTIFY_CLIENT_SECRET is required")
-	}
-
-	if c.PlaylistURL == "" {
-		return fmt.Errorf("PLAYLIST_URL is required")
-	}
+	// BotToken, SpotifyClientID, SpotifyClientSecret, PlaylistURL необязательны
+	// и могут быть загружены из базы данных
 
 	return nil
 }

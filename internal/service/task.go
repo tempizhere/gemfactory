@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"gemfactory/internal/model"
 	"gemfactory/internal/storage/repository"
-	"strings"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -78,6 +77,11 @@ func (s *TaskService) GetTasksByType(taskType model.TaskType) ([]model.Task, err
 // GetParseReleaseTasks возвращает задачи парсинга релизов
 func (s *TaskService) GetParseReleaseTasks() ([]model.Task, error) {
 	return s.GetTasksByType(model.TaskTypeParseReleases)
+}
+
+// GetByName возвращает задачу по имени
+func (s *TaskService) GetByName(name string) (*model.Task, error) {
+	return s.repo.GetByName(name)
 }
 
 // ExecuteTask выполняет задачу
@@ -165,7 +169,7 @@ func (e *ParseReleaseTaskExecutor) Execute(ctx context.Context, task *model.Task
 	return nil
 }
 
-// getMonthsToParse определяет, какие месяцы нужно парсить
+// getMonthsToParse определяет месяцы для парсинга
 func (e *ParseReleaseTaskExecutor) getMonthsToParse(task *model.Task) ([]string, error) {
 	monthsConfig, exists := task.GetConfigString("months")
 	if !exists {
@@ -201,8 +205,15 @@ func (e *ParseReleaseTaskExecutor) getCurrentAndNextMonths(currentMonth, current
 		if monthIndex < 0 {
 			monthIndex += 12
 		}
+
+		// Определяем год для месяца (учитываем переход года)
+		year := currentYear
+		if currentMonth-1+i >= 12 {
+			year = currentYear + 1
+		}
+
 		// Формируем строку с годом
-		monthWithYear := fmt.Sprintf("%s-%d", months[monthIndex], currentYear)
+		monthWithYear := fmt.Sprintf("%s-%d", months[monthIndex], year)
 		result = append(result, monthWithYear)
 	}
 
@@ -253,65 +264,5 @@ func (e *HomeworkResetTaskExecutor) Execute(ctx context.Context, task *model.Tas
 	}
 
 	e.logger.Info("Homework reset task completed successfully")
-	return nil
-}
-
-// UpdateHomeworkResetCron обновляет cron выражение для задачи сброса домашних заданий на основе конфигурации
-func (s *TaskService) UpdateHomeworkResetCron(configService *ConfigService) error {
-	// Получаем время сброса из конфигурации
-	resetTime, err := configService.GetConfigValue("HOMEWORK_RESET_TIME")
-	if err != nil {
-		return fmt.Errorf("failed to get HOMEWORK_RESET_TIME from config: %w", err)
-	}
-
-	if resetTime == "" {
-		s.logger.Warn("HOMEWORK_RESET_TIME not configured, using default 00:00")
-		resetTime = "00:00"
-	}
-
-	// Парсим время (формат HH:MM)
-	timeParts := strings.Split(resetTime, ":")
-	if len(timeParts) != 2 {
-		return fmt.Errorf("invalid time format: %s, expected HH:MM", resetTime)
-	}
-
-	hour := timeParts[0]
-	minute := timeParts[1]
-
-	// Формируем cron выражение (каждый день в указанное время)
-	cronExpression := fmt.Sprintf("%s %s * * *", minute, hour)
-
-	// Получаем задачу homework_reset
-	tasks, err := s.repo.GetAll()
-	if err != nil {
-		return fmt.Errorf("failed to get tasks: %w", err)
-	}
-
-	var homeworkResetTask *model.Task
-	for _, task := range tasks {
-		if task.Name == "homework_reset" {
-			homeworkResetTask = &task
-			break
-		}
-	}
-
-	if homeworkResetTask == nil {
-		return fmt.Errorf("homework_reset task not found")
-	}
-
-	// Обновляем cron выражение если оно изменилось
-	if homeworkResetTask.CronExpression != cronExpression {
-		homeworkResetTask.CronExpression = cronExpression
-		err = s.repo.Update(homeworkResetTask)
-		if err != nil {
-			return fmt.Errorf("failed to update homework_reset task cron: %w", err)
-		}
-
-		s.logger.Info("Updated homework_reset task cron expression",
-			zap.String("old_cron", homeworkResetTask.CronExpression),
-			zap.String("new_cron", cronExpression),
-			zap.String("reset_time", resetTime))
-	}
-
 	return nil
 }

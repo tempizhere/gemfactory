@@ -12,7 +12,7 @@ import (
 
 // HomeworkTracking представляет отслеживание выданных домашних заданий
 type HomeworkTracking struct {
-	bun.BaseModel `bun:"table:homeworks"`
+	bun.BaseModel `bun:"table:gemfactory.homeworks"`
 
 	ID          int        `bun:"id,pk,autoincrement" json:"id"`
 	UserID      int64      `bun:"user_id,notnull" json:"user_id"`

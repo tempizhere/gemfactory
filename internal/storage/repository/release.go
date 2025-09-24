@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"gemfactory/internal/model"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -35,7 +34,6 @@ func (r *ReleaseRepository) GetByID(id int) (*model.Release, error) {
 	err := r.db.NewSelect().
 		Model(release).
 		Relation("Artist").
-		Relation("ReleaseType").
 		Where("release_id = ?", id).
 		Scan(ctx)
 
@@ -61,62 +59,6 @@ func (r *ReleaseRepository) GetAll() ([]model.Release, error) {
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query releases: %w", err)
-	}
-
-	return releases, nil
-}
-
-// GetByMonth возвращает релизы по месяцу (только активных артистов)
-func (r *ReleaseRepository) GetByMonth(month string) ([]model.Release, error) {
-	ctx := context.Background()
-	var releases []model.Release
-
-	// Получаем текущий год в двухзначном формате
-	currentYear := time.Now().Year() % 100
-
-	// Формируем паттерн для поиска по дате (например, "%.09.25" для сентября 2025)
-	monthPattern := fmt.Sprintf("%%.%02d.%02d", getMonthNumber(month), currentYear)
-
-	query := r.db.NewSelect().
-		Model(&releases).
-		Relation("Artist").
-		Relation("ReleaseType").
-		Where("release.date LIKE ?", monthPattern).
-		Where("artist.is_active = ?", true).
-		Order("release.date ASC")
-
-	err := query.Scan(ctx)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to query releases by month: %w", err)
-	}
-
-	return releases, nil
-}
-
-// GetByMonthAndYear возвращает релизы по месяцу и году (только активных артистов)
-func (r *ReleaseRepository) GetByMonthAndYear(month string, year int) ([]model.Release, error) {
-	ctx := context.Background()
-	var releases []model.Release
-
-	// Получаем год в двухзначном формате
-	yearTwoDigit := year % 100
-
-	// Формируем паттерн для поиска по дате (например, "%.09.24" для сентября 2024)
-	monthPattern := fmt.Sprintf("%%.%02d.%02d", getMonthNumber(month), yearTwoDigit)
-
-	query := r.db.NewSelect().
-		Model(&releases).
-		Relation("Artist").
-		Relation("ReleaseType").
-		Where("release.date LIKE ?", monthPattern).
-		Where("artist.is_active = ?", true).
-		Order("release.date ASC")
-
-	err := query.Scan(ctx)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to query releases by month and year: %w", err)
 	}
 
 	return releases, nil
@@ -162,26 +104,6 @@ func (r *ReleaseRepository) GetByArtistDateAndTrack(artistID int, date, titleTra
 	return &release, nil
 }
 
-// GetByArtistAndDate возвращает релиз по артисту и дате
-func (r *ReleaseRepository) GetByArtistAndDate(artistID int, date string) (*model.Release, error) {
-	ctx := context.Background()
-	var release model.Release
-
-	err := r.db.NewSelect().
-		Model(&release).
-		Where("artist_id = ? AND date = ?", artistID, date).
-		Scan(ctx)
-
-	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
-			return nil, nil // Релиз не найден
-		}
-		return nil, fmt.Errorf("failed to query release by artist and date: %w", err)
-	}
-
-	return &release, nil
-}
-
 // GetByGender возвращает релизы по полу
 func (r *ReleaseRepository) GetByGender(gender model.Gender) ([]model.Release, error) {
 	ctx := context.Background()
@@ -190,7 +112,6 @@ func (r *ReleaseRepository) GetByGender(gender model.Gender) ([]model.Release, e
 	err := r.db.NewSelect().
 		Model(&releases).
 		Relation("Artist").
-		Relation("ReleaseType").
 		Where("artist.gender = ?", gender).
 		Where("artist.is_active = ?", true).
 		Order("release.date ASC").
@@ -198,82 +119,6 @@ func (r *ReleaseRepository) GetByGender(gender model.Gender) ([]model.Release, e
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query releases by gender: %w", err)
-	}
-
-	return releases, nil
-}
-
-// GetByType возвращает релизы по типу
-func (r *ReleaseRepository) GetByType(releaseTypeID int) ([]model.Release, error) {
-	ctx := context.Background()
-	var releases []model.Release
-
-	err := r.db.NewSelect().
-		Model(&releases).
-		Relation("Artist").
-		Relation("ReleaseType").
-		Where("release_type_id = ?", releaseTypeID).
-		Order("date ASC").
-		Scan(ctx)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to query releases by type: %w", err)
-	}
-
-	return releases, nil
-}
-
-// GetByMonthAndGender возвращает релизы по месяцу и полу (только активных артистов)
-func (r *ReleaseRepository) GetByMonthAndGender(month string, gender model.Gender) ([]model.Release, error) {
-	ctx := context.Background()
-	var releases []model.Release
-
-	// Получаем текущий год в двухзначном формате
-	currentYear := time.Now().Year() % 100
-
-	// Формируем паттерн для поиска по дате (например, "%.09.25" для сентября 2025)
-	monthPattern := fmt.Sprintf("%%.%02d.%02d", getMonthNumber(month), currentYear)
-
-	err := r.db.NewSelect().
-		Model(&releases).
-		Relation("Artist").
-		Relation("ReleaseType").
-		Where("release.date LIKE ?", monthPattern).
-		Where("artist.gender = ?", gender).
-		Where("artist.is_active = ?", true).
-		Order("release.date ASC").
-		Scan(ctx)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to query releases by month and gender: %w", err)
-	}
-
-	return releases, nil
-}
-
-// GetByMonthYearAndGender возвращает релизы по месяцу, году и полу (только активных артистов)
-func (r *ReleaseRepository) GetByMonthYearAndGender(month string, year int, gender model.Gender) ([]model.Release, error) {
-	ctx := context.Background()
-	var releases []model.Release
-
-	// Получаем год в двухзначном формате
-	yearTwoDigit := year % 100
-
-	// Формируем паттерн для поиска по дате (например, "%.09.24" для сентября 2024)
-	monthPattern := fmt.Sprintf("%%.%02d.%02d", getMonthNumber(month), yearTwoDigit)
-
-	err := r.db.NewSelect().
-		Model(&releases).
-		Relation("Artist").
-		Relation("ReleaseType").
-		Where("release.date LIKE ?", monthPattern).
-		Where("artist.gender = ?", gender).
-		Where("artist.is_active = ?", true).
-		Order("release.date ASC").
-		Scan(ctx)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to query releases by month, year and gender: %w", err)
 	}
 
 	return releases, nil
@@ -334,7 +179,6 @@ func (r *ReleaseRepository) GetByArtist(artistID int) ([]model.Release, error) {
 	err := r.db.NewSelect().
 		Model(&releases).
 		Relation("Artist").
-		Relation("ReleaseType").
 		Where("artist_id = ?", artistID).
 		Order("date ASC").
 		Scan(ctx)
@@ -354,7 +198,6 @@ func (r *ReleaseRepository) GetByArtistName(artistName string) ([]model.Release,
 	err := r.db.NewSelect().
 		Model(&releases).
 		Relation("Artist").
-		Relation("ReleaseType").
 		Where("LOWER(artist.name) = LOWER(?)", artistName).
 		Order("date ASC").
 		Scan(ctx)
@@ -388,7 +231,6 @@ func (r *ReleaseRepository) GetByDateRange(start, end time.Time) ([]model.Releas
 	err := r.db.NewSelect().
 		Model(&releases).
 		Relation("Artist").
-		Relation("ReleaseType").
 		Where("release.date >= ? AND release.date <= ?", start, end).
 		Order("release.date ASC").
 		Scan(ctx)
@@ -408,33 +250,12 @@ func (r *ReleaseRepository) GetActive() ([]model.Release, error) {
 	err := r.db.NewSelect().
 		Model(&releases).
 		Relation("Artist").
-		Relation("ReleaseType").
 		Where("release.is_active = ?", true).
 		Order("release.date ASC").
 		Scan(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active releases: %w", err)
-	}
-
-	return releases, nil
-}
-
-// GetByYear возвращает релизы по году
-func (r *ReleaseRepository) GetByYear(year int) ([]model.Release, error) {
-	ctx := context.Background()
-	var releases []model.Release
-
-	err := r.db.NewSelect().
-		Model(&releases).
-		Relation("Artist").
-		Relation("ReleaseType").
-		Where("release.year = ?", year).
-		Order("release.date ASC").
-		Scan(ctx)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to query releases by year: %w", err)
 	}
 
 	return releases, nil
@@ -448,7 +269,6 @@ func (r *ReleaseRepository) GetWithRelations() ([]model.Release, error) {
 	err := r.db.NewSelect().
 		Model(&releases).
 		Relation("Artist").
-		Relation("ReleaseType").
 		Order("date ASC").
 		Scan(ctx)
 
@@ -457,27 +277,4 @@ func (r *ReleaseRepository) GetWithRelations() ([]model.Release, error) {
 	}
 
 	return releases, nil
-}
-
-// getMonthNumber возвращает номер месяца по его названию
-func getMonthNumber(month string) int {
-	monthMap := map[string]int{
-		"january":   1,
-		"february":  2,
-		"march":     3,
-		"april":     4,
-		"may":       5,
-		"june":      6,
-		"july":      7,
-		"august":    8,
-		"september": 9,
-		"october":   10,
-		"november":  11,
-		"december":  12,
-	}
-
-	if num, exists := monthMap[strings.ToLower(month)]; exists {
-		return num
-	}
-	return 0
 }

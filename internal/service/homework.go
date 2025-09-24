@@ -16,40 +16,41 @@ import (
 
 // HomeworkService содержит бизнес-логику для работы с домашними заданиями
 type HomeworkService struct {
-	playlistRepo model.PlaylistTracksRepository
-	trackingRepo model.HomeworkTrackingRepository
-	configRepo   model.ConfigRepository
-	logger       *zap.Logger
+	playlistRepo    model.PlaylistTracksRepository
+	trackingRepo    model.HomeworkTrackingRepository
+	configRepo      model.ConfigRepository
+	playlistService *PlaylistService
+	taskService     *TaskService
+	logger          *zap.Logger
 }
 
 // NewHomeworkService создает новый сервис домашних заданий
-func NewHomeworkService(db *bun.DB, logger *zap.Logger) *HomeworkService {
+func NewHomeworkService(db *bun.DB, playlistService *PlaylistService, taskService *TaskService, logger *zap.Logger) *HomeworkService {
 	return &HomeworkService{
-		playlistRepo: repository.NewPlaylistTracksRepository(db, logger),
-		trackingRepo: repository.NewHomeworkTrackingRepository(db, logger),
-		configRepo:   repository.NewConfigRepository(db, logger),
-		logger:       logger,
+		playlistRepo:    repository.NewPlaylistTracksRepository(db, logger),
+		trackingRepo:    repository.NewHomeworkTrackingRepository(db, logger),
+		configRepo:      repository.NewConfigRepository(db, logger),
+		playlistService: playlistService,
+		taskService:     taskService,
+		logger:          logger,
 	}
 }
 
 // GetRandomHomework возвращает случайное домашнее задание для пользователя
 func (s *HomeworkService) GetRandomHomework(userID int64) (*model.Homework, error) {
-	// Получаем URL плейлиста из конфигурации
-	playlistURL, err := s.configRepo.Get("PLAYLIST_URL")
+	// Проверяем, что PlaylistService доступен
+	if s.playlistService == nil {
+		return nil, fmt.Errorf("playlist service not available")
+	}
+
+	// Получаем информацию о плейлисте через PlaylistService
+	playlistInfo, err := s.playlistService.GetPlaylistInfo()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get playlist URL from config: %w", err)
+		return nil, fmt.Errorf("failed to get playlist info: %w", err)
 	}
 
-	if playlistURL == nil || playlistURL.Value == "" {
-		return nil, fmt.Errorf("playlist URL not configured")
-	}
-
-	// Извлекаем Spotify ID из URL
-	spotifyID := s.extractSpotifyID(playlistURL.Value)
-	s.logger.Info("Extracted Spotify ID", zap.String("playlist_url", playlistURL.Value), zap.String("spotify_id", spotifyID))
-	if spotifyID == "" {
-		return nil, fmt.Errorf("failed to extract Spotify ID from playlist URL")
-	}
+	spotifyID := playlistInfo.SpotifyID
+	s.logger.Info("Using Spotify ID from playlist service", zap.String("spotify_id", spotifyID))
 
 	// Проверяем может ли пользователь запросить новое домашнее задание
 	canRequest, err := s.canUserRequestHomework(userID)
@@ -132,48 +133,24 @@ func (s *HomeworkService) GetRandomHomework(userID int64) (*model.Homework, erro
 	return homework, nil
 }
 
-// extractSpotifyID извлекает Spotify ID из URL плейлиста
-func (s *HomeworkService) extractSpotifyID(playlistURL string) string {
-	// Поддерживаем разные форматы URL:
-	// https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
-	// spotify:playlist:37i9dQZF1DXcBWIGoYBM5M
-
-	if strings.HasPrefix(playlistURL, "spotify:playlist:") {
-		return strings.TrimPrefix(playlistURL, "spotify:playlist:")
-	}
-
-	if strings.Contains(playlistURL, "open.spotify.com/playlist/") {
-		parts := strings.Split(playlistURL, "/playlist/")
-		if len(parts) != 2 {
-			return ""
-		}
-		// Убираем возможные параметры после ID
-		playlistID := strings.Split(parts[1], "?")[0]
-		return playlistID
-	}
-
-	return ""
-}
-
 // MarkCompleted отмечает домашнее задание как завершенное
 func (s *HomeworkService) MarkCompleted(userID int64, trackID string) error {
-	// Получаем URL плейлиста из конфигурации
-	playlistURL, err := s.configRepo.Get("PLAYLIST_URL")
+	// Проверяем, что PlaylistService доступен
+	if s.playlistService == nil {
+		return fmt.Errorf("playlist service not available")
+	}
+
+	// Получаем информацию о плейлисте через PlaylistService
+	playlistInfo, err := s.playlistService.GetPlaylistInfo()
 	if err != nil {
-		return fmt.Errorf("failed to get playlist URL from config: %w", err)
+		return fmt.Errorf("failed to get playlist info: %w", err)
 	}
 
-	if playlistURL == nil || playlistURL.Value == "" {
-		return fmt.Errorf("playlist URL not configured")
-	}
-
-	// Извлекаем Spotify ID из URL
-	spotifyID := s.extractSpotifyID(playlistURL.Value)
+	spotifyID := playlistInfo.SpotifyID
 	if spotifyID == "" {
 		return fmt.Errorf("failed to extract Spotify ID from playlist URL")
 	}
 
-	// Отмечаем как завершенное
 	err = s.trackingRepo.MarkCompleted(userID, trackID, spotifyID)
 	if err != nil {
 		return fmt.Errorf("failed to mark homework as completed: %w", err)
@@ -199,22 +176,17 @@ func (s *HomeworkService) CanRequestHomework(userID int64) (bool, error) {
 
 // GetTimeUntilNextRequest возвращает время до следующего возможного запроса
 func (s *HomeworkService) GetTimeUntilNextRequest(userID int64) time.Duration {
-	// Получаем время сброса из конфигурации
-	resetTime, err := s.configRepo.Get("HOMEWORK_RESET_TIME")
+	// Получаем время сброса из задачи homework_reset_daily
+	resetTime, err := s.getHomeworkResetTime()
 	if err != nil {
-		s.logger.Error("Failed to get HOMEWORK_RESET_TIME from config", zap.Error(err))
+		s.logger.Error("Failed to get homework reset time", zap.Error(err))
 		return 0
 	}
 
-	if resetTime == nil || resetTime.Value == "" {
-		s.logger.Warn("HOMEWORK_RESET_TIME not configured, using default 00:00")
-		resetTime = &model.Config{Value: "00:00"}
-	}
-
 	// Парсим время сброса (формат HH:MM)
-	timeParts := strings.Split(resetTime.Value, ":")
+	timeParts := strings.Split(resetTime, ":")
 	if len(timeParts) != 2 {
-		s.logger.Error("Invalid time format", zap.String("time", resetTime.Value))
+		s.logger.Error("Invalid time format", zap.String("time", resetTime))
 		return 0
 	}
 
@@ -254,7 +226,6 @@ func (s *HomeworkService) GetActiveHomework(userID int64) (*model.Homework, erro
 		return nil, nil // Нет активных домашних заданий
 	}
 
-	// Возвращаем последнее незавершенное домашнее задание
 	latest := pendingTrackings[0]
 
 	// Получаем информацию о треке из плейлиста
@@ -300,7 +271,6 @@ func (s *HomeworkService) ResetAllHomework() error {
 		return nil
 	}
 
-	// Отмечаем все как завершенные
 	resetCount := 0
 	for _, tracking := range pendingTrackings {
 		err = s.trackingRepo.MarkCompleted(tracking.UserID, tracking.TrackID, tracking.SpotifyID)
@@ -319,23 +289,18 @@ func (s *HomeworkService) ResetAllHomework() error {
 }
 
 // canUserRequestHomework проверяет может ли пользователь запросить новое домашнее задание
-// с учетом времени сброса из конфигурации
+// с учетом времени сброса из задачи homework_reset_daily
 func (s *HomeworkService) canUserRequestHomework(userID int64) (bool, error) {
-	// Получаем время сброса из конфигурации
-	resetTime, err := s.configRepo.Get("HOMEWORK_RESET_TIME")
+	// Получаем время сброса из задачи homework_reset_daily
+	resetTime, err := s.getHomeworkResetTime()
 	if err != nil {
-		return false, fmt.Errorf("failed to get HOMEWORK_RESET_TIME from config: %w", err)
-	}
-
-	if resetTime == nil || resetTime.Value == "" {
-		s.logger.Warn("HOMEWORK_RESET_TIME not configured, using default 00:00")
-		resetTime = &model.Config{Value: "00:00"}
+		return false, fmt.Errorf("failed to get homework reset time: %w", err)
 	}
 
 	// Парсим время сброса (формат HH:MM)
-	timeParts := strings.Split(resetTime.Value, ":")
+	timeParts := strings.Split(resetTime, ":")
 	if len(timeParts) != 2 {
-		return false, fmt.Errorf("invalid time format: %s, expected HH:MM", resetTime.Value)
+		return false, fmt.Errorf("invalid time format: %s, expected HH:MM", resetTime)
 	}
 
 	hour, err := strconv.Atoi(timeParts[0])
@@ -348,7 +313,6 @@ func (s *HomeworkService) canUserRequestHomework(userID int64) (bool, error) {
 		return false, fmt.Errorf("invalid minute: %s", timeParts[1])
 	}
 
-	// Получаем последнее домашнее задание пользователя
 	lastTime, err := s.trackingRepo.GetLastRequestTime(userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get last request time: %w", err)
@@ -368,6 +332,37 @@ func (s *HomeworkService) canUserRequestHomework(userID int64) (bool, error) {
 		nextReset = nextReset.AddDate(0, 0, 1)
 	}
 
-	// Проверяем, прошел ли сброс с момента последнего запроса
 	return lastTime.Before(nextReset.AddDate(0, 0, -1)), nil
+}
+
+// getHomeworkResetTime получает время сброса из задачи homework_reset_daily
+func (s *HomeworkService) getHomeworkResetTime() (string, error) {
+	// Получаем задачу homework_reset_daily
+	task, err := s.taskService.GetByName("homework_reset_daily")
+	if err != nil {
+		return "", fmt.Errorf("failed to get homework_reset_daily task: %w", err)
+	}
+
+	if task == nil {
+		return "", fmt.Errorf("homework_reset_daily task not found")
+	}
+
+	// Парсим cron выражение (формат: "0 0 * * *" = минута час день месяц день_недели)
+	// Нас интересует час (второй элемент)
+	cronParts := strings.Fields(task.CronExpression)
+	if len(cronParts) < 2 {
+		return "", fmt.Errorf("invalid cron expression: %s", task.CronExpression)
+	}
+
+	hour := cronParts[1]
+	minute := cronParts[0]
+
+	// Формируем время в формате HH:MM
+	resetTime := fmt.Sprintf("%s:%s", hour, minute)
+
+	s.logger.Debug("Extracted homework reset time from task",
+		zap.String("cron_expression", task.CronExpression),
+		zap.String("reset_time", resetTime))
+
+	return resetTime, nil
 }

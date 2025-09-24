@@ -155,7 +155,6 @@ func (r *HomeworkTrackingRepository) GetIssuedTrackIDs(userID int64, spotifyID s
 // CanRequestHomework проверяет может ли пользователь запросить новое домашнее задание
 // Теперь эта логика перенесена в HomeworkService, который имеет доступ к конфигурации
 func (r *HomeworkTrackingRepository) CanRequestHomework(userID int64) (bool, error) {
-	// Получаем последнее домашнее задание
 	lastTime, err := r.GetLastRequestTime(userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get last request time: %w", err)
@@ -166,13 +165,11 @@ func (r *HomeworkTrackingRepository) CanRequestHomework(userID int64) (bool, err
 		return true, nil
 	}
 
-	// Проверяем прошло ли достаточно времени (например, 1 час)
-	// ВАЖНО: Эта логика устарела и должна быть заменена на проверку времени сброса
 	timeSinceLastRequest := time.Since(*lastTime)
 	return timeSinceLastRequest >= time.Hour, nil
 }
 
-// GetLastRequestTime возвращает время последнего запроса домашнего задания
+// GetLastRequestTime возвращает время последнего запроса
 func (r *HomeworkTrackingRepository) GetLastRequestTime(userID int64) (*time.Time, error) {
 	ctx := context.Background()
 	var lastTime time.Time

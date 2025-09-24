@@ -86,8 +86,6 @@ func (r *PlaylistTracksRepository) Create(track *model.PlaylistTracks) error {
 		On("CONFLICT (spotify_id, track_id) DO UPDATE").
 		Set("artist = EXCLUDED.artist").
 		Set("title = EXCLUDED.title").
-		Set("album = EXCLUDED.album").
-		Set("duration_ms = EXCLUDED.duration_ms").
 		Set("updated_at = CURRENT_TIMESTAMP").
 		Exec(ctx)
 

@@ -1,18 +1,16 @@
 // Package model содержит утилиты для работы с релизами.
 //
 // Группа: UTILS - Утилиты для релизов
-// Содержит: ReleaseUtils, утилиты для обработки релизов
+// Содержит: ReleaseUtils, FormatDateWithYear, утилиты для обработки релизов
 package model
 
 import (
 	"fmt"
 	"html"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 )
 
 // ReleaseUtils содержит утилиты для работы с релизами
@@ -54,7 +52,6 @@ func (u *ReleaseUtils) ParseReleaseDate(dateStr string) (time.Time, error) {
 	dateStr = strings.ReplaceAll(dateStr, ":", "")
 	dateStr = strings.TrimSpace(dateStr)
 
-	// Удаляем лишний текст со временем KST (например, "at 0 AM KST")
 	if strings.Contains(dateStr, " at ") {
 		parts := strings.Split(dateStr, " at ")
 		if len(parts) > 0 {
@@ -74,7 +71,6 @@ func (u *ReleaseUtils) ParseReleaseDateWithYear(dateStr string, year string) (ti
 	dateStr = strings.ReplaceAll(dateStr, ":", "")
 	dateStr = strings.TrimSpace(dateStr)
 
-	// Удаляем лишний текст со временем KST (например, "at 0 AM KST")
 	if strings.Contains(dateStr, " at ") {
 		parts := strings.Split(dateStr, " at ")
 		if len(parts) > 0 {
@@ -87,6 +83,35 @@ func (u *ReleaseUtils) ParseReleaseDateWithYear(dateStr string, year string) (ti
 
 // parseDate парсит строку даты с годом или без
 func (u *ReleaseUtils) parseDate(dateStr string) (time.Time, error) {
+	if strings.Contains(dateStr, ".") && len(strings.Split(dateStr, ".")) == 3 {
+		parts := strings.Split(dateStr, ".")
+		if len(parts) == 3 {
+			day := parts[0]
+			month := parts[1]
+			year := parts[2]
+
+			// Преобразуем год из двухзначного в четырехзначный
+			if len(year) == 2 {
+				yearInt, err := strconv.Atoi(year)
+				if err == nil {
+					// Предполагаем, что годы 00-30 это 2000-2030, а 31-99 это 1931-1999
+					if yearInt <= 30 {
+						year = fmt.Sprintf("20%s", year)
+					} else {
+						year = fmt.Sprintf("19%s", year)
+					}
+				}
+			}
+
+			// Формируем дату в формате "2006-01-02"
+			dateStr = fmt.Sprintf("%s-%s-%s", year, month, day)
+			parsedDate, err := time.Parse("2006-01-02", dateStr)
+			if err == nil {
+				return parsedDate, nil
+			}
+		}
+	}
+
 	isDate := false
 	for _, month := range u.config.Months() {
 		if strings.HasPrefix(strings.ToLower(dateStr), month) {
@@ -108,7 +133,6 @@ func (u *ReleaseUtils) parseDate(dateStr string) (time.Time, error) {
 	}
 
 	if len(parts) > 2 && strings.Contains(parts[len(parts)-1], "20") {
-		// Полный формат с годом, например, "January 2 2023"
 		dateStr = strings.Join(parts, " ")
 		parsedDate, err := time.Parse("January 2 2006", dateStr)
 		if err != nil {
@@ -128,6 +152,37 @@ func (u *ReleaseUtils) parseDate(dateStr string) (time.Time, error) {
 
 // parseDateWithYear парсит строку даты с указанным годом
 func (u *ReleaseUtils) parseDateWithYear(dateStr string, year string) (time.Time, error) {
+	if strings.Contains(dateStr, ".") && len(strings.Split(dateStr, ".")) == 3 {
+		parts := strings.Split(dateStr, ".")
+		if len(parts) == 3 {
+			day := parts[0]
+			month := parts[1]
+			yearFromDate := parts[2]
+
+			// Если год в дате двухзначный, используем его, иначе используем переданный год
+			if len(yearFromDate) == 2 {
+				yearInt, err := strconv.Atoi(yearFromDate)
+				if err == nil {
+					// Предполагаем, что годы 00-30 это 2000-2030, а 31-99 это 1931-1999
+					if yearInt <= 30 {
+						year = fmt.Sprintf("20%s", yearFromDate)
+					} else {
+						year = fmt.Sprintf("19%s", yearFromDate)
+					}
+				}
+			} else {
+				year = yearFromDate
+			}
+
+			// Формируем дату в формате "2006-01-02"
+			dateStr = fmt.Sprintf("%s-%s-%s", year, month, day)
+			parsedDate, err := time.Parse("2006-01-02", dateStr)
+			if err == nil {
+				return parsedDate, nil
+			}
+		}
+	}
+
 	isDate := false
 	for _, month := range u.config.Months() {
 		if strings.HasPrefix(strings.ToLower(dateStr), month) {
@@ -149,7 +204,6 @@ func (u *ReleaseUtils) parseDateWithYear(dateStr string, year string) (time.Time
 	}
 
 	if len(parts) > 2 && strings.Contains(parts[len(parts)-1], "20") {
-		// Полный формат с годом, например, "January 2 2023"
 		dateStr = strings.Join(parts, " ")
 		parsedDate, err := time.Parse("January 2 2006", dateStr)
 		if err != nil {
@@ -249,39 +303,6 @@ func (u *ReleaseUtils) CleanLink(link string) string {
 	return link
 }
 
-// ExtractMonthFromDate извлекает месяц из даты
-func (u *ReleaseUtils) ExtractMonthFromDate(date time.Time) string {
-	monthName := date.Month().String()
-	if num, ok := u.config.MonthToNumber(strings.ToLower(monthName)); ok {
-		return num
-	}
-	return ""
-}
-
-// ExtractYearFromDate извлекает год из даты
-func (u *ReleaseUtils) ExtractYearFromDate(date time.Time) int {
-	return date.Year()
-}
-
-// DetermineReleaseType определяет тип релиза по названию
-func (u *ReleaseUtils) DetermineReleaseType(title string) string {
-	title = strings.ToLower(title)
-
-	// Простая эвристика для определения типа релиза
-	if strings.Contains(title, "album") || strings.Contains(title, "full album") {
-		return "album"
-	}
-	if strings.Contains(title, "ep") || strings.Contains(title, "mini album") {
-		return "ep"
-	}
-	if strings.Contains(title, "single") {
-		return "single"
-	}
-
-	// По умолчанию single
-	return "single"
-}
-
 // CleanReleaseTitle очищает название релиза
 func (u *ReleaseUtils) CleanReleaseTitle(title string) string {
 	// Удаляем лишние пробелы
@@ -315,10 +336,6 @@ func (u *ReleaseUtils) ValidateRelease(release *Release) error {
 	if release.ArtistID <= 0 {
 		return fmt.Errorf("artist_id is required")
 	}
-	if release.ReleaseTypeID <= 0 {
-		return fmt.Errorf("release_type_id is required")
-	}
-	// Title теперь необязательное поле
 	if release.Date == "" {
 		return fmt.Errorf("date is required")
 	}
@@ -350,13 +367,9 @@ func (u *ReleaseUtils) FormatReleaseForDisplay(release *Release) string {
 	dateTime := release.GetFormattedDateTime()
 	parts = append(parts, fmt.Sprintf("📅 %s", dateTime))
 
-	// Тип релиза
-	var typeName string
-	if release.ReleaseType != nil {
-		typeName = release.ReleaseType.Name
-	}
-	typeEmoji := u.getTypeEmoji(typeName)
-	parts = append(parts, fmt.Sprintf("%s %s", typeEmoji, cases.Title(language.English).String(typeName)))
+	// Тип релиза (упрощенный)
+	typeEmoji := "🎵"
+	parts = append(parts, fmt.Sprintf("%s Release", typeEmoji))
 
 	// MV
 	if release.HasMV() {
@@ -396,16 +409,25 @@ func (u *ReleaseUtils) FormatReleaseForTelegram(release *Release) string {
 	return result
 }
 
-// getTypeEmoji возвращает эмодзи для типа релиза
-func (u *ReleaseUtils) getTypeEmoji(releaseType string) string {
-	switch strings.ToLower(releaseType) {
-	case "album":
-		return "💿"
-	case "ep":
-		return "📀"
-	case "single":
-		return "🎵"
-	default:
-		return "🎶"
+// FormatDateWithYear форматирует дату с указанным годом
+func FormatDateWithYear(dateStr string, year string, logger interface{}) (string, error) {
+	// Парсим дату в формате "Month Day, Year" (например, "October 8, 2025")
+	parsedDate, err := time.Parse("January 2, 2006", dateStr)
+	if err != nil {
+		// Пробуем парсить без года
+		parsedDate, err = time.Parse("January 2", dateStr)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse date: %w", err)
+		}
+		// Парсим год из строки
+		yearInt, err := strconv.Atoi(year)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse year: %w", err)
+		}
+		// Устанавливаем указанный год
+		parsedDate = time.Date(yearInt, parsedDate.Month(), parsedDate.Day(), 0, 0, 0, 0, time.UTC)
 	}
+
+	// Форматируем в DD.MM.YY
+	return parsedDate.Format("02.01.06"), nil
 }

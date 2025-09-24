@@ -204,7 +204,7 @@ func (r *HomeworkRepository) CanRequestHomework(userID int64) (bool, error) {
 	return count == 0, nil
 }
 
-// GetLastRequestTime возвращает время последнего запроса домашнего задания
+// GetLastRequestTime возвращает время последнего запроса
 func (r *HomeworkRepository) GetLastRequestTime(userID int64) (*time.Time, error) {
 	ctx := context.Background()
 	var lastRequest time.Time

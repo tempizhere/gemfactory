@@ -24,58 +24,89 @@ type Services struct {
 }
 
 // NewServices создает все сервисы
-func NewServices(db *storage.Postgres, config *config.Config, logger *zap.Logger) *Services {
-	// Создаем Spotify клиент
-	spotifyClient, err := spotify.NewClient(config.SpotifyClientID, config.SpotifyClientSecret, logger)
+func NewServices(db *storage.Postgres, cfg *config.Config, logger *zap.Logger) *Services {
+	configService := NewConfigService(db.GetDB(), logger)
+
+	// Создаем загрузчик конфигурации
+	configLoader := config.NewConfigLoader(configService, logger)
+
+	// Загружаем недостающие значения из базы данных (приоритет: env > база данных)
+	// ADMIN_USERNAME
+	configLoader.LoadConfigValueWithSetter(cfg.AdminUsername, "ADMIN_USERNAME", func(value string) {
+		cfg.AdminUsername = value
+	})
+
+	// LLM_API_KEY
+	llmAPIKey := configLoader.LoadConfigValueWithSetter(cfg.LLMConfig.APIKey, "LLM_API_KEY", func(value string) {
+		cfg.LLMConfig.APIKey = value
+	})
+
+	// BOT_TOKEN
+	configLoader.LoadConfigValueWithSetter(cfg.BotToken, "BOT_TOKEN", func(value string) {
+		cfg.BotToken = value
+	})
+
+	// SPOTIFY_CLIENT_ID
+	spotifyClientID := configLoader.LoadConfigValueWithSetter(cfg.SpotifyClientID, "SPOTIFY_CLIENT_ID", func(value string) {
+		cfg.SpotifyClientID = value
+	})
+
+	// SPOTIFY_CLIENT_SECRET
+	spotifyClientSecret := configLoader.LoadConfigValueWithSetter(cfg.SpotifyClientSecret, "SPOTIFY_CLIENT_SECRET", func(value string) {
+		cfg.SpotifyClientSecret = value
+	})
+
+	// PLAYLIST_URL
+	playlistURL := configLoader.LoadConfigValueWithSetter(cfg.PlaylistURL, "PLAYLIST_URL", func(value string) {
+		cfg.PlaylistURL = value
+	})
+
+	// Создаем Spotify клиент с обновленными значениями
+	spotifyClient, err := spotify.NewClient(spotifyClientID, spotifyClientSecret, logger)
 	if err != nil {
 		logger.Error("Failed to create Spotify client", zap.Error(err))
 		// Продолжаем без Spotify клиента
 		spotifyClient = nil
 	}
 
-	// Создаем configService сначала для загрузки конфигурации из БД
-	configService := NewConfigService(db.GetDB(), logger)
-
-	// Загружаем LLM_API_KEY из базы данных
-	llmAPIKey := config.LLMConfig.APIKey // Fallback на переменные окружения
-	if dbAPIKey, err := configService.Get("LLM_API_KEY"); err == nil {
-		llmAPIKey = dbAPIKey
-		logger.Info("Loaded LLM_API_KEY from database")
-	} else {
-		logger.Debug("Failed to load LLM_API_KEY from database, using env var", zap.Error(err))
-	}
-
 	// Создаем скрейпер с LLM_API_KEY из базы данных
 	scraperConfig := scraper.Config{
 		HTTPClientConfig: scraper.HTTPClientConfig{
-			MaxIdleConns:          config.ScraperConfig.HTTPClientConfig.MaxIdleConns,
-			MaxIdleConnsPerHost:   config.ScraperConfig.HTTPClientConfig.MaxIdleConnsPerHost,
-			IdleConnTimeout:       config.ScraperConfig.HTTPClientConfig.IdleConnTimeout,
-			TLSHandshakeTimeout:   config.ScraperConfig.HTTPClientConfig.TLSHandshakeTimeout,
-			ResponseHeaderTimeout: config.ScraperConfig.HTTPClientConfig.ResponseHeaderTimeout,
-			DisableKeepAlives:     config.ScraperConfig.HTTPClientConfig.DisableKeepAlives,
+			MaxIdleConns:          cfg.ScraperConfig.HTTPClientConfig.MaxIdleConns,
+			MaxIdleConnsPerHost:   cfg.ScraperConfig.HTTPClientConfig.MaxIdleConnsPerHost,
+			IdleConnTimeout:       cfg.ScraperConfig.HTTPClientConfig.IdleConnTimeout,
+			TLSHandshakeTimeout:   cfg.ScraperConfig.HTTPClientConfig.TLSHandshakeTimeout,
+			ResponseHeaderTimeout: cfg.ScraperConfig.HTTPClientConfig.ResponseHeaderTimeout,
+			DisableKeepAlives:     cfg.ScraperConfig.HTTPClientConfig.DisableKeepAlives,
 		},
 		RetryConfig: scraper.RetryConfig{
-			MaxRetries:        config.ScraperConfig.RetryConfig.MaxRetries,
-			InitialDelay:      config.ScraperConfig.RetryConfig.InitialDelay,
-			MaxDelay:          config.ScraperConfig.RetryConfig.MaxDelay,
-			BackoffMultiplier: config.ScraperConfig.RetryConfig.BackoffMultiplier,
+			MaxRetries:        cfg.ScraperConfig.RetryConfig.MaxRetries,
+			InitialDelay:      cfg.ScraperConfig.RetryConfig.InitialDelay,
+			MaxDelay:          cfg.ScraperConfig.RetryConfig.MaxDelay,
+			BackoffMultiplier: cfg.ScraperConfig.RetryConfig.BackoffMultiplier,
 		},
-		RequestDelay: config.ScraperConfig.RequestDelay,
+		RequestDelay: cfg.ScraperConfig.RequestDelay,
 		LLMConfig: scraper.LLMConfig{
-			BaseURL: config.LLMConfig.BaseURL,
+			BaseURL: cfg.LLMConfig.BaseURL,
 			APIKey:  llmAPIKey, // Используем ключ из базы данных
-			Timeout: config.LLMConfig.Timeout,
+			Timeout: cfg.LLMConfig.Timeout,
 		},
 	}
 	scraperClient := scraper.NewFetcher(scraperConfig, logger)
 
+	// Создаем playlistService только если Spotify клиент доступен
+	var playlistService *PlaylistService
+	if spotifyClient != nil {
+		playlistService = NewPlaylistService(db.GetDB(), *spotifyClient, playlistURL, logger)
+	} else {
+		logger.Warn("Spotify client not available, playlist service will not be created")
+	}
+
 	// Создаем остальные сервисы
 	artistService := NewArtistService(db.GetDB(), logger)
 	releaseService := NewReleaseService(db.GetDB(), scraperClient, logger)
-	homeworkService := NewHomeworkService(db.GetDB(), logger)
-	playlistService := NewPlaylistService(db.GetDB(), *spotifyClient, logger)
 	taskService := NewTaskService(db.GetDB(), logger)
+	homeworkService := NewHomeworkService(db.GetDB(), playlistService, taskService, logger)
 
 	// Создаем планировщик
 	scheduler := NewScheduler(taskService, logger)
@@ -84,14 +115,18 @@ func NewServices(db *storage.Postgres, config *config.Config, logger *zap.Logger
 	parseReleaseExecutor := NewParseReleaseTaskExecutor(releaseService, logger)
 	scheduler.RegisterExecutor(model.TaskTypeParseReleases, parseReleaseExecutor)
 
-	updatePlaylistExecutor := NewUpdatePlaylistTaskExecutor(playlistService, configService, logger)
-	scheduler.RegisterExecutor(model.TaskTypeUpdatePlaylist, updatePlaylistExecutor)
+	// Регистрируем updatePlaylistExecutor только если playlistService доступен
+	if playlistService != nil {
+		updatePlaylistExecutor := NewUpdatePlaylistTaskExecutor(playlistService, logger)
+		scheduler.RegisterExecutor(model.TaskTypeUpdatePlaylist, updatePlaylistExecutor)
+	} else {
+		logger.Warn("Playlist service not available, update playlist tasks will not be registered")
+	}
 
 	homeworkResetExecutor := NewHomeworkResetTaskExecutor(homeworkService, configService, logger)
 	scheduler.RegisterExecutor(model.TaskTypeHomeworkReset, homeworkResetExecutor)
 
-	// Создаем наблюдатель конфигурации
-	configWatcher := NewConfigWatcher(configService, taskService, logger)
+	configWatcher := NewConfigWatcher(configService, taskService, scheduler, logger)
 
 	return &Services{
 		Artist:        artistService,

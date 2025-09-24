@@ -144,7 +144,6 @@ func (c *Client) ExtractPlaylistID(playlistURL string) (string, error) {
 		if len(parts) != 2 {
 			return "", fmt.Errorf("invalid playlist URL format")
 		}
-		// Убираем возможные параметры после ID
 		playlistID := strings.Split(parts[1], "?")[0]
 		return playlistID, nil
 	}

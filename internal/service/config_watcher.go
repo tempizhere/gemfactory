@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"gemfactory/internal/model"
 	"time"
 
@@ -13,17 +14,21 @@ import (
 type ConfigWatcher struct {
 	configService *ConfigService
 	taskService   *TaskService
+	scheduler     *Scheduler
 	logger        *zap.Logger
 	stopChan      chan struct{}
+	lastTaskHash  string // Хеш последнего состояния задач для отслеживания изменений
 }
 
 // NewConfigWatcher создает новый наблюдатель конфигурации
-func NewConfigWatcher(configService *ConfigService, taskService *TaskService, logger *zap.Logger) *ConfigWatcher {
+func NewConfigWatcher(configService *ConfigService, taskService *TaskService, scheduler *Scheduler, logger *zap.Logger) *ConfigWatcher {
 	return &ConfigWatcher{
 		configService: configService,
 		taskService:   taskService,
+		scheduler:     scheduler,
 		logger:        logger,
 		stopChan:      make(chan struct{}),
+		lastTaskHash:  "",
 	}
 }
 
@@ -53,17 +58,20 @@ func (w *ConfigWatcher) Stop() {
 	close(w.stopChan)
 }
 
-// checkForConfigChanges проверяет изменения в конфигурации
+// checkForConfigChanges проверяет изменения в конфигурации и задачах
 func (w *ConfigWatcher) checkForConfigChanges(ctx context.Context) {
-	// Получаем все конфигурации
+	// Проверяем изменения в конфигурации
 	configs, err := w.configService.GetAll()
 	if err != nil {
 		w.logger.Error("Failed to get configs for watching", zap.Error(err))
 		return
 	}
 
-	// Здесь можно добавить логику для применения изменений
-	// Например, перезагрузка настроек скрейпера, изменение интервалов задач и т.д.
+	// Проверяем изменения в задачах
+	if err := w.checkForTaskChanges(ctx); err != nil {
+		w.logger.Error("Failed to check for task changes", zap.Error(err))
+	}
+
 	w.logger.Debug("Config watcher checked for changes", zap.String("configs", configs))
 }
 
@@ -72,27 +80,56 @@ func (w *ConfigWatcher) ApplyConfigChanges(configs []model.Config) error {
 	for _, config := range configs {
 		switch config.Key {
 		case "SCRAPER_DELAY":
-			// Применяем изменения задержки скрейпера
 			w.logger.Info("Applying scraper delay change", zap.String("value", config.Value))
 		case "SCRAPER_TIMEOUT":
-			// Применяем изменения таймаута скрейпера
 			w.logger.Info("Applying scraper timeout change", zap.String("value", config.Value))
-		case "PLAYLIST_UPDATE_HOURS":
-			// Применяем изменения интервала обновления плейлистов
-			w.logger.Info("Applying playlist update hours change", zap.String("value", config.Value))
 		case "LOG_LEVEL":
-			// Применяем изменения уровня логирования
 			w.logger.Info("Applying log level change", zap.String("value", config.Value))
-		case "HOMEWORK_RESET_TIME":
-			// Обновляем cron выражение для задачи сброса домашних заданий
-			w.logger.Info("Applying homework reset time change", zap.String("value", config.Value))
-			err := w.taskService.UpdateHomeworkResetCron(w.configService)
-			if err != nil {
-				w.logger.Error("Failed to update homework reset cron", zap.Error(err))
-			}
 		default:
 			w.logger.Debug("No specific handler for config key", zap.String("key", config.Key))
 		}
 	}
 	return nil
+}
+
+// checkForTaskChanges проверяет изменения в задачах и перезагружает планировщик при необходимости
+func (w *ConfigWatcher) checkForTaskChanges(ctx context.Context) error {
+	// Получаем все активные задачи
+	tasks, err := w.taskService.GetActiveTasks()
+	if err != nil {
+		return fmt.Errorf("failed to get active tasks: %w", err)
+	}
+
+	// Создаем хеш текущего состояния задач
+	currentHash := w.calculateTaskHash(tasks)
+
+	// Если хеш изменился, перезагружаем планировщик
+	if currentHash != w.lastTaskHash {
+		w.logger.Info("Task changes detected, reloading scheduler",
+			zap.String("old_hash", w.lastTaskHash),
+			zap.String("new_hash", currentHash))
+
+		if w.scheduler != nil {
+			if err := w.scheduler.ReloadTasks(); err != nil {
+				return fmt.Errorf("failed to reload scheduler tasks: %w", err)
+			}
+			w.logger.Info("Scheduler reloaded successfully")
+		}
+
+		w.lastTaskHash = currentHash
+	}
+
+	return nil
+}
+
+// calculateTaskHash создает хеш состояния задач для отслеживания изменений
+func (w *ConfigWatcher) calculateTaskHash(tasks []model.Task) string {
+	// Создаем строку из всех важных полей задач
+	var hashData string
+	for _, task := range tasks {
+		hashData += fmt.Sprintf("%s:%s:%s:%t:", task.Name, task.CronExpression, task.TaskType, task.IsActive)
+	}
+
+	// Простой хеш (в реальном приложении можно использовать crypto/sha256)
+	return fmt.Sprintf("%d", len(hashData))
 }

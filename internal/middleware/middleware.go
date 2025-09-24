@@ -33,7 +33,7 @@ func New(config *config.Config, logger *zap.Logger) *Middleware {
 	}
 }
 
-// Process обрабатывает обновление через middleware
+// Process обрабатывает обновление
 func (m *Middleware) Process(update tgbotapi.Update) bool {
 	// Применяем rate limiting
 	if update.Message != nil {

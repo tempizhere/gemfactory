@@ -109,11 +109,6 @@ func DebounceMiddleware(debouncer DebouncerInterface, logger *zap.Logger) func(u
 				zap.Int("update_id", update.UpdateID),
 				zap.Duration("timeout", timeout))
 
-			// TODO: Отправить уведомление пользователю о дебаунсе
-			// if err := sendMessage(update.Message.Chat.ID, "⏱️ Пожалуйста, подождите перед повторным выполнением команды"); err != nil {
-			// 	logger.Error("Failed to send debounce message", zap.Error(err))
-			// }
-
 			return
 		}
 
@@ -150,11 +145,6 @@ func DebounceMiddlewareWithError(debouncer DebouncerInterface, logger *zap.Logge
 				zap.Int("update_id", update.UpdateID),
 				zap.Duration("timeout", timeout))
 
-			// TODO: Отправить уведомление пользователю о дебаунсе
-			// if err := sendMessage(update.Message.Chat.ID, "⏱️ Пожалуйста, подождите перед повторным выполнением команды"); err != nil {
-			// 	logger.Error("Failed to send debounce message", zap.Error(err))
-			// }
-
 			return nil
 		}
 
@@ -170,7 +160,6 @@ func DebounceCallbackMiddleware(debouncer DebouncerInterface, logger *zap.Logger
 			return
 		}
 
-		// Для callback'ов используем полный data как ключ
 		callbackData := update.CallbackQuery.Data
 		if callbackData == "" {
 			callbackData = "callback"
@@ -204,11 +193,6 @@ func DebounceCallbackMiddleware(debouncer DebouncerInterface, logger *zap.Logger
 				zap.String("user", user),
 				zap.Int("update_id", update.UpdateID),
 				zap.Duration("timeout", timeout))
-
-			// TODO: Отправить уведомление пользователю о дебаунсе
-			// if err := sendMessage(update.CallbackQuery.Message.Chat.ID, "⏱️ Пожалуйста, подождите перед повторным нажатием"); err != nil {
-			// 	logger.Error("Failed to send debounce message", zap.Error(err))
-			// }
 
 			return
 		}

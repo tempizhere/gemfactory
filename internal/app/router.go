@@ -17,6 +17,8 @@ import (
 type Router struct {
 	handlers   *handlers.Handlers
 	middleware *middleware.Middleware
+	config     *config.Config
+	services   *service.Services
 	logger     *zap.Logger
 }
 
@@ -25,6 +27,8 @@ func NewRouter(services *service.Services, config *config.Config, logger *zap.Lo
 	return &Router{
 		handlers:   handlers.RegisterRoutes(services, config, logger),
 		middleware: middleware.New(config, logger),
+		config:     config,
+		services:   services,
 		logger:     logger,
 	}
 }
@@ -34,6 +38,8 @@ func NewRouterWithBotAPI(services *service.Services, config *config.Config, logg
 	return &Router{
 		handlers:   handlers.RegisterRoutesWithBotAPI(services, config, logger, botAPI),
 		middleware: middleware.New(config, logger),
+		config:     config,
+		services:   services,
 		logger:     logger,
 	}
 }
@@ -61,6 +67,32 @@ func (r *Router) handleMessage(message *tgbotapi.Message) {
 	}
 
 	command := strings.ToLower(message.Command())
+
+	// Список админских команд
+	adminCommands := map[string]bool{
+		"admin":           true,
+		"add_artist":      true,
+		"remove_artist":   true,
+		"clearcache":      true,
+		"clearwhitelists": true,
+		"export":          true,
+		"config":          true,
+		"config_list":     true,
+		"config_reset":    true,
+		"tasks_list":      true,
+		"reload_playlist": true,
+		"parse_releases":  true,
+	}
+
+	// Проверяем админские права для админских команд
+	if adminCommands[command] {
+		if !r.isAdmin(message.From) {
+			r.logger.Warn("Unauthorized access attempt to admin command",
+				zap.String("command", command),
+				zap.String("user", getUserIdentifier(message.From)))
+			return
+		}
+	}
 
 	switch command {
 	case "start":
@@ -116,4 +148,40 @@ func (r *Router) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 // RegisterBotCommands регистрирует команды бота
 func (r *Router) RegisterBotCommands() []tgbotapi.BotCommand {
 	return r.handlers.RegisterBotCommands()
+}
+
+// isAdmin проверяет, является ли пользователь администратором
+func (r *Router) isAdmin(user *tgbotapi.User) bool {
+	if user == nil {
+		return false
+	}
+
+	// Получаем username администратора из конфигурации (уже загружена через загрузчик)
+	adminUsername := r.config.AdminUsername
+	if adminUsername == "" {
+		r.logger.Warn("ADMIN_USERNAME not configured")
+		return false
+	}
+
+	return user.UserName == adminUsername
+}
+
+// getUserIdentifier возвращает идентификатор пользователя
+func getUserIdentifier(user *tgbotapi.User) string {
+	if user == nil {
+		return "unknown"
+	}
+
+	if user.UserName != "" {
+		return "@" + user.UserName
+	}
+
+	if user.FirstName != "" {
+		if user.LastName != "" {
+			return user.FirstName + " " + user.LastName
+		}
+		return user.FirstName
+	}
+
+	return "user_" + string(rune(user.ID))
 }

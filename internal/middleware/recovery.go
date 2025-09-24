@@ -38,10 +38,6 @@ func RecoveryMiddlewareWithUpdate(logger *zap.Logger) func(update tgbotapi.Updat
 						zap.Any("panic", panicErr),
 						zap.String("stack", string(debug.Stack())))
 
-					// TODO: Отправить пользователю сообщение об ошибке
-					// if err := sendMessage(update.Message.Chat.ID, "❌ Произошла серьезная ошибка. Попробуйте позже."); err != nil {
-					// 	logger.Error("Failed to send panic message", zap.Error(err))
-					// }
 				} else {
 					logger.Error("Panic recovered in recovery middleware",
 						zap.Int("update_id", update.UpdateID),
@@ -69,10 +65,6 @@ func ErrorHandlerMiddleware(logger *zap.Logger) func(update tgbotapi.Update, nex
 						zap.Any("panic", panicErr),
 						zap.String("stack", string(debug.Stack())))
 
-					// TODO: Отправить пользователю сообщение об ошибке
-					// if err := sendMessage(update.Message.Chat.ID, "❌ Произошла серьезная ошибка. Попробуйте позже."); err != nil {
-					// 	logger.Error("Failed to send panic message", zap.Error(err))
-					// }
 				} else {
 					logger.Error("Panic recovered in error handler",
 						zap.Int("update_id", update.UpdateID),
@@ -113,10 +105,6 @@ func ErrorHandlerMiddleware(logger *zap.Logger) func(update tgbotapi.Update, nex
 					zap.Error(err))
 			}
 
-			// TODO: Отправить пользователю информативное сообщение об ошибке
-			// if sendErr := sendMessage(update.Message.Chat.ID, errorMessage); sendErr != nil {
-			// 	logger.Error("Failed to send error message", zap.Error(sendErr))
-			// }
 		}
 
 		return err

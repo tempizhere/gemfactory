@@ -149,19 +149,7 @@ func (c *Client) processUpdate(update tgbotapi.Update) {
 		return
 	}
 
-	// Обрабатываем обновление через роутер
 	c.router.HandleUpdate(update)
-}
-
-// handleUpdate обрабатывает обновление (для совместимости)
-func (c *Client) handleUpdate(update tgbotapi.Update) {
-	defer func() {
-		if r := recover(); r != nil {
-			c.logger.Error("Panic in handleUpdate", zap.Any("panic", r))
-		}
-	}()
-
-	c.processUpdate(update)
 }
 
 // SendMessage отправляет сообщение

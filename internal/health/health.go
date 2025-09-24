@@ -77,7 +77,9 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	fmt.Fprintf(w, `{"status":"%s","timestamp":"%s"}`, status, time.Now().Format(time.RFC3339))
+	if _, err := fmt.Fprintf(w, `{"status":"%s","timestamp":"%s"}`, status, time.Now().Format(time.RFC3339)); err != nil {
+		s.logger.Error("Failed to write response", zap.Error(err))
+	}
 }
 
 // readyHandler обрабатывает запросы /ready
@@ -94,14 +96,18 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	fmt.Fprintf(w, `{"status":"%s","timestamp":"%s"}`, status, time.Now().Format(time.RFC3339))
+	if _, err := fmt.Fprintf(w, `{"status":"%s","timestamp":"%s"}`, status, time.Now().Format(time.RFC3339)); err != nil {
+		s.logger.Error("Failed to write response", zap.Error(err))
+	}
 }
 
 // liveHandler обрабатывает запросы /live
 func (s *Server) liveHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status":"alive","timestamp":"%s"}`, time.Now().Format(time.RFC3339))
+	if _, err := fmt.Fprintf(w, `{"status":"alive","timestamp":"%s"}`, time.Now().Format(time.RFC3339)); err != nil {
+		s.logger.Error("Failed to write response", zap.Error(err))
+	}
 }
 
 // checkDatabase проверяет подключение к базе данных
@@ -121,8 +127,6 @@ func (s *Server) checkDatabase() error {
 
 // checkComponents проверяет другие компоненты
 func (s *Server) checkComponents() error {
-	// Здесь можно добавить проверки других компонентов
-	// Например, проверка подключения к Spotify API, Telegram API и т.д.
 
 	return nil
 }

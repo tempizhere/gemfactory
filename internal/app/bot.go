@@ -55,7 +55,7 @@ func NewBot(cfg *config.Config, logger *zap.Logger) (*Bot, error) {
 	return bot, nil
 }
 
-// NewBotWithFactory создает новый экземпляр бота через фабрику
+// NewBotWithFactory создает новый экземпляр бота
 func NewBotWithFactory(cfg *config.Config, logger *zap.Logger) (*Bot, error) {
 	factory := NewComponentFactory(cfg, logger)
 	return factory.CreateBot()
@@ -119,6 +119,22 @@ func (b *Bot) Start(ctx context.Context) error {
 		} else {
 			b.logger.Info("Scheduler started successfully")
 		}
+	}
+
+	// Загружаем плейлист при старте
+	if b.services.Playlist != nil {
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			b.logger.Info("Loading playlist on startup...")
+			if err := b.services.Playlist.ReloadPlaylist(); err != nil {
+				b.logger.Error("Failed to load playlist on startup", zap.Error(err))
+			} else {
+				b.logger.Info("Playlist loaded successfully on startup")
+			}
+		}()
+	} else {
+		b.logger.Warn("Playlist service not available, skipping initial playlist load")
 	}
 
 	// Запускаем наблюдатель конфигурации
@@ -240,6 +256,5 @@ func (b *Bot) runUpdateLoop(ctx context.Context) error {
 	// Создаем роутер
 	router := NewRouterWithBotAPI(b.services, b.config, b.logger, b.telegram.GetBotAPI())
 
-	// Запуск обработки обновлений через Telegram клиент
 	return b.telegram.Start(ctx, b.services, router)
 }

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Скрипт для развертывания приложения
-# Использование: ./scripts/deploy.sh [local|docker|production]
+# Скрипт для развертывания приложения с внешней базой данных
+# Использование: ./scripts/deploy.sh [build|up|down|logs|status]
 
 set -e
 
@@ -29,151 +29,108 @@ info() {
     echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')] INFO: $1${NC}"
 }
 
-# Определяем режим развертывания
-DEPLOY_MODE=${1:-local}
+# Определяем действие
+ACTION=${1:-up}
 
 # Проверяем наличие .env файла
 if [ ! -f ".env" ]; then
-    warning ".env файл не найден, создаем из примера..."
-    if [ -f ".env.example" ]; then
-        cp .env.example .env
-        warning "Скопирован .env.example в .env"
-        warning "Отредактируйте .env файл перед запуском"
-    else
-        error ".env файл не найден и .env.example недоступен"
-        exit 1
-    fi
+    error ".env файл не найден"
+    echo "Создайте .env файл на основе .env.example:"
+    echo "cp .env.example .env"
+    echo "Отредактируйте .env файл с вашими настройками"
+    exit 1
 fi
 
 # Загружаем переменные окружения
 source .env
 
-case $DEPLOY_MODE in
-    local)
-        log "Локальное развертывание..."
+# Проверяем необходимые переменные
+required_vars=("DB_DSN" "BOT_TOKEN" "ADMIN_USERNAME")
+for var in "${required_vars[@]}"; do
+    if [ -z "${!var}" ]; then
+        error "Переменная $var не установлена в .env файле"
+        exit 1
+    fi
+done
 
-        # Проверяем наличие PostgreSQL
-        if ! command -v psql &> /dev/null; then
-            error "PostgreSQL не установлен"
-            echo "Установите PostgreSQL:"
-            echo "  Ubuntu/Debian: sudo apt-get install postgresql postgresql-contrib"
-            echo "  macOS: brew install postgresql"
-            echo "  Windows: https://www.postgresql.org/download/windows/"
-            exit 1
-        fi
+# Проверяем наличие Docker
+if ! command -v docker &> /dev/null; then
+    error "Docker не установлен"
+    echo "Установите Docker: https://docs.docker.com/get-docker/"
+    exit 1
+fi
 
-        # Проверяем подключение к базе данных
-        if [ -z "$DB_DSN" ]; then
-            error "DB_DSN не установлена в .env файле"
-            exit 1
-        fi
+# Проверяем наличие Docker Compose
+if ! command -v docker-compose &> /dev/null; then
+    error "Docker Compose не установлен"
+    echo "Установите Docker Compose: https://docs.docker.com/compose/install/"
+    exit 1
+fi
 
-        # Выполняем миграции
-        log "Выполнение миграций..."
-        ./scripts/migrate.sh up
+# Определяем путь к docker-compose файлу
+COMPOSE_FILE="deployments/docker-compose.yml"
 
-        # Собираем приложение
-        log "Сборка приложения..."
-        ./scripts/build.sh prod
-
-        # Запускаем приложение
-        log "Запуск приложения..."
-        ./bin/gemfactory
-        ;;
-
-    docker)
-        log "Развертывание в Docker..."
-
-        # Проверяем наличие Docker
-        if ! command -v docker &> /dev/null; then
-            error "Docker не установлен"
-            echo "Установите Docker: https://docs.docker.com/get-docker/"
-            exit 1
-        fi
-
-        # Проверяем наличие Docker Compose
-        if ! command -v docker-compose &> /dev/null; then
-            error "Docker Compose не установлен"
-            echo "Установите Docker Compose: https://docs.docker.com/compose/install/"
-            exit 1
-        fi
-
-        # Собираем Docker образ
+case $ACTION in
+    build)
         log "Сборка Docker образа..."
-        docker build -t gemfactory:latest .
-
-        # Запускаем с Docker Compose
-        log "Запуск с Docker Compose..."
-        docker-compose up -d
-
-        # Показываем статус
+        docker-compose -f $COMPOSE_FILE build --no-cache
+        log "Сборка завершена"
+        ;;
+    up)
+        log "Запуск приложения с внешней базой данных..."
+        docker-compose -f $COMPOSE_FILE up -d
+        log "Приложение запущено"
+        info "Проверка статуса:"
+        docker-compose -f $COMPOSE_FILE ps
+        ;;
+    down)
+        log "Остановка приложения..."
+        docker-compose -f $COMPOSE_FILE down
+        log "Приложение остановлено"
+        ;;
+    logs)
+        log "Показ логов приложения..."
+        docker-compose -f $COMPOSE_FILE logs -f app
+        ;;
+    status)
         log "Статус контейнеров:"
-        docker-compose ps
-
-        log "Логи приложения:"
-        docker-compose logs -f app
+        docker-compose -f $COMPOSE_FILE ps
         ;;
-
-    production)
-        log "Продакшен развертывание..."
-
-        # Проверяем наличие необходимых переменных
-        required_vars=("DB_DSN" "BOT_TOKEN" "ADMIN_USERNAME" "SPOTIFY_CLIENT_ID" "SPOTIFY_CLIENT_SECRET" "PLAYLIST_URL")
-        for var in "${required_vars[@]}"; do
-            if [ -z "${!var}" ]; then
-                error "Переменная $var не установлена в .env файле"
-                exit 1
-            fi
-        done
-
-        # Собираем приложение для продакшена
-        log "Сборка приложения для продакшена..."
-        ./scripts/build.sh prod
-
-        # Создаем systemd сервис (если на Linux)
-        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-            log "Создание systemd сервиса..."
-            sudo tee /etc/systemd/system/gemfactory.service > /dev/null <<EOF
-[Unit]
-Description=GemFactory Telegram Bot
-After=network.target
-
-[Service]
-Type=simple
-User=gemfactory
-WorkingDirectory=$(pwd)
-ExecStart=$(pwd)/bin/gemfactory
-Restart=always
-RestartSec=5
-Environment=GIN_MODE=release
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-            # Перезагружаем systemd
-            sudo systemctl daemon-reload
-            sudo systemctl enable gemfactory
-            sudo systemctl start gemfactory
-
-            log "Сервис запущен. Статус:"
-            sudo systemctl status gemfactory
-        else
-            warning "Автоматическое создание сервиса поддерживается только на Linux"
-            info "Запустите приложение вручную: ./bin/gemfactory"
-        fi
+    restart)
+        log "Перезапуск приложения..."
+        docker-compose -f $COMPOSE_FILE restart app
+        log "Приложение перезапущено"
         ;;
-
+    migrate)
+        log "Применение миграций..."
+        docker-compose -f $COMPOSE_FILE exec app migrate -path /app/migrations -database "$DB_DSN" up
+        log "Миграции применены"
+        ;;
+    shell)
+        log "Подключение к контейнеру..."
+        docker-compose -f $COMPOSE_FILE exec app sh
+        ;;
     *)
-        error "Неизвестный режим развертывания: $DEPLOY_MODE"
-        echo "Использование: $0 [local|docker|production]"
+        echo "Использование: $0 [build|up|down|logs|status|restart|migrate|shell]"
         echo ""
-        echo "Режимы развертывания:"
-        echo "  local      - Локальное развертывание (по умолчанию)"
-        echo "  docker     - Развертывание в Docker"
-        echo "  production - Продакшен развертывание"
+        echo "Команды:"
+        echo "  build    - Собрать Docker образ"
+        echo "  up       - Запустить приложение (по умолчанию)"
+        echo "  down     - Остановить приложение"
+        echo "  logs     - Показать логи приложения"
+        echo "  status   - Показать статус контейнеров"
+        echo "  restart  - Перезапустить приложение"
+        echo "  migrate  - Применить миграции вручную"
+        echo "  shell    - Подключиться к контейнеру"
+        echo ""
+        echo "Примеры:"
+        echo "  $0 build"
+        echo "  $0 up"
+        echo "  $0 logs"
+        echo "  $0 migrate"
         exit 1
         ;;
 esac
 
-log "Развертывание завершено успешно!"
+
+

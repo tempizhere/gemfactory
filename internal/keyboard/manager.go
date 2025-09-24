@@ -219,7 +219,6 @@ func (k *Manager) handleMonthCallback(callback *tgbotapi.CallbackQuery) error {
 	msg := tgbotapi.NewMessage(chatID, response)
 	msg.ReplyMarkup = k.GetMainKeyboard()
 
-	// Отправляем сообщение через BotAPI
 	if k.botAPI != nil {
 		err := k.botAPI.SendMessageWithMarkup(chatID, response, msg.ReplyMarkup)
 		if err != nil {
@@ -240,7 +239,6 @@ func (k *Manager) handleShowAllMonthsCallback(callback *tgbotapi.CallbackQuery) 
 
 	k.logger.Debug("Showing all months keyboard")
 
-	// Редактируем сообщение через BotAPI
 	if k.botAPI != nil {
 		err := k.botAPI.EditMessageReplyMarkup(chatID, messageID, k.GetAllMonthsKeyboard())
 		if err != nil {
@@ -261,7 +259,6 @@ func (k *Manager) handleBackToMainCallback(callback *tgbotapi.CallbackQuery) err
 
 	k.logger.Debug("Returning to main keyboard")
 
-	// Редактируем сообщение через BotAPI
 	if k.botAPI != nil {
 		err := k.botAPI.EditMessageReplyMarkup(chatID, messageID, k.GetMainKeyboard())
 		if err != nil {

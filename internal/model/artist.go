@@ -12,7 +12,7 @@ import (
 
 // Artist представляет артиста
 type Artist struct {
-	bun.BaseModel `bun:"table:artists"`
+	bun.BaseModel `bun:"table:gemfactory.artists"`
 
 	ArtistID  int       `bun:"artist_id,pk,autoincrement" json:"artist_id"`
 	Name      string    `bun:"name,unique,notnull" json:"name"`
