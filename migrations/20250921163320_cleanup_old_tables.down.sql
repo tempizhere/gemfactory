@@ -1,0 +1,2 @@
+-- Rollback cleanup old tables
+-- This migration cannot be rolled back as we don't know the structure of the old homework table

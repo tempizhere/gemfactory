@@ -1,0 +1,35 @@
+# Dockerfile для разработки
+FROM golang:1.24.1-alpine
+
+# Устанавливаем необходимые пакеты
+RUN apk add --no-cache git ca-certificates tzdata curl
+
+# Устанавливаем air для hot reload
+RUN go install github.com/cosmtrek/air@latest
+
+# Создаем пользователя для разработки
+RUN adduser -D -g '' devuser
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Копируем go.mod и go.sum
+COPY go.mod go.sum ./
+
+# Загружаем зависимости
+RUN go mod download
+
+# Копируем исходный код
+COPY . .
+
+# Создаем директорию для логов
+RUN mkdir -p /app/logs
+
+# Переключаемся на пользователя разработки
+USER devuser
+
+# Открываем порт для health check
+EXPOSE 8081
+
+# Запускаем приложение с hot reload
+CMD ["air", "-c", ".air.toml"]

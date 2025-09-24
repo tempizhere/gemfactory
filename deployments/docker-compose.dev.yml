@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # PostgreSQL база данных для разработки
+  postgres:
+    image: postgres:15-alpine
+    container_name: gemfactory_postgres_dev
+    environment:
+      POSTGRES_DB: gemfactory_dev
+      POSTGRES_USER: gemfactory
+      POSTGRES_PASSWORD: gemfactory123
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ../migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gemfactory -d gemfactory_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gemfactory_dev_network
+
+  # Redis для разработки
+  redis:
+    image: redis:7-alpine
+    container_name: gemfactory_redis_dev
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_dev_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gemfactory_dev_network
+
+  # Приложение для разработки
+  app:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile.dev
+    container_name: gemfactory_app_dev
+    environment:
+      DB_DSN: postgres://gemfactory:gemfactory123@postgres:5432/gemfactory_dev?sslmode=disable
+      BOT_TOKEN: ${BOT_TOKEN:-your_dev_bot_token}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-your_username}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-your_client_id}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-your_client_secret}
+      PLAYLIST_URL: ${PLAYLIST_URL:-https://open.spotify.com/playlist/your_playlist_id}
+      HEALTH_PORT: 8081
+      LOG_LEVEL: debug
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../logs:/app/logs
+      - ../:/app/src:ro  # Монтируем исходный код для hot reload
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - gemfactory_dev_network
+
+  # pgAdmin для управления базой данных
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: gemfactory_pgadmin_dev
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@gemfactory.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_dev_data:/var/lib/pgadmin
+    networks:
+      - gemfactory_dev_network
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+  pgadmin_dev_data:
+    driver: local
+
+networks:
+  gemfactory_dev_network:
+    driver: bridge

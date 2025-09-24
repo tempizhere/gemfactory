@@ -4,11 +4,10 @@ Gemfactory is a Telegram bot designed to provide users with schedules of K-pop c
 
 ![2025-06-21_01-05](https://github.com/user-attachments/assets/3f1ba3d7-1084-498b-b8e5-18ce49de32a3)
 
-
 ## Features
 
 - **K-pop Release Schedules**: Retrieve upcoming K-pop comebacks and releases for a specific month
-- **Whitelist Filtering**: Filter releases by female (`-gg`) or male (`-mg`) artists using curated whitelists
+- **Whitelist Filtering**: Filter releases by female (`-f`) or male (`-m`) artists using curated whitelists
 - **Dynamic Whitelists**: Admins can manage artist whitelists with commands like `/add_artist` and `/remove_artist`
 - **Interactive Interface**: User-friendly keyboard interface for month selection with current, previous, and next month quick access
 - **Smart Caching**: Efficient caching system with automatic updates and retry mechanisms
@@ -27,10 +26,11 @@ Gemfactory is a Telegram bot designed to provide users with schedules of K-pop c
 
 - `/start`: Start interaction with the bot and display month selection keyboard
 - `/help`: Display available commands and admin contact information
-- `/month [month]`: Show K-pop releases for the specified month (e.g., `/month april`)
-- `/month [month] -gg`: Show releases only for female artists
-- `/month [month] -mg`: Show releases only for male artists
-- `/whitelists`: Display lists of female and male artists in a multi-column format
+- `/month [month]`: Show K-pop releases for the specified month of current year (e.g., `/month april`)
+- `/month [month] [year]`: Show K-pop releases for the specified month and year (e.g., `/month april 2024`)
+- `/month [month] -f`: Show releases only for female artists
+- `/month [month] -m`: Show releases only for male artists
+- `/artists`: Display lists of active female and male artists
 - `/metrics`: Display system metrics including user activity, cache stats, and performance data
 - `/homework`: Get a random homework assignment with a track from the playlist and number of times to listen
 - `/playlist`: Display information about the current playlist (name, track count, owner, description)
@@ -39,11 +39,11 @@ Gemfactory is a Telegram bot designed to provide users with schedules of K-pop c
 
 Whitelist management commands are only available to the user specified in `ADMIN_USERNAME` environment variable:
 
-- `/add_artist [female/male] [artists]`: Add artists to the whitelist
-- `/remove_artist [artists]`: Remove artists from the whitelist
+- `/add_artist [artist_name] [-f|-m]`: Add artist to the whitelist (use -f for female, -m for male)
+- `/remove_artist [artist_name]`: Deactivate artist (exclude from parsing and display)
 - `/clearwhitelists`: Clear all whitelists
 - `/clearcache`: Clear and reinitialize the cache
-- `/export`: Export whitelists
+- `/export`: Export all artists (including inactive)
 
 ## Prerequisites
 
