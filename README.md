@@ -33,7 +33,7 @@ Telegram bot for tracking K-pop releases and homework assignments. Fetches data 
 - `/config_reset` - Reset configuration
 - `/tasks_list` - Show task list
 - `/reload_playlist` - Reload playlist
-- `/parse_releases [month/year]` - Parse releases for specific month/year
+- `/parse [month/year]` - Parse releases for specific month/year
 - `/export` - Export all artists
 
 ### Environment Variables

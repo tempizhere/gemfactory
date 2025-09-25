@@ -313,15 +313,15 @@ func (h *Handlers) ParseReleases(message *tgbotapi.Message) {
 		} else {
 			h.sendMessage(message.Chat.ID, "❌ Слишком много аргументов.\n\n"+
 				"Использование:\n"+
-				"• /parse_releases - парсинг текущего месяца\n"+
-				"• /parse_releases <месяц> - парсинг месяца текущего года\n"+
-				"• /parse_releases <месяц> <год> - парсинг конкретного месяца и года\n"+
-				"• /parse_releases <год> - парсинг всего года\n\n"+
+				"• /parse - парсинг текущего месяца\n"+
+				"• /parse <месяц> - парсинг месяца текущего года\n"+
+				"• /parse <месяц> <год> - парсинг конкретного месяца и года\n"+
+				"• /parse <год> - парсинг всего года\n\n"+
 				"Примеры:\n"+
-				"• /parse_releases\n"+
-				"• /parse_releases september\n"+
-				"• /parse_releases september 2025\n"+
-				"• /parse_releases 2025")
+				"• /parse\n"+
+				"• /parse september\n"+
+				"• /parse september 2025\n"+
+				"• /parse 2025")
 			return
 		}
 
@@ -506,10 +506,10 @@ func (h *Handlers) Admin(message *tgbotapi.Message) {
 		"/config_reset - Сбросить конфигурацию\n" +
 		"/tasks_list - Показать список задач\n" +
 		"/reload_playlist - Перезагрузить плейлист\n" +
-		"/parse_releases [год] - Парсинг релизов\n" +
-		"/parse_releases [месяц] [год] - Парсинг конкретного месяца\n" +
-		"/parse_releases [месяц] - Парсинг месяца текущего года\n" +
-		"/parse_releases - Парсинг текущего месяца\n\n" +
+		"/parse [год] - Парсинг релизов\n" +
+		"/parse [месяц] [год] - Парсинг конкретного месяца\n" +
+		"/parse [месяц] - Парсинг месяца текущего года\n" +
+		"/parse - Парсинг текущего месяца\n\n" +
 		"<b>Примеры множественных артистов:</b>\n" +
 		"/add_artist ablume, aespa, apink -f\n" +
 		"/remove_artist ablume, aespa, apink"

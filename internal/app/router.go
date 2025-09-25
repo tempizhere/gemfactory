@@ -81,7 +81,7 @@ func (r *Router) handleMessage(message *tgbotapi.Message) {
 		"config_reset":    true,
 		"tasks_list":      true,
 		"reload_playlist": true,
-		"parse_releases":  true,
+		"parse":           true,
 	}
 
 	// Проверяем админские права для админских команд
@@ -133,7 +133,7 @@ func (r *Router) handleMessage(message *tgbotapi.Message) {
 		r.handlers.TasksList(message)
 	case "reload_playlist":
 		r.handlers.ReloadPlaylist(message)
-	case "parse_releases":
+	case "parse":
 		r.handlers.ParseReleases(message)
 	default:
 		r.handlers.Unknown(message)

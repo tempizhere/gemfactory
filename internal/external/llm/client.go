@@ -29,11 +29,11 @@ type Config struct {
 
 // MultiReleaseData структура для одного релиза из мультирелиза
 type MultiReleaseData struct {
-	Date       string `json:"date"`        // "11.08.25"
-	Artist     string `json:"artist"`      // "CORTIS"
-	Track      string `json:"track"`       // "GO!"
-	Album      string `json:"album"`       // "1st EP COLOR OUTSIDE THE LINES"
-	YouTubeURL string `json:"youtube_url"` // "https://youtu.be/..."
+	Date       string `json:"date"`    // "11.08.25"
+	Artist     string `json:"artist"`  // "CORTIS"
+	Track      string `json:"track"`   // "GO!"
+	Album      string `json:"album"`   // "1st EP COLOR OUTSIDE THE LINES"
+	YouTubeURL string `json:"youtube"` // "https://youtu.be/..."
 }
 
 // MultiReleaseResponse ответ от LLM с мультирелизами
@@ -116,67 +116,64 @@ func (c *Client) ParseMultiRelease(ctx context.Context, htmlBlock string, month 
 
 // createMultiReleasePrompt создает промпт для парсинга мультирелиза
 func (c *Client) createMultiReleasePrompt(htmlBlocks string, month string) string {
-	return fmt.Sprintf(`Extract ALL releases from HTML blocks. Each block may contain multiple releases. Return ONLY JSON.
-
-IMPORTANT:
-1. ALWAYS preserve YouTube links! If you see <a href="https://youtube.com/..."> or <a href="https://youtu.be/...">, extract the full URL.
-2. Date format: "Month Day, Year" (e.g., "October 8, 2025") - NO day of week like "Wednesday" or "Monday"!
-3. Structure: <event> contains date info, <releases> contains artist and track info
-4. FILTER: Only return releases for %s month - ignore releases from other months
-5. DEDUPLICATION: Remove duplicate releases (same artist + same date + same track)
-
-HTML blocks (separated by semicolons):
-%s
-
-REQUIRED FORMAT (exactly this structure):
-{
-  "releases": [
-    {
-      "date": "August 11, 2025",
-      "artist": "CORTIS",
-      "track": "GO!",
-      "album": "1st EP COLOR OUTSIDE THE LINES",
-      "youtube_url": "https://youtu.be/..."
-    }
-  ]
-}
+	return fmt.Sprintf(`Extract release data from HTML blocks into JSON array. Each <event> contains <date>, <artist>, <need_unparse>.
 
 CRITICAL RULES:
-- HTML blocks are separated by semicolons (;)
-- Each HTML block may contain MULTIPLE releases (e.g., one artist with several release dates)
-- Extract EVERY release as a separate entry in the releases array
-- Look for multiple dates in the same block (e.g., "January 15, 2025", "January 20, 2025", "January 25, 2025")
-- Look for multiple tracks in the same block (marked with "• " or "– ")
-- Each date + track combination = separate release entry
-- If multiple tracks have the same date, create separate entries for each track
-   - Date format: "January 1, 2025" (full month name, day, year) - NO day of week (Monday, Tuesday, etc.)
-- Artist: exact name (first word/name in the block)
-- Track: extract from "Title Track:" field, track names after dates, or bullet points (• / –)
-- Album: extract from "Album:" field if available, empty string if not
-   - YouTube URL: extract from <a href="https://youtu.be/..."> or <a href="https://www.youtube.com/..."> links, even if the <a> tag is empty (no text content), ALWAYS extract the full URL if found, never leave empty if YouTube link exists
+1. MONTH FILTER: Only return releases for %s month - ignore ALL other months.
+2. JSON ONLY: Return valid JSON array, no explanations, ASCII characters only.
+3. YOUTUBE LINKS: Preserve all YouTube URLs, never mix between different artists/blocks.
+4. INDEPENDENT PROCESSING: Each <event> block must be processed separately - NEVER copy data between different artists.
+5. COMPLETE EXTRACTION: For multi-date blocks, extract ALL releases that match the target month.
 
-DATE RULES:
-- If <releases> contains specific dates (e.g., "January 15, 2025", "January 20, 2025"), use <event> date
-- If <releases> has NO specific dates, use the date from <event> for ALL releases in that block
-- If <releases> contains multiple dates, extract release only for date from <event>
-- YouTube links always come AFTER the track name in the same line
+DATE ASSIGNMENT RULES:
+- If <need_unparse> contains multiple dates: extract releases ONLY for dates matching <date> tag
+- If <need_unparse> contains NO dates but multiple releases: assign <date> to ALL releases
+- If multiple dates in <need_unparse>: releases may have NO YouTube links (don't borrow links from other releases)
 
-DEDUPLICATION RULES:
-- If you find multiple releases with the same artist + same date + same track, keep only ONE
-- Prefer releases with YouTube URLs over those without
-- If multiple releases have the same data, keep the first one found
+MULTI-TRACK PROCESSING:
+- Multi-track releases: create separate releases for each track under "Title Track:" with bullet points ("–")
+- Title Track lists: if "Title Track:" contains semicolon-separated tracks ("Track1"; "Track2"), create separate releases for each
+- Album: extract from "Album:" field, otherwise empty string
+- Track: clean names after "–" or "Title Track", remove 'MV', 'Title Track' (keep 'feat')
+
+CRITICAL: Each artist block must be processed independently - NEVER copy track names between different artists!
+
+ALBUM-ONLY RELEASES:
+- If only "Album:" present (no "Title Track:"): use YouTube link text as track name
+- Example: "Album: Single – <Club Icarus Remix>" + "Music Video: <a href="...">YouTube</a>" → track: "YouTube"
+
+OUTPUT FORMAT:
+[
+  {"artist": "NAME", "date": "DD.MM.YY", "track": "NAME", "album": "NAME", "youtube": "URL"},
+  ...
+]
 
 EXAMPLES:
-- Block with 1 release: 1 entry in releases array
-- Block with multiple releases: multiple entries in releases array (one per date+track)
-- Block with multiple dates: create separate entry for each date+track combination
 
-DATE EXAMPLES:
-- <event>January 15, 2025</event><releases>Artist • Track 1 • Track 2</releases> → 2 releases with date "January 15, 2025"
-- <event>January 15, 2025</event><releases>Artist • January 15: Track 1 • January 25: Track 2</releases> → 1 release with date "January 15, 2025"
-- <event>January 15, 2025 at 6 PM KST</event><releases>Artist • Track 1</releases> → 1 release with date "January 15, 2025"
+Multiple dates in <need_unparse> (extract only matching <date>, no borrowed links):
+<event><date>October 20, 2025</date><artist>Artist A</artist><need_unparse>September 15, 2025: Track 1: <a href="https://youtu.be/abc123">YouTube</a>
+October 20, 2025: Track 2: Album Release</need_unparse></event>
+→ [{"artist": "Artist A", "date": "20.10.25", "track": "Track 2", "album": "", "youtube": ""}]
 
-Return ONLY valid JSON, no explanations, no markdown.`, month, htmlBlocks)
+Multiple releases without dates (assign <date> to all) in <need_unparse>:
+<event><date>August 13, 2025</date><artist>Artist B</artist><need_unparse>Title Track: – "Song 1" – "Song 2"
+Album: Studio Album</need_unparse></event>
+→ [{"artist": "Artist B", "date": "13.08.25", "track": "Song 1", "album": "Studio Album", "youtube": ""}, {"artist": "Artist B", "date": "13.08.25", "track": "Song 2", "album": "Studio Album", "youtube": ""}]
+
+Album-only release without Title Track in <need_unparse>:
+<event><date>August 13, 2025</date><artist>ARTIST NAME</artist><need_unparse>Album: ALBUM NAME
+Music Video: <a href="https://youtube.com/playlist">YouTube</a></need_unparse></event>
+→ [{"artist": "ARTIST NAME", "date": "13.08.25", "track": "YouTube", "album": "ALBUM NAME", "youtube": "https://youtube.com/playlist"}]
+
+Multi-date releases (extract ALL matching dates) in <need_unparse>:
+<event><date>August 11, 2025</date><artist>ARTIST C</artist><need_unparse>August 11, 2025: Track 1: <a href="https://youtu.be/abc">YouTube</a>
+August 18, 2025: Track 2: <a href="https://youtu.be/def">YouTube</a>
+August 22, 2025: Track 3: <a href="https://youtu.be/ghi">YouTube</a>
+Album: Studio Album</need_unparse></event>
+→ [{"artist": "ARTIST C", "date": "11.08.25", "track": "Track 1", "album": "Studio Album", "youtube": "https://youtu.be/abc"}, {"artist": "ARTIST C", "date": "18.08.25", "track": "Track 2", "album": "Studio Album", "youtube": "https://youtu.be/def"}, {"artist": "ARTIST C", "date": "22.08.25", "track": "Track 3", "album": "Studio Album", "youtube": "https://youtu.be/ghi"}]
+
+HTML blocks:
+%s`, month, htmlBlocks)
 }
 
 // sendRequest отправляет запрос к LLM API
@@ -186,7 +183,7 @@ func (c *Client) sendRequest(ctx context.Context, prompt string) (string, error)
 		Messages: []Message{
 			{
 				Role:    "system",
-				Content: "You are a JSON extraction tool. Extract ALL releases from cleaned text blocks and return ONLY valid JSON in this exact format:\n\n{\n  \"releases\": [\n    {\n      \"date\": \"August 11, 2025\",\n      \"artist\": \"CORTIS\",\n      \"track\": \"GO!\",\n      \"album\": \"1st EP COLOR OUTSIDE THE LINES\",\n      \"youtube_url\": \"https://youtu.be/...\"\n    }\n  ]\n}\n\nReturn ONLY JSON, no explanations, no reasoning, no markdown.",
+				Content: "You are a JSON extraction tool. Extract ALL releases from cleaned text blocks and return ONLY valid JSON in this exact format:\n\n{\n  \"releases\": [\n    {\n      \"date\": \"August 11, 2025\",\n      \"artist\": \"CORTIS\",\n      \"track\": \"GO!\",\n      \"album\": \"1st EP COLOR OUTSIDE THE LINES\",\n      \"youtube_url\": \"https://youtu.be/...\"\n    }\n  ]\n}\n\nCRITICAL: Return ONLY valid JSON with standard ASCII characters. No explanations, no reasoning, no markdown, no code blocks, no special Unicode characters like â, é, ñ, etc. Use only standard JSON format.",
 			},
 			{
 				Role:    "user",
@@ -270,38 +267,43 @@ func (c *Client) parseResponse(response string) (*MultiReleaseResponse, error) {
 		}
 	}
 
-	// Ищем последний валидный JSON объект
-	lastBrace := bytes.LastIndex([]byte(cleanedResponse), []byte("}"))
-	if lastBrace != -1 {
-		// Ищем соответствующую открывающую скобку {
-		braceCount := 0
-		startBrace := -1
-		for i := lastBrace; i >= 0; i-- {
-			if cleanedResponse[i] == '}' {
-				braceCount++
-			} else if cleanedResponse[i] == '{' {
-				braceCount--
-				if braceCount == 0 {
-					startBrace = i
+	// Ищем последний валидный JSON массив
+	lastBracket := bytes.LastIndex([]byte(cleanedResponse), []byte("]"))
+	if lastBracket != -1 {
+		// Ищем соответствующую открывающую скобку [
+		bracketCount := 0
+		startBracket := -1
+		for i := lastBracket; i >= 0; i-- {
+			if cleanedResponse[i] == ']' {
+				bracketCount++
+			} else if cleanedResponse[i] == '[' {
+				bracketCount--
+				if bracketCount == 0 {
+					startBracket = i
 					break
 				}
 			}
 		}
 
-		if startBrace != -1 {
-			cleanedResponse = cleanedResponse[startBrace : lastBrace+1]
+		if startBracket != -1 {
+			cleanedResponse = cleanedResponse[startBracket : lastBracket+1]
 		}
 	}
 
 	c.logger.Info("Cleaned response for parsing", zap.String("cleaned", cleanedResponse))
 
-	var multiReleaseResponse MultiReleaseResponse
-	if err := json.Unmarshal([]byte(cleanedResponse), &multiReleaseResponse); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal multi-release response: %w", err)
+	// Парсим как массив объектов напрямую
+	var releases []MultiReleaseData
+	if err := json.Unmarshal([]byte(cleanedResponse), &releases); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal releases array: %w", err)
+	}
+
+	multiReleaseResponse := &MultiReleaseResponse{
+		Releases: releases,
 	}
 
 	c.logger.Info("Successfully parsed multi-release response",
 		zap.Int("releases_count", len(multiReleaseResponse.Releases)))
 
-	return &multiReleaseResponse, nil
+	return multiReleaseResponse, nil
 }

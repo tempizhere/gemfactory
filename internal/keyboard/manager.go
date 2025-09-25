@@ -201,13 +201,21 @@ func (k *Manager) handleMonthCallback(callback *tgbotapi.CallbackQuery) error {
 	chatID := callback.Message.Chat.ID
 
 	month := strings.TrimPrefix(data, "month_")
-	k.logger.Debug("Processing month callback", zap.String("month", month))
+	currentYear := time.Now().Year()
 
-	// Получаем релизы за месяц
-	response, err := k.services.Release.GetReleasesForMonth(month, false, false)
+	// Формируем строку месяца с текущим годом
+	monthWithYear := fmt.Sprintf("%s-%d", month, currentYear)
+
+	k.logger.Debug("Processing month callback",
+		zap.String("month", month),
+		zap.Int("year", currentYear),
+		zap.String("month_with_year", monthWithYear))
+
+	// Получаем релизы за месяц текущего года
+	response, err := k.services.Release.GetReleasesForMonth(monthWithYear, false, false)
 	if err != nil {
-		k.logger.Error("Failed to get releases for month", zap.String("month", month), zap.Error(err))
-		return fmt.Errorf("failed to get releases for month %s: %w", month, err)
+		k.logger.Error("Failed to get releases for month", zap.String("month", monthWithYear), zap.Error(err))
+		return fmt.Errorf("failed to get releases for month %s: %w", monthWithYear, err)
 	}
 
 	if response == "" {

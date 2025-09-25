@@ -117,7 +117,14 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 
 	// Форматируем ответ
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("🎵 Релизы за %s:\n\n", month))
+
+	// Переводим месяц на русский и формируем заголовок
+	russianMonth := translateMonthToRussian(month)
+	if year > 0 {
+		result.WriteString(fmt.Sprintf("🎵 Релизы за %s %d:\n\n", russianMonth, year))
+	} else {
+		result.WriteString(fmt.Sprintf("🎵 Релизы за %s:\n\n", russianMonth))
+	}
 
 	if len(releases) == 0 {
 		result.WriteString("Релизы не найдены")
@@ -411,7 +418,7 @@ func (s *ReleaseService) ParseReleasesForMonth(ctx context.Context, month string
 
 	s.logger.Info("Parsed releases from scraper", zap.Int("count", len(scrapedReleases)))
 
-	// Конвертируем и сохраняем релизы
+	// Конвертируем и сохраняем релизы только для существующих артистов
 	savedCount := 0
 	for _, scrapedRelease := range scrapedReleases {
 		artist, err := s.artistRepo.GetByName(scrapedRelease.Artist)
@@ -422,44 +429,30 @@ func (s *ReleaseService) ParseReleasesForMonth(ctx context.Context, month string
 			continue
 		}
 
-		// Если артист не найден, создаем нового
+		// Если артист не найден в базе, пропускаем релиз
 		if artist == nil {
-			s.logger.Info("Artist not found in database, creating new",
-				zap.String("artist", scrapedRelease.Artist))
+			s.logger.Info("Artist not found in database, skipping release",
+				zap.String("artist", scrapedRelease.Artist),
+				zap.String("track", scrapedRelease.TitleTrack),
+				zap.String("date", scrapedRelease.Date))
+			continue
+		}
 
-			newArtist := &model.Artist{
-				Name:   scrapedRelease.Artist,
-				Gender: model.GenderMixed, // По умолчанию mixed
-			}
+		// Обновляем имя артиста если оно изменилось
+		if artist.Name != scrapedRelease.Artist {
+			s.logger.Info("Updating artist name",
+				zap.String("old_name", artist.Name),
+				zap.String("new_name", scrapedRelease.Artist))
 
-			err = s.artistRepo.Create(newArtist)
+			artist.Name = scrapedRelease.Artist
+			err = s.artistRepo.Update(artist)
 			if err != nil {
-				s.logger.Warn("Failed to create new artist",
+				s.logger.Warn("Failed to update artist name",
 					zap.String("artist", scrapedRelease.Artist),
 					zap.Error(err))
-				continue
-			}
-
-			artist = newArtist
-			s.logger.Info("Created new artist",
-				zap.String("artist", scrapedRelease.Artist),
-				zap.String("gender", artist.Gender.String()))
-		} else {
-			if artist.Name != scrapedRelease.Artist {
-				s.logger.Info("Updating artist name",
-					zap.String("old_name", artist.Name),
-					zap.String("new_name", scrapedRelease.Artist))
-
-				artist.Name = scrapedRelease.Artist
-				err = s.artistRepo.Update(artist)
-				if err != nil {
-					s.logger.Warn("Failed to update artist name",
-						zap.String("artist", scrapedRelease.Artist),
-						zap.Error(err))
-				} else {
-					s.logger.Info("Successfully updated artist name",
-						zap.String("artist", scrapedRelease.Artist))
-				}
+			} else {
+				s.logger.Info("Successfully updated artist name",
+					zap.String("artist", scrapedRelease.Artist))
 			}
 		}
 
@@ -554,4 +547,29 @@ func (s *ReleaseService) GetReleasesByArtistName(artistName string) (string, err
 	}
 
 	return result.String(), nil
+}
+
+// translateMonthToRussian переводит английское название месяца на русский
+func translateMonthToRussian(month string) string {
+	monthMap := map[string]string{
+		"january":   "январь",
+		"february":  "февраль",
+		"march":     "март",
+		"april":     "апрель",
+		"may":       "май",
+		"june":      "июнь",
+		"july":      "июль",
+		"august":    "август",
+		"september": "сентябрь",
+		"october":   "октябрь",
+		"november":  "ноябрь",
+		"december":  "декабрь",
+	}
+
+	if russianMonth, exists := monthMap[strings.ToLower(month)]; exists {
+		return russianMonth
+	}
+
+	// Если месяц не найден, возвращаем оригинальное название
+	return month
 }

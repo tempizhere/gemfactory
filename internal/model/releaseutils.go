@@ -409,23 +409,43 @@ func (u *ReleaseUtils) FormatReleaseForTelegram(release *Release) string {
 	return result
 }
 
-// FormatDateWithYear форматирует дату с указанным годом
+// FormatDateWithYear форматирует дату в формате DD.MM.YY
 func FormatDateWithYear(dateStr string, year string, logger interface{}) (string, error) {
-	// Парсим дату в формате "Month Day, Year" (например, "October 8, 2025")
-	parsedDate, err := time.Parse("January 2, 2006", dateStr)
+	// Парсим дату в формате DD.MM.YY (например, "30.07.25")
+	if !strings.Contains(dateStr, ".") || len(strings.Split(dateStr, ".")) != 3 {
+		return "", fmt.Errorf("invalid date format, expected DD.MM.YY: %s", dateStr)
+	}
+
+	parts := strings.Split(dateStr, ".")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid date format, expected DD.MM.YY: %s", dateStr)
+	}
+
+	day := parts[0]
+	month := parts[1]
+	yearFromDate := parts[2]
+
+	// Если год в дате двухзначный, используем его, иначе используем переданный год
+	if len(yearFromDate) == 2 {
+		yearInt, err := strconv.Atoi(yearFromDate)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse year from date: %w", err)
+		}
+		// Предполагаем, что годы 00-30 это 2000-2030, а 31-99 это 1931-1999
+		if yearInt <= 30 {
+			year = fmt.Sprintf("20%s", yearFromDate)
+		} else {
+			year = fmt.Sprintf("19%s", yearFromDate)
+		}
+	} else {
+		year = yearFromDate
+	}
+
+	// Формируем дату в формате "2006-01-02"
+	dateStr = fmt.Sprintf("%s-%s-%s", year, month, day)
+	parsedDate, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
-		// Пробуем парсить без года
-		parsedDate, err = time.Parse("January 2", dateStr)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse date: %w", err)
-		}
-		// Парсим год из строки
-		yearInt, err := strconv.Atoi(year)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse year: %w", err)
-		}
-		// Устанавливаем указанный год
-		parsedDate = time.Date(yearInt, parsedDate.Month(), parsedDate.Day(), 0, 0, 0, 0, time.UTC)
+		return "", fmt.Errorf("failed to parse date: %w", err)
 	}
 
 	// Форматируем в DD.MM.YY

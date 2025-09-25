@@ -143,10 +143,12 @@ func (e *ParseReleaseTaskExecutor) Execute(ctx context.Context, task *model.Task
 	}
 
 	totalSaved := 0
-	for _, month := range months {
+	for i, month := range months {
 		e.logger.Info("Parsing releases for month",
 			zap.String("task_name", task.Name),
-			zap.String("month", month))
+			zap.String("month", month),
+			zap.Int("month_index", i+1),
+			zap.Int("total_months", len(months)))
 
 		count, err := e.releaseService.ParseReleasesForMonth(ctx, month)
 		if err != nil {
@@ -160,6 +162,21 @@ func (e *ParseReleaseTaskExecutor) Execute(ctx context.Context, task *model.Task
 		e.logger.Info("Parsed releases for month",
 			zap.String("month", month),
 			zap.Int("count", count))
+
+		// Добавляем паузу между месяцами (кроме последнего)
+		if i < len(months)-1 {
+			e.logger.Info("Waiting before processing next month",
+				zap.String("current_month", month),
+				zap.Duration("delay", 30*time.Second))
+
+			select {
+			case <-ctx.Done():
+				e.logger.Info("Context cancelled during delay between months")
+				return ctx.Err()
+			case <-time.After(5 * time.Second):
+				// Продолжаем к следующему месяцу
+			}
+		}
 	}
 
 	e.logger.Info("Task completed",

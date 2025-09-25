@@ -3,15 +3,33 @@ package scraper
 import (
 	"context"
 	"fmt"
+	"html"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"gemfactory/internal/model"
+
 	"github.com/gocolly/colly/v2"
 	"go.uber.org/zap"
 )
+
+// ParsedRelease представляет результат парсинга одного релиза
+type ParsedRelease struct {
+	Artist     string `json:"artist"`
+	Date       string `json:"date"`
+	Track      string `json:"track"`
+	Album      string `json:"album"`
+	YouTubeURL string `json:"youtube"`
+}
+
+// ParseResult представляет результат парсинга блока
+type ParseResult struct {
+	Releases []ParsedRelease `json:"releases"`
+	Success  bool            `json:"success"`
+	Error    string          `json:"error,omitempty"`
+}
 
 // cleanYouTubeURL очищает YouTube URL от лишних параметров
 func cleanYouTubeURL(url string) string {
@@ -21,7 +39,12 @@ func cleanYouTubeURL(url string) string {
 	url = regexp.MustCompile(`\?t=[^&]*`).ReplaceAllString(url, "")
 	url = regexp.MustCompile(`&t=[^&]*`).ReplaceAllString(url, "")
 	url = regexp.MustCompile(`\?list=[^&]*`).ReplaceAllString(url, "")
-	url = regexp.MustCompile(`&list=[^&]*`).ReplaceAllString(url, "")
+	url = regexp.MustCompile(`\?v=[^&]*`).ReplaceAllString(url, "")
+	url = regexp.MustCompile(`&v=[^&]*`).ReplaceAllString(url, "")
+	url = regexp.MustCompile(`\?feature=[^&]*`).ReplaceAllString(url, "")
+	url = regexp.MustCompile(`&feature=[^&]*`).ReplaceAllString(url, "")
+	url = regexp.MustCompile(`\?index=[^&]*`).ReplaceAllString(url, "")
+	url = regexp.MustCompile(`&index=[^&]*`).ReplaceAllString(url, "")
 
 	// Удаляем оставшиеся пустые параметры
 	url = regexp.MustCompile(`\?&`).ReplaceAllString(url, "?")
@@ -30,90 +53,592 @@ func cleanYouTubeURL(url string) string {
 	return url
 }
 
-// cleanHTMLBlock очищает HTML блок по описанному паттерну
-func cleanHTMLBlock(html string) string {
-	// 1. Удаляем все атрибуты из тегов
-	html = regexp.MustCompile(`\s+(class|style|data-[^=]+)="[^"]*"`).ReplaceAllString(html, "")
+// cleanHTMLBlock очищает HTML блок - извлекает дату, артиста и релизы в формате <event>
+func cleanHTMLBlock(htmlStr string) string {
+	// 1. Извлекаем дату
+	dateRe := regexp.MustCompile(`<mark[^>]*>([^<]+)</mark>`)
+	dateMatch := dateRe.FindStringSubmatch(htmlStr)
+	date := ""
+	if len(dateMatch) > 1 {
+		date = strings.TrimSpace(dateMatch[1])
+	}
 
-	// 2. Обрабатываем ссылки (сохраняем YouTube с названиями треков) - ДО удаления span тегов
-	allLinksRegex := regexp.MustCompile(`<a[^>]*href="[^"]*"[^>]*>.*?</a>`)
-	html = allLinksRegex.ReplaceAllStringFunc(html, func(match string) string {
-		// Проверяем, является ли это YouTube ссылкой
-		if strings.Contains(match, "youtube.com") || strings.Contains(match, "youtu.be") {
-			// Извлекаем URL и текст из YouTube ссылки
-			urlRegex := regexp.MustCompile(`href="(https?://[^"]*)"`)
-			urlMatch := urlRegex.FindStringSubmatch(match)
+	// 2. Извлекаем артиста (без скобок)
+	artistRe := regexp.MustCompile(`<strong><mark[^>]*>([^<]+)</mark></strong>|<strong>([^<]+)</strong>`)
+	artistMatch := artistRe.FindStringSubmatch(htmlStr)
+	artist := ""
+	if len(artistMatch) > 1 {
+		artist = artistMatch[1]
+		if artist == "" && len(artistMatch) > 2 {
+			artist = artistMatch[2]
+		}
+		artist = regexp.MustCompile(`\s*\(.*?\)\s*`).ReplaceAllString(artist, "")
+		artist = strings.TrimSpace(artist)
+	}
 
-			// Извлекаем текст из ссылки (название трека)
-			textRegex := regexp.MustCompile(`>([^<]+)<`)
-			textMatch := textRegex.FindStringSubmatch(match)
+	// 3. Извлекаем релизы
+	releasesRe := regexp.MustCompile(`<td class="has-text-align-left"[^>]*>(.*?)</td>`)
+	releasesMatch := releasesRe.FindStringSubmatch(htmlStr)
+	releases := ""
+	if len(releasesMatch) > 1 {
+		releases = releasesMatch[1]
 
-			if len(urlMatch) > 1 {
-				url := cleanYouTubeURL(urlMatch[1]) // Очищаем URL от параметров
-				text := ""
-				if len(textMatch) > 1 {
-					text = strings.TrimSpace(textMatch[1])
-				}
-				return fmt.Sprintf(`<a href="%s">%s</a>`, url, text)
+		// Убираем Teaser Poster и всё после него
+		releases = regexp.MustCompile(`(?is)Teaser Poster:.*`).ReplaceAllString(releases, "")
+
+		// Декодируем HTML сущности
+		releases = html.UnescapeString(releases)
+
+		// Заменяем <br> на перенос строки
+		releases = regexp.MustCompile(`(?i)<br\s*/?>`).ReplaceAllString(releases, "\n")
+
+		// Убираем strong/mark/span
+		releases = regexp.MustCompile(`</?(strong|mark|span)[^>]*>`).ReplaceAllString(releases, "")
+
+		// Сохраняем <a> ссылки и теги, которые могут быть частью названий, убираем остальное
+		releases = regexp.MustCompile(`</?[^>]+>`).ReplaceAllStringFunc(releases, func(tag string) string {
+			if strings.HasPrefix(tag, "<a ") || strings.HasPrefix(tag, "</a>") {
+				return tag
+			}
+			// Сохраняем теги, которые могут быть частью названий (например, <unevermet>, <Club Icarus Remix>)
+			// Исключаем только теги с атрибутами (содержащие =)
+			if strings.HasPrefix(tag, "<") && !strings.Contains(tag, "=") {
+				return tag
+			}
+			return ""
+		})
+
+		// Очищаем YouTube ссылки от tracking параметров
+		releases = regexp.MustCompile(`<a href="([^"]*(?:youtu\.be|youtube\.com)[^"]*)"[^>]*>`).ReplaceAllStringFunc(releases, func(match string) string {
+			hrefRegex := regexp.MustCompile(`href="([^"]*)"`)
+			hrefMatch := hrefRegex.FindStringSubmatch(match)
+			if len(hrefMatch) > 1 {
+				cleanedURL := cleanYouTubeURL(hrefMatch[1])
+				return strings.Replace(match, hrefMatch[1], cleanedURL, 1)
 			}
 			return match
+		})
+
+		// Убираем лишние пробелы
+		releases = strings.TrimSpace(releases)
+	}
+
+	// Формируем финальный результат
+	result := fmt.Sprintf(
+		"<event>\n<date>%s</date>\n<artist>%s</artist>\n<need_unparse>\n%s\n</need_unparse>\n</event>",
+		date, artist, releases,
+	)
+
+	return result
+}
+
+// smartParseBlock пытается парсить блок самостоятельно, если не получается - возвращает ошибку
+func smartParseBlock(htmlStr, month, year string, logger *zap.Logger) (*ParseResult, error) {
+	// Проверяем, является ли случай простым
+	if !IsSimpleCase(htmlStr, logger) {
+		return &ParseResult{
+			Releases: []ParsedRelease{},
+			Success:  false,
+			Error:    "Complex case - multiple dates or tracks detected",
+		}, nil
+	}
+
+	// Извлекаем данные для простого случая
+	return ExtractSimpleRelease(htmlStr, month, year, logger)
+}
+
+// isSimpleCase проверяет, является ли блок простым случаем для локального парсинга
+func IsSimpleCase(htmlStr string, logger *zap.Logger) bool {
+	// 1. Проверяем количество дат в блоке
+	dateCount := countDatesInBlock(htmlStr)
+	logger.Debug("Date count check", zap.Int("count", dateCount))
+	if dateCount > 1 {
+		logger.Debug("Multiple dates detected", zap.Int("count", dateCount))
+		return false // Множественные даты - сложный случай
+	}
+
+	// 2. Проверяем три простых случая:
+	// - Title Track + Album
+	// - Title Track + OST
+	// - Album, без Title Track и без YouTube ссылок
+
+	hasTitleTrack := regexp.MustCompile(`(?i)title track:\s*[^\n]+`).MatchString(htmlStr)
+	hasAlbum := regexp.MustCompile(`(?i)album:\s*[^\n]+`).MatchString(htmlStr)
+	hasOST := regexp.MustCompile(`(?i)ost:\s*[^\n]+`).MatchString(htmlStr)
+	hasYouTube := regexp.MustCompile(`https://(?:youtu\.be/|youtube\.com/)[^\s"']+`).MatchString(htmlStr)
+
+	logger.Debug("Simple case checks",
+		zap.Bool("has_title_track", hasTitleTrack),
+		zap.Bool("has_album", hasAlbum),
+		zap.Bool("has_ost", hasOST),
+		zap.Bool("has_youtube", hasYouTube))
+
+	// Случай 1: Title Track + Album
+	if hasTitleTrack && hasAlbum {
+		logger.Debug("Simple case: Title Track + Album")
+		return true
+	}
+
+	// Случай 2: Title Track + OST
+	if hasTitleTrack && hasOST {
+		logger.Debug("Simple case: Title Track + OST")
+		return true
+	}
+
+	// Случай 3: Album, без Title Track и без YouTube ссылок
+	if hasAlbum && !hasTitleTrack && !hasYouTube {
+		logger.Debug("Simple case: Album only, no Title Track, no YouTube")
+		return true
+	}
+
+	logger.Debug("Complex case detected")
+	return false // Сложный случай
+}
+
+// countDatesInBlock подсчитывает количество дат в блоке
+func countDatesInBlock(htmlStr string) int {
+	// 1. Ищем даты в <date> тегах (для очищенных блоков)
+	dateTagRegex := regexp.MustCompile(`<date>([^<]+)</date>`)
+	dateTagMatches := dateTagRegex.FindAllString(htmlStr, -1)
+	if len(dateTagMatches) > 0 {
+		// Также считаем даты в <need_unparse> теге, но исключаем справочные даты
+		needUnparseRegex := regexp.MustCompile(`<need_unparse>([\s\S]*?)</need_unparse>`)
+		needUnparseMatches := needUnparseRegex.FindAllStringSubmatch(htmlStr, -1)
+
+		totalDates := len(dateTagMatches)
+		for _, match := range needUnparseMatches {
+			if len(match) > 1 {
+				content := match[1]
+				// Ищем даты в формате "Month Day, Year", но исключаем справочные даты
+				datePattern := `\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},\s+\d{4}\b`
+				re := regexp.MustCompile(datePattern)
+				allDates := re.FindAllString(strings.ToLower(content), -1)
+
+				// Исключаем даты в контексте "Album Release:", "Digital Release:", "CD Release:" и т.д.
+				referenceDatePattern := `(?i)(album release|digital release|cd release|mv release|pre-release|ost release):\s*[^:]*\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},\s+\d{4}\b`
+				referenceRegex := regexp.MustCompile(referenceDatePattern)
+				referenceMatches := referenceRegex.FindAllString(strings.ToLower(content), -1)
+
+				// Подсчитываем только даты, которые НЕ являются справочными
+				referenceDates := make(map[string]bool)
+				for _, refMatch := range referenceMatches {
+					// Извлекаем дату из справочного контекста
+					dateInRef := re.FindString(refMatch)
+					if dateInRef != "" {
+						referenceDates[dateInRef] = true
+					}
+				}
+
+				// Считаем только даты, которые не являются справочными
+				for _, date := range allDates {
+					if !referenceDates[date] {
+						totalDates++
+					}
+				}
+			}
 		}
-		return "" // Удаляем все остальные ссылки
-	})
+		return totalDates
+	}
 
-	// 3. Удаляем теги форматирования, оставляя содержимое
-	html = regexp.MustCompile(`</?(mark|strong|span)[^>]*>`).ReplaceAllString(html, "")
+	// 2. Ищем даты в формате "Month Day, Year" или "YYYY.MM.DD" (для оригинальных блоков)
+	datePatterns := []string{
+		`\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},\s+\d{4}\b`,
+		`\b\d{4}\.\d{2}\.\d{2}\b`,
+	}
 
-	// Удаляем текст после артиста в скобках
-	html = regexp.MustCompile(`\s*\([^)]*\)`).ReplaceAllString(html, "")
+	count := 0
+	lowerHTML := strings.ToLower(htmlStr)
 
-	// 5. Заменяем HTML entities
-	html = strings.ReplaceAll(html, "&nbsp;", " ")
-	html = strings.ReplaceAll(html, "&lt;", "<")
-	html = strings.ReplaceAll(html, "&gt;", ">")
-	html = strings.ReplaceAll(html, "&amp;", "&")
-	html = strings.ReplaceAll(html, "&quot;", "\"")
-	html = strings.ReplaceAll(html, "&#39;", "'")
+	for _, pattern := range datePatterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindAllString(lowerHTML, -1)
+		count += len(matches)
+	}
 
-	// 6. Заменяем <br> на переносы строк для лучшей структуры
-	html = regexp.MustCompile(`<br\s*/?>`).ReplaceAllString(html, "\n")
+	return count
+}
 
-	// 7. Улучшаем структуру для множественных треков
-	// Заменяем "– " на "• " для лучшего понимания списков
-	html = regexp.MustCompile(`\n\s*–\s*`).ReplaceAllString(html, "\n• ")
+// countTracksInBlock подсчитывает количество треков в блоке
+func countTracksInBlock(htmlStr string) int {
+	// Ищем только треки после "Title Track:" - это основной индикатор
+	titleTrackRegex := regexp.MustCompile(`(?i)title track:\s*[^\n]+`)
+	matches := titleTrackRegex.FindAllString(htmlStr, -1)
 
-	// 8. Удаляем дни недели из первого <td>
-	html = regexp.MustCompile(`<td>([^<]*)(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)([^<]*)</td>`).ReplaceAllStringFunc(html, func(match string) string {
-		// Извлекаем содержимое первого <td> и удаляем день недели
-		tdRegex := regexp.MustCompile(`<td>([^<]*)(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)([^<]*)</td>`)
-		tdMatch := tdRegex.FindStringSubmatch(match)
-		if len(tdMatch) >= 4 {
-			beforeDay := strings.TrimSpace(tdMatch[1])
-			afterDay := strings.TrimSpace(tdMatch[3])
-			content := strings.TrimSpace(beforeDay + " " + afterDay)
-			return fmt.Sprintf(`<event>%s</event>`, content)
+	// Если есть Title Track, считаем это одним треком
+	if len(matches) > 0 {
+		return 1
+	}
+
+	// Если нет Title Track, но есть Album: - проверяем, нет ли YouTube ссылок
+	albumRegex := regexp.MustCompile(`(?i)album:\s*[^\n]+`)
+	if albumRegex.MatchString(htmlStr) {
+		// Проверяем, есть ли YouTube ссылки
+		youtubeRegex := regexp.MustCompile(`https://(?:youtu\.be/|youtube\.com/)[^\s"']+`)
+		if !youtubeRegex.MatchString(htmlStr) {
+			return 0 // Простой случай - только альбом без трека и без YouTube ссылок
 		}
-		return match
-	})
+		// Если есть YouTube ссылки, это может быть сложный случай
+		return 1
+	}
 
-	// 9. Переименовываем теги для лучшей структуры
-	html = regexp.MustCompile(`<td>([^<]*)</td><td>([^<]*)</td>`).ReplaceAllStringFunc(html, func(match string) string {
-		// Извлекаем содержимое обоих <td>
-		tdRegex := regexp.MustCompile(`<td>([^<]*)</td><td>([^<]*)</td>`)
-		tdMatch := tdRegex.FindStringSubmatch(match)
-		if len(tdMatch) >= 3 {
-			eventContent := strings.TrimSpace(tdMatch[1])
-			releasesContent := strings.TrimSpace(tdMatch[2])
-			return fmt.Sprintf(`<event>%s</event><releases>%s</releases>`, eventContent, releasesContent)
+	// Если нет Title Track и нет Album, ищем треки в кавычках (но исключаем ссылки)
+	quotesRegex := regexp.MustCompile(`"[^"]*"`)
+	allQuotes := quotesRegex.FindAllString(htmlStr, -1)
+
+	// Исключаем ссылки и служебные тексты
+	trackCount := 0
+	for _, quote := range allQuotes {
+		content := strings.ToLower(quote)
+		// Исключаем ссылки и служебные тексты
+		if !strings.Contains(content, "see all") &&
+			!strings.Contains(content, "official") &&
+			!strings.Contains(content, "teaser") &&
+			!strings.Contains(content, "poster") &&
+			!strings.Contains(content, "youtube") &&
+			!strings.Contains(content, "x.com") &&
+			!strings.Contains(content, "twitter") {
+			trackCount++
 		}
-		return match
-	})
+	}
 
-	// 10. Удаляем множественные пробелы и переносы
-	html = regexp.MustCompile(`\s+`).ReplaceAllString(html, " ")
-	html = regexp.MustCompile(`\n\s*`).ReplaceAllString(html, "\n")
+	return trackCount
+}
 
-	return strings.TrimSpace(html)
+// hasEventKeywords проверяет наличие ключевых слов событий
+func hasEventKeywords(htmlStr string) bool {
+	lowerHTML := strings.ToLower(htmlStr)
+
+	// Точные ключевые слова с двоеточием
+	exactKeywords := []string{
+		"album:", "ost:", "title track:",
+	}
+
+	for _, keyword := range exactKeywords {
+		if strings.Contains(lowerHTML, keyword) {
+			return true
+		}
+	}
+
+	// Ключевые слова для релизов
+	releaseKeywords := []string{
+		"pre-release", "mv release", "album release", "digital release",
+		"single release", "mini album", "full album", "ep album",
+	}
+
+	for _, keyword := range releaseKeywords {
+		if strings.Contains(lowerHTML, keyword) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// extractSimpleRelease извлекает данные для простого случая
+func ExtractSimpleRelease(htmlStr, month, year string, logger *zap.Logger) (*ParseResult, error) {
+	// 1. Извлекаем дату
+	date := extractDate(htmlStr, month, year, logger)
+	logger.Info("Extracted date", zap.String("date", date))
+	if date == "" {
+		logger.Info("No date found, returning failure")
+		return &ParseResult{
+			Releases: []ParsedRelease{},
+			Success:  false,
+			Error:    "No date found",
+		}, nil
+	}
+
+	// 2. Извлекаем артиста
+	artist := extractArtist(htmlStr, logger)
+	logger.Info("Extracted artist", zap.String("artist", artist))
+	if artist == "" {
+		logger.Info("No artist found, returning failure")
+		return &ParseResult{
+			Releases: []ParsedRelease{},
+			Success:  false,
+			Error:    "No artist found",
+		}, nil
+	}
+
+	// 3. Извлекаем трек (может быть пустым для случаев с только альбомом)
+	track := extractTrack(htmlStr, logger)
+	logger.Info("Extracted track", zap.String("track", track))
+
+	// 4. Извлекаем альбом
+	album := extractAlbum(htmlStr, logger)
+	logger.Info("Extracted album", zap.String("album", album))
+
+	// 5. Извлекаем YouTube ссылку
+	youtube := extractYouTubeLink(htmlStr, logger)
+	logger.Info("Extracted youtube", zap.String("youtube", youtube))
+
+	logger.Debug("Extracted simple release",
+		zap.String("artist", artist),
+		zap.String("date", date),
+		zap.String("track", track),
+		zap.String("album", album),
+		zap.String("youtube", youtube))
+
+	return &ParseResult{
+		Releases: []ParsedRelease{{
+			Artist:     artist,
+			Date:       date,
+			Track:      track,
+			Album:      album,
+			YouTubeURL: youtube,
+		}},
+		Success: true,
+	}, nil
+}
+
+// extractDate извлекает дату из HTML блока
+func extractDate(htmlStr, month, year string, logger *zap.Logger) string {
+	// 1. Ищем дату в <date> теге (для очищенных блоков)
+	dateRegex := regexp.MustCompile(`<date>([^<]+)</date>`)
+	matches := dateRegex.FindStringSubmatch(htmlStr)
+	if len(matches) > 1 {
+		dateStr := strings.TrimSpace(matches[1])
+		logger.Debug("Found date in date tag", zap.String("date", dateStr))
+
+		// Парсим дату в формате "Month Day, Year" и конвертируем в DD.MM.YY
+		parsedDate, err := parseEnglishDate(dateStr, year)
+		if err != nil {
+			logger.Error("Failed to parse date", zap.String("date", dateStr), zap.Error(err))
+			return ""
+		}
+		return parsedDate
+	}
+
+	// 2. Ищем дату в <mark> теге (для оригинальных HTML блоков)
+	markRegex := regexp.MustCompile(`<mark[^>]*>([^<]+)</mark>`)
+	matches = markRegex.FindStringSubmatch(htmlStr)
+	if len(matches) > 1 {
+		dateStr := strings.TrimSpace(matches[1])
+		logger.Debug("Found date in mark tag", zap.String("date", dateStr))
+
+		// Парсим дату в формате "Month Day, Year" и конвертируем в DD.MM.YY
+		parsedDate, err := parseEnglishDate(dateStr, year)
+		if err != nil {
+			logger.Error("Failed to parse date", zap.String("date", dateStr), zap.Error(err))
+			return ""
+		}
+		return parsedDate
+	}
+
+	return ""
+}
+
+// parseEnglishDate парсит дату в формате "Month Day, Year" и возвращает DD.MM.YY
+func parseEnglishDate(dateStr, year string) (string, error) {
+	// Маппинг месяцев
+	monthMap := map[string]string{
+		"january": "01", "february": "02", "march": "03", "april": "04",
+		"may": "05", "june": "06", "july": "07", "august": "08",
+		"september": "09", "october": "10", "november": "11", "december": "12",
+	}
+
+	// Парсим дату в формате "Month Day, Year"
+	re := regexp.MustCompile(`(?i)(\w+)\s+(\d{1,2}),\s+(\d{4})`)
+	matches := re.FindStringSubmatch(dateStr)
+	if len(matches) != 4 {
+		return "", fmt.Errorf("invalid date format: %s", dateStr)
+	}
+
+	monthName := strings.ToLower(matches[1])
+	day := matches[2]
+	dateYear := matches[3]
+
+	monthNum, exists := monthMap[monthName]
+	if !exists {
+		return "", fmt.Errorf("unknown month: %s", monthName)
+	}
+
+	// Форматируем день с ведущим нулем
+	if len(day) == 1 {
+		day = "0" + day
+	}
+
+	// Берем последние 2 цифры года
+	yearShort := dateYear[len(dateYear)-2:]
+
+	return fmt.Sprintf("%s.%s.%s", day, monthNum, yearShort), nil
+}
+
+// extractArtist извлекает артиста из HTML блока
+func extractArtist(htmlStr string, logger *zap.Logger) string {
+	// Ищем артиста в <artist> теге (после очистки HTML)
+	artistRegex := regexp.MustCompile(`<artist>([^<]+)</artist>`)
+	matches := artistRegex.FindStringSubmatch(htmlStr)
+	if len(matches) > 1 {
+		artist := strings.TrimSpace(matches[1])
+		logger.Debug("Found artist in artist tag", zap.String("artist", artist))
+		return artist
+	}
+
+	// Fallback: ищем в <strong><mark> теге (для неочищенного HTML)
+	artistRegex = regexp.MustCompile(`<strong><mark[^>]*>([^<]+)</mark></strong>`)
+	matches = artistRegex.FindStringSubmatch(htmlStr)
+	if len(matches) > 1 {
+		artist := strings.TrimSpace(matches[1])
+		logger.Debug("Found artist in strong/mark tag", zap.String("artist", artist))
+		return artist
+	}
+
+	// Fallback: ищем в <strong> теге
+	strongRegex := regexp.MustCompile(`<strong>([^<]+)</strong>`)
+	matches = strongRegex.FindStringSubmatch(htmlStr)
+	if len(matches) > 1 {
+		artist := strings.TrimSpace(matches[1])
+		logger.Debug("Found artist in strong tag", zap.String("artist", artist))
+		return artist
+	}
+
+	return ""
+}
+
+// extractTrack извлекает трек из HTML блока
+func extractTrack(htmlStr string, logger *zap.Logger) string {
+	// 1. Ищем "Title Track:" - берем все до следующей строки или конца
+	titleTrackRegex := regexp.MustCompile(`(?i)title track:\s*([^\n]+)`)
+	matches := titleTrackRegex.FindStringSubmatch(htmlStr)
+	if len(matches) > 1 {
+		track := strings.TrimSpace(matches[1])
+		// НЕ убираем HTML теги - они могут быть частью названия (например, <unevermet>)
+		track = cleanTrackName(track)
+		logger.Debug("Found track from Title Track", zap.String("track", track))
+		return track
+	}
+
+	// 2. Ищем "Album Release" или "MV Release"
+	releaseRegex := regexp.MustCompile(`(?i)(album|mv)\s+release`)
+	if releaseRegex.MatchString(htmlStr) {
+		track := "Album & MV Release"
+		logger.Debug("Found general release", zap.String("track", track))
+		return track
+	}
+
+	// 3. Если есть только "Album:" без "Title Track:", возвращаем пустую строку
+	albumRegex := regexp.MustCompile(`(?i)album:\s*[^\n]+`)
+	if albumRegex.MatchString(htmlStr) {
+		logger.Debug("Found album without title track, returning empty track")
+		return ""
+	}
+
+	return ""
+}
+
+// extractAlbum извлекает альбом из HTML блока
+func extractAlbum(htmlStr string, logger *zap.Logger) string {
+	// 1. Ищем "Album:"
+	albumRegex := regexp.MustCompile(`(?i)album:\s*([^\n]+)`)
+	matches := albumRegex.FindStringSubmatch(htmlStr)
+	if len(matches) > 1 {
+		album := strings.TrimSpace(matches[1])
+		logger.Debug("Found album", zap.String("album", album))
+		return album
+	}
+
+	// 2. Ищем "OST:"
+	ostRegex := regexp.MustCompile(`(?i)ost:\s*([^\n]+)`)
+	matches = ostRegex.FindStringSubmatch(htmlStr)
+	if len(matches) > 1 {
+		album := strings.TrimSpace(matches[1])
+		logger.Debug("Found OST", zap.String("album", album))
+		return album
+	}
+
+	return ""
+}
+
+// extractYouTubeLink извлекает YouTube ссылку из HTML блока
+func extractYouTubeLink(htmlStr string, logger *zap.Logger) string {
+	// Ищем YouTube ссылки
+	youtubeRegex := regexp.MustCompile(`https://(?:youtu\.be/|youtube\.com/)[^\s"']+`)
+	matches := youtubeRegex.FindStringSubmatch(htmlStr)
+	if len(matches) > 0 {
+		url := matches[0]
+		// Исключаем каналы
+		if !strings.Contains(url, "/@") {
+			cleanedURL := cleanYouTubeURL(url)
+			logger.Debug("Found YouTube link", zap.String("url", cleanedURL))
+			return cleanedURL
+		}
+	}
+
+	return ""
+}
+
+// cleanTrackName очищает название трека
+func cleanTrackName(track string) string {
+	// Убираем кавычки
+	track = strings.Trim(track, `"'`)
+
+	// Убираем "MV" и "Release" из названия
+	words := strings.Fields(track)
+	var cleaned []string
+	for _, word := range words {
+		lowerWord := strings.ToLower(word)
+		if lowerWord != "mv" && lowerWord != "release" {
+			cleaned = append(cleaned, word)
+		}
+	}
+	return strings.Join(cleaned, " ")
+}
+
+// TestExtractTrack тестирует извлечение трека (для отладки)
+func TestExtractTrack(htmlStr string) string {
+	// Создаем временный логгер для тестирования
+	logger := zap.NewNop()
+	return extractTrack(htmlStr, logger)
+}
+
+// TestIsSimpleCase тестирует определение простого случая (для отладки)
+func TestIsSimpleCase(htmlStr string) bool {
+	// Создаем временный логгер для тестирования
+	logger := zap.NewNop()
+	return IsSimpleCase(htmlStr, logger)
+}
+
+// TestExtractDate тестирует извлечение даты (для отладки)
+func TestExtractDate(htmlStr, month, year string) string {
+	// Создаем временный логгер для тестирования
+	logger := zap.NewNop()
+	return extractDate(htmlStr, month, year, logger)
+}
+
+// llmParseBlocks отправляет блоки в LLM для парсинга
+func (f *fetcherImpl) llmParseBlocks(ctx context.Context, blocks []string, month, year string) ([]ParsedRelease, error) {
+	if len(blocks) == 0 {
+		return []ParsedRelease{}, nil
+	}
+
+	// Объединяем все блоки через точку с запятой
+	htmlBlocks := strings.Join(blocks, "; ")
+
+	// Отправляем в LLM
+	llmClient := f.llmClient
+	if llmClient == nil {
+		return nil, fmt.Errorf("LLM client not available")
+	}
+
+	response, err := llmClient.ParseMultiRelease(ctx, htmlBlocks, month)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse with LLM: %w", err)
+	}
+
+	// Конвертируем в ParsedRelease
+	var releases []ParsedRelease
+	for _, release := range response.Releases {
+		releases = append(releases, ParsedRelease{
+			Artist:     release.Artist,
+			Date:       release.Date,
+			Track:      release.Track,
+			Album:      release.Album,
+			YouTubeURL: release.YouTubeURL,
+		})
+	}
+
+	return releases, nil
 }
 
 // ParseMonthlyPage parses a monthly schedule page (новая LLM-основанная логика)
@@ -180,81 +705,124 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month, year str
 	}
 	collector.Wait()
 
-	if len(artistBlocks) > 0 && f.llmClient != nil {
-		f.logger.Info("Processing artist blocks with LLM", zap.Int("blocks_count", len(artistBlocks)))
-
-		// Собираем очищенные HTML блоки, разделяя их точкой с запятой
-		var htmlBlocks []string
-		for i, block := range artistBlocks {
-			cleanedHTML := cleanHTMLBlock(block.HTML)
-			htmlBlocks = append(htmlBlocks, fmt.Sprintf("BLOCK %d: %s", i+1, cleanedHTML))
-
-			// Показываем пример первого блока
-			if i == 0 {
-				f.logger.Info("EXAMPLE ORIGINAL HTML BLOCK",
-					zap.String("original_html", block.HTML))
-				f.logger.Info("EXAMPLE CLEANED HTML BLOCK",
-					zap.String("cleaned_html", cleanedHTML))
-			}
-		}
-
-		allBlocksText := strings.Join(htmlBlocks, "; ")
-
-		// Отправляем батч в LLM
-		llmResponse, err := f.llmClient.ParseMultiRelease(ctx, allBlocksText, month)
-		if err != nil {
-			f.logger.Error("Failed to parse artist blocks with LLM", zap.Error(err))
-			return nil, fmt.Errorf("failed to parse artist blocks with LLM: %w", err)
-		}
-
-		// Обрабатываем ответ LLM и создаем релизы
-		var allReleases []Release
-		for _, releaseData := range llmResponse.Releases {
-			// Преобразуем дату в нужный формат
-			parsedDate, err := model.FormatDateWithYear(releaseData.Date, year, f.logger)
-			if err != nil {
-				f.logger.Error("Failed to parse date from LLM", zap.String("date", releaseData.Date), zap.Error(err))
-				continue
-			}
-
-			// Проверяем, что дата соответствует месяцу
-			partsDate := strings.Split(parsedDate, ".")
-			if len(partsDate) != 3 || partsDate[1] != monthNum {
-				f.logger.Debug("Date from LLM does not match month", zap.String("date", parsedDate), zap.String("month_num", monthNum))
-				continue
-			}
-
-			// Создаем релиз
-			release := Release{
-				Date:       parsedDate,
-				TimeMSK:    time.Now().Format("15:04"),
-				Artist:     releaseData.Artist,
-				AlbumName:  releaseData.Album,
-				TitleTrack: releaseData.Track,
-				MV:         releaseData.YouTubeURL,
-			}
-
-			allReleases = append(allReleases, release)
-
-			f.logger.Info("Added release from LLM",
-				zap.String("artist", releaseData.Artist),
-				zap.String("date", parsedDate),
-				zap.String("track", releaseData.Track),
-				zap.String("album", releaseData.Album),
-				zap.String("youtube", releaseData.YouTubeURL))
-		}
-
-		f.logger.Info("Successfully parsed releases with LLM",
-			zap.String("month", month),
-			zap.String("year", year),
-			zap.Int("total_releases", len(allReleases)))
-
-		return allReleases, nil
-	} else if len(artistBlocks) > 0 {
-		f.logger.Warn("Artist blocks found but LLM not available", zap.Int("blocks_count", len(artistBlocks)))
-		return nil, fmt.Errorf("LLM client not available for processing %d artist blocks", len(artistBlocks))
+	if len(artistBlocks) == 0 {
+		f.logger.Info("No artist blocks found for processing", zap.String("month", month), zap.String("year", year))
+		return []Release{}, nil
 	}
 
-	f.logger.Info("No artist blocks found for processing", zap.String("month", month), zap.String("year", year))
-	return []Release{}, nil
+	f.logger.Info("Processing artist blocks with smart parsing", zap.Int("blocks_count", len(artistBlocks)))
+
+	// Умный парсинг: пытаемся парсить каждый блок самостоятельно
+	var smartParsedReleases []ParsedRelease
+	var llmBlocks []string
+
+	for i, block := range artistBlocks {
+		// 1. Собираем RAW блоки (уже есть в block.HTML)
+
+		// 2. Очищаем RAW блоки чистилкой
+		cleanedHTML := cleanHTMLBlock(block.HTML)
+
+		// 3. Проверяем их на "простоту" (простые комбинации)
+		isSimple := IsSimpleCase(cleanedHTML, f.logger)
+		if isSimple {
+			// Простой случай - разбираем релиз и сохраняем
+			result, err := ExtractSimpleRelease(cleanedHTML, month, year, f.logger)
+			if err != nil {
+				f.logger.Info("Simple extraction failed, will use LLM",
+					zap.Int("block", i+1),
+					zap.Error(err))
+			}
+
+			if result != nil && result.Success {
+				// Умный парсинг успешен
+				smartParsedReleases = append(smartParsedReleases, result.Releases...)
+				f.logger.Info("Simple parsing successful",
+					zap.Int("block", i+1),
+					zap.Int("releases", len(result.Releases)))
+				continue // Переходим к следующему блоку
+			} else {
+				f.logger.Info("Simple parsing failed",
+					zap.Int("block", i+1),
+					zap.Bool("result_nil", result == nil),
+					zap.Bool("success", result != nil && result.Success),
+					zap.String("error", func() string {
+						if result != nil {
+							return result.Error
+						}
+						return "result is nil"
+					}()))
+			}
+		}
+
+		// 4. Если блок "сложный" (простые комбинации не найдены), откладываем блок в батч
+		llmBlocks = append(llmBlocks, cleanedHTML)
+		f.logger.Debug("Block added to LLM queue",
+			zap.Int("block", i+1),
+			zap.String("reason", "complex case or extraction failed"))
+	}
+
+	// Парсим оставшиеся блоки через LLM
+	var llmParsedReleases []ParsedRelease
+	if len(llmBlocks) > 0 && f.llmClient != nil {
+		f.logger.Info("Processing remaining blocks with LLM", zap.Int("blocks_count", len(llmBlocks)))
+
+		llmReleases, err := f.llmParseBlocks(ctx, llmBlocks, month, year)
+		if err != nil {
+			f.logger.Error("Failed to parse blocks with LLM", zap.Error(err))
+			return nil, fmt.Errorf("failed to parse blocks with LLM: %w", err)
+		}
+		llmParsedReleases = llmReleases
+	} else if len(llmBlocks) > 0 {
+		f.logger.Warn("Blocks need LLM processing but LLM not available", zap.Int("blocks_count", len(llmBlocks)))
+		return nil, fmt.Errorf("LLM client not available for processing %d blocks", len(llmBlocks))
+	}
+
+	// Объединяем результаты
+	allParsedReleases := append(smartParsedReleases, llmParsedReleases...)
+
+	// Конвертируем в Release
+	var allReleases []Release
+	for _, parsedRelease := range allParsedReleases {
+		// Преобразуем дату в нужный формат
+		parsedDate, err := model.FormatDateWithYear(parsedRelease.Date, year, f.logger)
+		if err != nil {
+			f.logger.Error("Failed to parse date", zap.String("date", parsedRelease.Date), zap.Error(err))
+			continue
+		}
+
+		// Проверяем, что дата соответствует месяцу
+		partsDate := strings.Split(parsedDate, ".")
+		if len(partsDate) != 3 || partsDate[1] != monthNum {
+			f.logger.Debug("Date does not match month", zap.String("date", parsedDate), zap.String("month_num", monthNum))
+			continue
+		}
+
+		// Создаем релиз
+		release := Release{
+			Date:       parsedDate,
+			TimeMSK:    time.Now().Format("15:04"),
+			Artist:     parsedRelease.Artist,
+			AlbumName:  parsedRelease.Album,
+			TitleTrack: parsedRelease.Track,
+			MV:         parsedRelease.YouTubeURL,
+		}
+
+		allReleases = append(allReleases, release)
+
+		f.logger.Info("Added release",
+			zap.String("artist", parsedRelease.Artist),
+			zap.String("date", parsedDate),
+			zap.String("track", parsedRelease.Track),
+			zap.String("album", parsedRelease.Album),
+			zap.String("youtube", parsedRelease.YouTubeURL))
+	}
+
+	f.logger.Info("Successfully parsed releases",
+		zap.String("month", month),
+		zap.String("year", year),
+		zap.Int("smart_parsed", len(smartParsedReleases)),
+		zap.Int("llm_parsed", len(llmParsedReleases)),
+		zap.Int("total_releases", len(allReleases)))
+
+	return allReleases, nil
 }
