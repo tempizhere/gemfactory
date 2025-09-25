@@ -54,6 +54,10 @@ SELECT 'artists' as table_name, COUNT(*) as record_count FROM gemfactory.artists
 echo "Создание папки для логов..."
 mkdir -p /app/logs
 
+# Проверяем права доступа к папке логов
+echo "Проверка прав доступа к папке логов..."
+ls -la /app/logs || echo "Не удалось получить информацию о папке логов"
+
 # Запускаем приложение
 echo "Запуск приложения..."
 exec ./gemfactory
