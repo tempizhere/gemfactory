@@ -22,9 +22,25 @@ until pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER; do
   sleep 2
 done
 
-# База данных и миграции уже применены через init-db.sql
+# Проверяем, существуют ли таблицы
+echo "Проверка существования таблиц..."
+TABLE_EXISTS=$(PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -t -c "
+SELECT EXISTS (
+  SELECT FROM information_schema.tables
+  WHERE table_schema = 'gemfactory'
+  AND table_name = 'config'
+);
+" | tr -d ' ')
 
-# Проверяем, что таблицы созданы
+if [ "$TABLE_EXISTS" = "f" ]; then
+  echo "Таблицы не найдены, применяем миграции..."
+  PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f /app/migrations/000001_init_complete.up.sql
+  echo "Миграции применены"
+else
+  echo "Таблицы уже существуют, пропускаем миграции"
+fi
+
+# Проверяем содержимое таблиц
 echo "Проверка содержимого таблиц..."
 PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "
 SELECT 'config' as table_name, COUNT(*) as record_count FROM gemfactory.config
@@ -32,7 +48,7 @@ UNION ALL
 SELECT 'tasks' as table_name, COUNT(*) as record_count FROM gemfactory.tasks
 UNION ALL
 SELECT 'artists' as table_name, COUNT(*) as record_count FROM gemfactory.artists;
-"
+" || echo "Ошибка при проверке таблиц"
 
 # Запускаем приложение
 echo "Запуск приложения..."
