@@ -132,21 +132,6 @@ func cleanHTMLBlock(htmlStr string) string {
 	return result
 }
 
-// smartParseBlock пытается парсить блок самостоятельно, если не получается - возвращает ошибку
-func smartParseBlock(htmlStr, month, year string, logger *zap.Logger) (*ParseResult, error) {
-	// Проверяем, является ли случай простым
-	if !IsSimpleCase(htmlStr, logger) {
-		return &ParseResult{
-			Releases: []ParsedRelease{},
-			Success:  false,
-			Error:    "Complex case - multiple dates or tracks detected",
-		}, nil
-	}
-
-	// Извлекаем данные для простого случая
-	return ExtractSimpleRelease(htmlStr, month, year, logger)
-}
-
 // isSimpleCase проверяет, является ли блок простым случаем для локального парсинга
 func IsSimpleCase(htmlStr string, logger *zap.Logger) bool {
 	// 1. Проверяем количество дат в блоке
@@ -256,82 +241,6 @@ func countDatesInBlock(htmlStr string) int {
 	}
 
 	return count
-}
-
-// countTracksInBlock подсчитывает количество треков в блоке
-func countTracksInBlock(htmlStr string) int {
-	// Ищем только треки после "Title Track:" - это основной индикатор
-	titleTrackRegex := regexp.MustCompile(`(?i)title track:\s*[^\n]+`)
-	matches := titleTrackRegex.FindAllString(htmlStr, -1)
-
-	// Если есть Title Track, считаем это одним треком
-	if len(matches) > 0 {
-		return 1
-	}
-
-	// Если нет Title Track, но есть Album: - проверяем, нет ли YouTube ссылок
-	albumRegex := regexp.MustCompile(`(?i)album:\s*[^\n]+`)
-	if albumRegex.MatchString(htmlStr) {
-		// Проверяем, есть ли YouTube ссылки
-		youtubeRegex := regexp.MustCompile(`https://(?:youtu\.be/|youtube\.com/)[^\s"']+`)
-		if !youtubeRegex.MatchString(htmlStr) {
-			return 0 // Простой случай - только альбом без трека и без YouTube ссылок
-		}
-		// Если есть YouTube ссылки, это может быть сложный случай
-		return 1
-	}
-
-	// Если нет Title Track и нет Album, ищем треки в кавычках (но исключаем ссылки)
-	quotesRegex := regexp.MustCompile(`"[^"]*"`)
-	allQuotes := quotesRegex.FindAllString(htmlStr, -1)
-
-	// Исключаем ссылки и служебные тексты
-	trackCount := 0
-	for _, quote := range allQuotes {
-		content := strings.ToLower(quote)
-		// Исключаем ссылки и служебные тексты
-		if !strings.Contains(content, "see all") &&
-			!strings.Contains(content, "official") &&
-			!strings.Contains(content, "teaser") &&
-			!strings.Contains(content, "poster") &&
-			!strings.Contains(content, "youtube") &&
-			!strings.Contains(content, "x.com") &&
-			!strings.Contains(content, "twitter") {
-			trackCount++
-		}
-	}
-
-	return trackCount
-}
-
-// hasEventKeywords проверяет наличие ключевых слов событий
-func hasEventKeywords(htmlStr string) bool {
-	lowerHTML := strings.ToLower(htmlStr)
-
-	// Точные ключевые слова с двоеточием
-	exactKeywords := []string{
-		"album:", "ost:", "title track:",
-	}
-
-	for _, keyword := range exactKeywords {
-		if strings.Contains(lowerHTML, keyword) {
-			return true
-		}
-	}
-
-	// Ключевые слова для релизов
-	releaseKeywords := []string{
-		"pre-release", "mv release", "album release", "digital release",
-		"single release", "mini album", "full album", "ep album",
-	}
-
-	for _, keyword := range releaseKeywords {
-		if strings.Contains(lowerHTML, keyword) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // extractSimpleRelease извлекает данные для простого случая

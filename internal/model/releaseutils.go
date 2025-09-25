@@ -426,6 +426,7 @@ func FormatDateWithYear(dateStr string, year string, logger interface{}) (string
 	yearFromDate := parts[2]
 
 	// Если год в дате двухзначный, используем его, иначе используем переданный год
+	var fullYear string
 	if len(yearFromDate) == 2 {
 		yearInt, err := strconv.Atoi(yearFromDate)
 		if err != nil {
@@ -433,16 +434,16 @@ func FormatDateWithYear(dateStr string, year string, logger interface{}) (string
 		}
 		// Предполагаем, что годы 00-30 это 2000-2030, а 31-99 это 1931-1999
 		if yearInt <= 30 {
-			year = fmt.Sprintf("20%s", yearFromDate)
+			fullYear = fmt.Sprintf("20%s", yearFromDate)
 		} else {
-			year = fmt.Sprintf("19%s", yearFromDate)
+			fullYear = fmt.Sprintf("19%s", yearFromDate)
 		}
 	} else {
-		year = yearFromDate
+		fullYear = yearFromDate
 	}
 
 	// Формируем дату в формате "2006-01-02"
-	dateStr = fmt.Sprintf("%s-%s-%s", year, month, day)
+	dateStr = fmt.Sprintf("%s-%s-%s", fullYear, month, day)
 	parsedDate, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse date: %w", err)
