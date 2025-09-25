@@ -84,7 +84,9 @@ func (c *Client) Start(ctx context.Context, services *service.Services, router R
 		return fmt.Errorf("failed to create updates channel")
 	}
 
-	reconnectDelay := 10 * time.Second // Задержка между попытками реконнекта
+	reconnectDelay := 10 * time.Second
+	maxReconnectAttempts := 5
+	reconnectAttempts := 0
 
 	for {
 		select {
@@ -93,16 +95,31 @@ func (c *Client) Start(ctx context.Context, services *service.Services, router R
 			return ctx.Err()
 		case update, ok := <-updatesChan:
 			if !ok {
-				c.logger.Warn("Update channel closed, will try to reconnect after delay")
+				c.logger.Warn("Update channel closed, attempting to reconnect",
+					zap.Int("attempt", reconnectAttempts+1),
+					zap.Int("max_attempts", maxReconnectAttempts))
+
+				reconnectAttempts++
+				if reconnectAttempts > maxReconnectAttempts {
+					c.logger.Error("Max reconnection attempts reached, giving up")
+					return fmt.Errorf("max reconnection attempts reached")
+				}
+
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
 				case <-time.After(reconnectDelay):
-					return fmt.Errorf("update channel closed, reconnecting")
+					updatesChan = c.bot.GetUpdatesChan(u)
+					if updatesChan == nil {
+						c.logger.Error("Failed to recreate updates channel")
+						continue
+					}
+					c.logger.Info("Successfully recreated updates channel")
+					continue
 				}
 			}
 
-			// Обработка обновления
+			reconnectAttempts = 0
 			c.processUpdate(update)
 		}
 	}

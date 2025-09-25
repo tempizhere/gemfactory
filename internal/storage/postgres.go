@@ -36,10 +36,10 @@ func NewPostgres(databaseURL string, logger *zap.Logger) (*Postgres, error) {
 		sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(databaseURL)))
 
 		// Настраиваем пул соединений
-		sqldb.SetMaxOpenConns(25)                 // Максимум открытых соединений
-		sqldb.SetMaxIdleConns(10)                 // Максимум неактивных соединений
-		sqldb.SetConnMaxLifetime(5 * time.Minute) // Время жизни соединения
-		sqldb.SetConnMaxIdleTime(1 * time.Minute) // Время неактивности соединения
+		sqldb.SetMaxOpenConns(25)
+		sqldb.SetMaxIdleConns(10)
+		sqldb.SetConnMaxLifetime(5 * time.Minute)
+		sqldb.SetConnMaxIdleTime(1 * time.Minute)
 
 		// Создаем Bun DB
 		db := bun.NewDB(sqldb, pgdialect.New())

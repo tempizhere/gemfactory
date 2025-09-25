@@ -117,9 +117,18 @@ func (s *Server) checkDatabase() error {
 	}
 
 	// Выполняем простой запрос
-	_, err := s.db.GetDB().Query("SELECT 1")
+	rows, err := s.db.GetDB().Query("SELECT 1")
 	if err != nil {
 		return fmt.Errorf("database query failed: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			s.logger.Warn("Failed to close database rows", zap.Error(closeErr))
+		}
+	}()
+
+	if !rows.Next() {
+		return fmt.Errorf("no rows returned from health check query")
 	}
 
 	return nil
@@ -127,7 +136,9 @@ func (s *Server) checkDatabase() error {
 
 // checkComponents проверяет другие компоненты
 func (s *Server) checkComponents() error {
-
+	if s.server == nil {
+		return fmt.Errorf("health check server is not initialized")
+	}
 	return nil
 }
 

@@ -147,7 +147,11 @@ func (b *Bot) Start(ctx context.Context) error {
 		b.logger.Info("Config watcher started successfully")
 	}
 
-	// Основной цикл обработки обновлений с контекстом
+	// Основной цикл обработки обновлений
+	maxRestartAttempts := 10
+	restartAttempts := 0
+	restartDelay := 10 * time.Second
+
 	for {
 		select {
 		case <-b.ctx.Done():
@@ -158,19 +162,36 @@ func (b *Bot) Start(ctx context.Context) error {
 			return nil
 		default:
 			if err := b.runUpdateLoop(ctx); err != nil {
-				// Проверяем, является ли ошибка нормальной остановкой
 				if err.Error() == "context canceled" || err == context.Canceled {
 					b.logger.Info("Update loop stopped due to context cancellation")
 					return err
 				}
-				b.logger.Error("Update loop error", zap.Error(err))
-				// При ошибке ждем перед перезапуском
+
+				restartAttempts++
+				b.logger.Error("Update loop error",
+					zap.Error(err),
+					zap.Int("restart_attempt", restartAttempts),
+					zap.Int("max_attempts", maxRestartAttempts))
+
+				if restartAttempts > maxRestartAttempts {
+					b.logger.Fatal("Max restart attempts reached, bot is shutting down")
+					return fmt.Errorf("max restart attempts reached: %w", err)
+				}
+
+				delay := time.Duration(restartAttempts) * restartDelay
+				if delay > 5*time.Minute {
+					delay = 5 * time.Minute
+				}
+
+				b.logger.Info("Waiting before restart", zap.Duration("delay", delay))
 				select {
 				case <-b.ctx.Done():
 					return b.ctx.Err()
-				case <-time.After(10 * time.Second):
+				case <-time.After(delay):
 					continue
 				}
+			} else {
+				restartAttempts = 0
 			}
 		}
 	}

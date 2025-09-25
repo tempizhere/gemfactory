@@ -134,14 +134,23 @@ func (s *Scheduler) addTaskToCron(task *model.Task) error {
 func (s *Scheduler) executeTask(task *model.Task, executor TaskExecutor) {
 	s.logger.Info("Executing scheduled task", zap.String("task_name", task.Name))
 
-	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Minute)
+	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
 	defer cancel()
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error("Panic in scheduled task execution",
+				zap.String("task_name", task.Name),
+				zap.Any("panic", r))
+		}
+	}()
 
 	err := s.taskService.ExecuteTask(ctx, task, executor)
 	if err != nil {
 		s.logger.Error("Scheduled task execution failed",
 			zap.String("task_name", task.Name),
 			zap.Error(err))
+	} else {
+		s.logger.Info("Scheduled task completed successfully", zap.String("task_name", task.Name))
 	}
 }
 
