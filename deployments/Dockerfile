@@ -36,8 +36,8 @@ COPY --from=builder /app/migrations /app/migrations
 # Копируем скрипт запуска
 COPY deployments/start.sh /app/start.sh
 
-# Создаем папку для данных
-RUN mkdir -p /app/data
+# Создаем папки для данных и логов
+RUN mkdir -p /app/data /app/logs
 
 # Устанавливаем права
 RUN chmod +x /app/start.sh /app/gemfactory && \

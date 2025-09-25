@@ -50,10 +50,9 @@ UNION ALL
 SELECT 'artists' as table_name, COUNT(*) as record_count FROM gemfactory.artists;
 " || echo "Ошибка при проверке таблиц"
 
-# Создаем папку для логов и устанавливаем права
+# Создаем папку для логов
 echo "Создание папки для логов..."
 mkdir -p /app/logs
-chmod 755 /app/logs
 
 # Запускаем приложение
 echo "Запуск приложения..."
