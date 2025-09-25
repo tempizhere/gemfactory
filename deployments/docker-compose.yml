@@ -46,8 +46,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "8080:8080"
-    volumes:
-      - ../logs:/app/logs:rw
+    # volumes:
+      # - ../logs:/app/logs:rw  # Отключено - логирование только в консоль
     restart: unless-stopped
     depends_on:
       postgres:
