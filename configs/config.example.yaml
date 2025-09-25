@@ -1,0 +1,65 @@
+# Пример конфигурации GemFactory
+# Этот файл содержит примеры настроек, которые можно использовать для локальной разработки
+
+# Основные настройки
+app:
+  name: "GemFactory"
+  version: "1.0.0"
+  environment: "development"
+
+# База данных
+database:
+  url: "postgres://user:password@localhost:5432/gemfactory?sslmode=disable"
+  max_connections: 10
+  connection_timeout: 30s
+
+# Telegram Bot
+telegram:
+  bot_token: "YOUR_BOT_TOKEN_HERE"
+  admin_username: "YOUR_USERNAME_HERE"
+  webhook_url: "" # Оставьте пустым для long polling
+
+# Spotify API
+spotify:
+  client_id: "YOUR_SPOTIFY_CLIENT_ID"
+  client_secret: "YOUR_SPOTIFY_CLIENT_SECRET"
+  playlist_url: "https://open.spotify.com/playlist/YOUR_PLAYLIST_ID"
+
+# Логирование
+logging:
+  level: "info" # debug, info, warn, error, fatal
+  format: "json" # json, text
+  output: "stdout" # stdout, file, both
+
+# Health Check
+health:
+  port: "8080"
+  path: "/health"
+  timeout: 5s
+
+# Rate Limiting
+rate_limit:
+  requests: 10
+  window: 60s
+  burst: 5
+
+# Скрапинг
+scraper:
+  base_url: "https://kpop.fandom.com"
+  delay: 1s
+  timeout: 30s
+  retry_count: 3
+  user_agent: "GemFactory Bot 1.0"
+
+# Плейлист
+playlist:
+  update_interval: 24h
+  max_tracks: 1000
+  cache_ttl: 1h
+
+# Домашние задания
+homework:
+  max_active: 1
+  cooldown: 1h
+  random_play_count_min: 1
+  random_play_count_max: 5
