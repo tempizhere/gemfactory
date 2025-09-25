@@ -101,11 +101,7 @@ jobs:
         with:
           images: ${{ env.DOCKER_IMAGE }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
+            type=raw,value=latest
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -115,8 +111,6 @@ jobs:
           push: true
           tags: |
             ${{ steps.meta.outputs.tags }}
-            tempizhere/gemfactory:latest
-            ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=docker
           cache-to: type=gha,mode=max,scope=docker
@@ -126,11 +120,7 @@ jobs:
           echo '### 🐳 Docker image успешно собран и опубликован!' >> $GITHUB_STEP_SUMMARY
           echo '' >> $GITHUB_STEP_SUMMARY
           echo '**Теги:**' >> $GITHUB_STEP_SUMMARY
-          echo '- `${{ steps.meta.outputs.tags }}`' >> $GITHUB_STEP_SUMMARY
           echo '- `tempizhere/gemfactory:latest`' >> $GITHUB_STEP_SUMMARY
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "- \\`${GITHUB_REF_NAME}\\`" >> $GITHUB_STEP_SUMMARY
-          fi
           echo '' >> $GITHUB_STEP_SUMMARY
           echo '**Docker Hub:** https://hub.docker.com/r/tempizhere/gemfactory' >> $GITHUB_STEP_SUMMARY
           echo '' >> $GITHUB_STEP_SUMMARY
