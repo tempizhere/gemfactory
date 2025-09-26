@@ -569,6 +569,80 @@ func (f *fetcherImpl) llmParseBlocks(ctx context.Context, blocks []string, month
 	return releases, nil
 }
 
+// llmParseBlocksIndividually отправляет каждый блок в LLM отдельно с rate limiting
+func (f *fetcherImpl) llmParseBlocksIndividually(ctx context.Context, blocks []string, month, year string) ([]ParsedRelease, error) {
+	if len(blocks) == 0 {
+		return []ParsedRelease{}, nil
+	}
+
+	f.logger.Info("Starting individual block processing",
+		zap.Int("total_blocks", len(blocks)),
+		zap.String("month", month))
+
+	var allReleases []ParsedRelease
+	var errors []error
+
+	for i, block := range blocks {
+		// Проверяем контекст перед каждым блоком
+		select {
+		case <-ctx.Done():
+			f.logger.Info("Context cancelled during LLM processing",
+				zap.Int("processed_blocks", i),
+				zap.Int("total_blocks", len(blocks)))
+			return allReleases, ctx.Err()
+		default:
+		}
+
+		f.logger.Info("Processing block with LLM",
+			zap.Int("block_index", i+1),
+			zap.Int("total_blocks", len(blocks)),
+			zap.String("month", month))
+
+		// Отправляем один блок в LLM
+		response, err := f.llmClient.ParseSingleBlock(ctx, block, month)
+		if err != nil {
+			f.logger.Error("Failed to parse single block with LLM",
+				zap.Int("block_index", i+1),
+				zap.Error(err))
+			errors = append(errors, fmt.Errorf("block %d: %w", i+1, err))
+			continue // Продолжаем обработку остальных блоков
+		}
+
+		// Конвертируем в ParsedRelease
+		for _, release := range response.Releases {
+			allReleases = append(allReleases, ParsedRelease{
+				Artist:     release.Artist,
+				Date:       release.Date,
+				Track:      release.Track,
+				Album:      release.Album,
+				YouTubeURL: release.YouTubeURL,
+			})
+		}
+
+		f.logger.Info("Successfully processed block",
+			zap.Int("block_index", i+1),
+			zap.Int("releases_found", len(response.Releases)))
+	}
+
+	// Логируем ошибки, но не прерываем выполнение
+	if len(errors) > 0 {
+		f.logger.Warn("Some blocks failed to process",
+			zap.Int("failed_blocks", len(errors)),
+			zap.Int("total_blocks", len(blocks)))
+		for _, err := range errors {
+			f.logger.Warn("Block processing error", zap.Error(err))
+		}
+	}
+
+	f.logger.Info("Completed individual block processing",
+		zap.Int("total_blocks", len(blocks)),
+		zap.Int("successful_blocks", len(blocks)-len(errors)),
+		zap.Int("failed_blocks", len(errors)),
+		zap.Int("total_releases", len(allReleases)))
+
+	return allReleases, nil
+}
+
 // ParseMonthlyPage parses a monthly schedule page (новая LLM-основанная логика)
 func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month, year string, artists map[string]bool) ([]Release, error) {
 	monthNum, ok := f.getMonthNumber(strings.ToLower(month))
@@ -689,12 +763,12 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month, year str
 			zap.String("reason", "complex case or extraction failed"))
 	}
 
-	// Парсим оставшиеся блоки через LLM
+	// Парсим оставшиеся блоки через LLM (по одному блоку)
 	var llmParsedReleases []ParsedRelease
 	if len(llmBlocks) > 0 && f.llmClient != nil {
-		f.logger.Info("Processing remaining blocks with LLM", zap.Int("blocks_count", len(llmBlocks)))
+		f.logger.Info("Processing remaining blocks with LLM (one by one)", zap.Int("blocks_count", len(llmBlocks)))
 
-		llmReleases, err := f.llmParseBlocks(ctx, llmBlocks, month, year)
+		llmReleases, err := f.llmParseBlocksIndividually(ctx, llmBlocks, month, year)
 		if err != nil {
 			f.logger.Error("Failed to parse blocks with LLM", zap.Error(err))
 			return nil, fmt.Errorf("failed to parse blocks with LLM: %w", err)

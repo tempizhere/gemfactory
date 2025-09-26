@@ -366,3 +366,29 @@ func (s *HomeworkService) getHomeworkResetTime() (string, error) {
 
 	return resetTime, nil
 }
+
+// HomeworkStats представляет статистику домашних заданий
+type HomeworkStats struct {
+	TotalAssigned int
+	UniqueUsers   int
+}
+
+// GetHomeworkStats возвращает статистику домашних заданий
+func (s *HomeworkService) GetHomeworkStats() (*HomeworkStats, error) {
+	// Получаем общее количество выданных заданий
+	totalAssigned, err := s.trackingRepo.GetTotalAssignedCount()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get total assigned count: %w", err)
+	}
+
+	// Получаем количество уникальных пользователей
+	uniqueUsers, err := s.trackingRepo.GetUniqueUsersCount()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get unique users count: %w", err)
+	}
+
+	return &HomeworkStats{
+		TotalAssigned: totalAssigned,
+		UniqueUsers:   uniqueUsers,
+	}, nil
+}

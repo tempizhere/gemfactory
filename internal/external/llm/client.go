@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -14,10 +15,18 @@ import (
 
 // Client представляет клиент для работы с LLM API
 type Client struct {
-	baseURL    string
-	apiKey     string
-	httpClient *http.Client
-	logger     *zap.Logger
+	baseURL     string
+	apiKey      string
+	httpClient  *http.Client
+	logger      *zap.Logger
+	delay       time.Duration
+	lastRequest time.Time
+	mu          sync.Mutex
+	// Метрики
+	requestCount    int64
+	successCount    int64
+	errorCount      int64
+	lastRequestTime time.Time
 }
 
 // Config конфигурация для LLM клиента
@@ -25,6 +34,7 @@ type Config struct {
 	BaseURL string
 	APIKey  string
 	Timeout time.Duration
+	Delay   time.Duration
 }
 
 // MultiReleaseData структура для одного релиза из мультирелиза
@@ -78,40 +88,125 @@ func NewClient(config Config, logger *zap.Logger) *Client {
 		httpClient: &http.Client{
 			Timeout: config.Timeout,
 		},
-		logger: logger,
+		logger:      logger,
+		delay:       config.Delay,
+		lastRequest: time.Time{},
 	}
 }
 
-// ParseMultiRelease парсит мультирелиз через LLM
+// ParseMultiRelease парсит мультирелиз через LLM (устаревший метод)
 func (c *Client) ParseMultiRelease(ctx context.Context, htmlBlock string, month string) (*MultiReleaseResponse, error) {
-	// Создаем промпт для парсинга мультирелиза
 	prompt := c.createMultiReleasePrompt(htmlBlock, month)
 
-	// Показываем полный промпт
 	c.logger.Info("Sending request to LLM",
 		zap.String("prompt_length", fmt.Sprintf("%d", len(prompt))),
 		zap.String("prompt_full", prompt))
 
-	// Отправляем запрос к LLM
 	response, err := c.sendRequest(ctx, prompt)
 	if err != nil {
+		c.incrementError()
 		return nil, fmt.Errorf("failed to send request to LLM: %w", err)
 	}
 
-	// Показываем полный ответ
 	c.logger.Info("Received response from LLM",
 		zap.String("response_length", fmt.Sprintf("%d", len(response))),
 		zap.String("response_full", response))
 
-	// Парсим ответ
 	multiReleaseResponse, err := c.parseResponse(response)
 	if err != nil {
+		c.incrementError()
 		return nil, fmt.Errorf("failed to parse LLM response: %w", err)
 	}
 
+	c.incrementSuccess()
 	c.logger.Info("Successfully parsed multi-release response", zap.Int("releases_count", len(multiReleaseResponse.Releases)))
 
 	return multiReleaseResponse, nil
+}
+
+// ParseSingleBlock парсит один HTML блок с мультирелизами через LLM с rate limiting
+func (c *Client) ParseSingleBlock(ctx context.Context, htmlBlock string, month string) (*MultiReleaseResponse, error) {
+	if err := c.enforceRateLimit(); err != nil {
+		return nil, fmt.Errorf("rate limit enforcement failed: %w", err)
+	}
+
+	prompt := c.createSingleBlockPrompt(htmlBlock, month)
+
+	c.logger.Info("Sending multi-release block request to LLM",
+		zap.String("prompt_length", fmt.Sprintf("%d", len(prompt))),
+		zap.String("month", month))
+
+	response, err := c.sendRequest(ctx, prompt)
+	if err != nil {
+		c.incrementError()
+		return nil, fmt.Errorf("failed to send request to LLM: %w", err)
+	}
+
+	c.logger.Info("Received response from LLM for multi-release block",
+		zap.String("response_length", fmt.Sprintf("%d", len(response))))
+
+	multiReleaseResponse, err := c.parseResponse(response)
+	if err != nil {
+		c.incrementError()
+		return nil, fmt.Errorf("failed to parse LLM response: %w", err)
+	}
+
+	c.incrementSuccess()
+	c.logger.Info("Successfully parsed multi-release block response",
+		zap.Int("releases_count", len(multiReleaseResponse.Releases)))
+
+	return multiReleaseResponse, nil
+}
+
+// enforceRateLimit применяет задержку между запросами
+func (c *Client) enforceRateLimit() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	if !c.lastRequest.IsZero() {
+		elapsed := now.Sub(c.lastRequest)
+		if elapsed < c.delay {
+			sleepDuration := c.delay - elapsed
+			c.logger.Debug("Rate limiting: sleeping",
+				zap.Duration("sleep_duration", sleepDuration),
+				zap.Duration("delay", c.delay))
+			time.Sleep(sleepDuration)
+		}
+	}
+
+	c.lastRequest = time.Now()
+	c.requestCount++
+	c.lastRequestTime = now
+	return nil
+}
+
+// GetMetrics возвращает метрики LLM клиента
+func (c *Client) GetMetrics() map[string]interface{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return map[string]interface{}{
+		"total_requests":      c.requestCount,
+		"successful_requests": c.successCount,
+		"failed_requests":     c.errorCount,
+		"last_request_time":   c.lastRequestTime,
+		"delay_ms":            c.delay.Milliseconds(),
+	}
+}
+
+// incrementSuccess увеличивает счетчик успешных запросов
+func (c *Client) incrementSuccess() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.successCount++
+}
+
+// incrementError увеличивает счетчик неудачных запросов
+func (c *Client) incrementError() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.errorCount++
 }
 
 // createMultiReleasePrompt создает промпт для парсинга мультирелиза
@@ -176,6 +271,61 @@ HTML blocks:
 %s`, month, htmlBlocks)
 }
 
+// createSingleBlockPrompt создает промпт для парсинга одного блока с мультирелизами
+func (c *Client) createSingleBlockPrompt(htmlBlock string, month string) string {
+	return fmt.Sprintf(`Extract MULTIPLE releases from HTML block into JSON array. This is a MULTI-RELEASE block for one artist that may contain multiple tracks/releases.
+
+CRITICAL RULES:
+1. MONTH FILTER: Only return releases for %s month - ignore ALL other months.
+2. JSON ONLY: Return valid JSON array, no explanations, ASCII characters only.
+3. YOUTUBE LINKS: Preserve all YouTube URLs.
+4. MULTI-RELEASE EXTRACTION: Extract ALL releases from this single artist block that match the target month.
+
+DATE ASSIGNMENT RULES:
+- If <need_unparse> contains multiple dates: extract releases ONLY for dates matching <date> tag
+- If <need_unparse> contains NO dates but multiple releases: assign <date> to ALL releases
+- If multiple dates in <need_unparse>: releases may have NO YouTube links
+
+MULTI-TRACK PROCESSING:
+- Multi-track releases: create separate releases for each track under "Title Track:" with bullet points ("–")
+- Title Track lists: if "Title Track:" contains semicolon-separated tracks ("Track1"; "Track2"), create separate releases for each
+- Album: extract from "Album:" field, otherwise empty string
+- Track: clean names after "–" or "Title Track", remove 'MV', 'Title Track' (keep 'feat')
+
+ALBUM-ONLY RELEASES:
+- If only "Album:" present (no "Title Track:"): use YouTube link text as track name
+- Example: "Album: Single – <Club Icarus Remix>" + "Music Video: <a href="...">YouTube</a>" → track: "YouTube"
+
+OUTPUT FORMAT (JSON array of releases):
+[
+  {"artist": "NAME", "date": "DD.MM.YY", "track": "NAME", "album": "NAME", "youtube": "URL"},
+  {"artist": "NAME", "date": "DD.MM.YY", "track": "NAME", "album": "NAME", "youtube": "URL"},
+  ...
+]
+
+EXAMPLES:
+
+Single track release:
+<event><date>August 13, 2025</date><artist>ARTIST NAME</artist><need_unparse>Title Track: "Song Name"
+Album: Studio Album
+Music Video: <a href="https://youtu.be/abc">YouTube</a></need_unparse></event>
+→ [{"artist": "ARTIST NAME", "date": "13.08.25", "track": "Song Name", "album": "Studio Album", "youtube": "https://youtu.be/abc"}]
+
+Multi-track release:
+<event><date>August 13, 2025</date><artist>ARTIST NAME</artist><need_unparse>Title Track: – "Song 1" – "Song 2"
+Album: Studio Album</need_unparse></event>
+→ [{"artist": "ARTIST NAME", "date": "13.08.25", "track": "Song 1", "album": "Studio Album", "youtube": ""}, {"artist": "ARTIST NAME", "date": "13.08.25", "track": "Song 2", "album": "Studio Album", "youtube": ""}]
+
+Multi-date releases:
+<event><date>August 11, 2025</date><artist>ARTIST NAME</artist><need_unparse>August 11, 2025: Track 1: <a href="https://youtu.be/abc">YouTube</a>
+August 18, 2025: Track 2: <a href="https://youtu.be/def">YouTube</a>
+Album: Studio Album</need_unparse></event>
+→ [{"artist": "ARTIST NAME", "date": "11.08.25", "track": "Track 1", "album": "Studio Album", "youtube": "https://youtu.be/abc"}, {"artist": "ARTIST NAME", "date": "18.08.25", "track": "Track 2", "album": "Studio Album", "youtube": "https://youtu.be/def"}]
+
+HTML block:
+%s`, month, htmlBlock)
+}
+
 // sendRequest отправляет запрос к LLM API
 func (c *Client) sendRequest(ctx context.Context, prompt string) (string, error) {
 	request := Request{
@@ -183,17 +333,17 @@ func (c *Client) sendRequest(ctx context.Context, prompt string) (string, error)
 		Messages: []Message{
 			{
 				Role:    "system",
-				Content: "You are a JSON extraction tool. Extract ALL releases from cleaned text blocks and return ONLY valid JSON in this exact format:\n\n{\n  \"releases\": [\n    {\n      \"date\": \"August 11, 2025\",\n      \"artist\": \"CORTIS\",\n      \"track\": \"GO!\",\n      \"album\": \"1st EP COLOR OUTSIDE THE LINES\",\n      \"youtube_url\": \"https://youtu.be/...\"\n    }\n  ]\n}\n\nCRITICAL: Return ONLY valid JSON with standard ASCII characters. No explanations, no reasoning, no markdown, no code blocks, no special Unicode characters like â, é, ñ, etc. Use only standard JSON format.",
+				Content: "You are a JSON extraction tool for K-pop releases. Extract ALL releases from HTML blocks and return ONLY valid JSON array in this exact format:\n\n[\n  {\n    \"artist\": \"ARTIST NAME\",\n    \"date\": \"DD.MM.YY\",\n    \"track\": \"TRACK NAME\",\n    \"album\": \"ALBUM NAME\",\n    \"youtube\": \"https://youtu.be/...\"\n  }\n]\n\nCRITICAL: Return ONLY valid JSON array with standard ASCII characters. No explanations, no reasoning, no markdown, no code blocks, no special Unicode characters like â, é, ñ, etc. Use only standard JSON format.",
 			},
 			{
 				Role:    "user",
 				Content: prompt,
 			},
 		},
-		Temperature: 0.2,   // Температура как в примере
-		TopP:        0.7,   // top_p как в примере
-		MaxTokens:   8192,  // Увеличиваем лимит токенов для обработки большого количества блоков
-		Stream:      false, // Отключаем streaming для простоты
+		Temperature: 0.2,
+		TopP:        0.7,
+		MaxTokens:   8192,
+		Stream:      false,
 	}
 
 	jsonData, err := json.Marshal(request)
@@ -245,21 +395,18 @@ func (c *Client) sendRequest(ctx context.Context, prompt string) (string, error)
 
 	message := response.Choices[0].Message
 
-	// Для qwen/qwen2.5-7b-instruct JSON должен быть в content
-	c.logger.Info("Extracting JSON from content (qwen2.5-7b-instruct model)")
 	return message.Content, nil
 }
 
 // parseResponse парсит ответ от LLM в структуру MultiReleaseResponse
 func (c *Client) parseResponse(response string) (*MultiReleaseResponse, error) {
-	// Очищаем ответ от возможных markdown блоков
 	cleanedResponse := response
 
-	// Убираем ```json и ``` если есть
+	// Убираем markdown блоки ```json
 	if bytes.Contains([]byte(response), []byte("```json")) {
 		start := bytes.Index([]byte(response), []byte("```json"))
 		if start != -1 {
-			start += 7 // длина "```json"
+			start += 7
 			end := bytes.LastIndex([]byte(response), []byte("```"))
 			if end != -1 && end > start {
 				cleanedResponse = string([]byte(response)[start:end])
@@ -270,7 +417,6 @@ func (c *Client) parseResponse(response string) (*MultiReleaseResponse, error) {
 	// Ищем последний валидный JSON массив
 	lastBracket := bytes.LastIndex([]byte(cleanedResponse), []byte("]"))
 	if lastBracket != -1 {
-		// Ищем соответствующую открывающую скобку [
 		bracketCount := 0
 		startBracket := -1
 		for i := lastBracket; i >= 0; i-- {
@@ -292,7 +438,6 @@ func (c *Client) parseResponse(response string) (*MultiReleaseResponse, error) {
 
 	c.logger.Info("Cleaned response for parsing", zap.String("cleaned", cleanedResponse))
 
-	// Парсим как массив объектов напрямую
 	var releases []MultiReleaseData
 	if err := json.Unmarshal([]byte(cleanedResponse), &releases); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal releases array: %w", err)

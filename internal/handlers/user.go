@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -87,34 +88,90 @@ func (h *Handlers) Artists(message *tgbotapi.Message) {
 
 // Metrics показывает метрики системы
 func (h *Handlers) Metrics(message *tgbotapi.Message) {
-	text := "📊 Метрики системы\n\n" +
-		"👥 Пользовательская активность:\n" +
-		"  • Всего команд: 0\n" +
-		"  • Уникальных пользователей: 0\n\n" +
-		"🎤 Артисты в фильтрах:\n" +
-		"  • Женские группы: 0\n" +
-		"  • Мужские группы: 0\n" +
-		"  • Всего артистов: 0\n\n" +
-		"💿 Релизы в кэше:\n" +
-		"  • Количество релизов: 0\n" +
-		"  • Hit rate кэша: 0.0%\n" +
-		"  • Попадания/промахи: 0/0\n\n" +
-		"⚡ Производительность:\n" +
-		"  • Среднее время ответа: 0ms\n" +
-		"  • Всего запросов: 0\n" +
-		"  • Ошибок: 0 (0.0%)\n\n" +
-		"🔄 Статус системы:\n" +
-		"  • Время работы: 0\n" +
-		"  • Последнее обновление релизов: Не обновлялось\n" +
-		"  • Следующее обновление релизов: Не запланировано\n\n" +
-		"🎵 Плейлист:\n" +
-		"  • Статус: Не загружен\n" +
-		"  • Планировщик не настроен\n\n" +
-		"📚 Домашние задания:\n" +
-		"  • Всего выдано заданий: 0\n" +
-		"  • Уникальных пользователей: 0"
+	var text strings.Builder
+	text.WriteString("📊 *Метрики системы*\n\n")
 
-	h.sendMessage(message.Chat.ID, text)
+	// Получаем реальные данные об артистах
+	femaleCount, maleCount, totalCount, err := h.services.Artist.GetArtistCounts()
+	if err != nil {
+		h.logger.Error("Failed to get artist counts", zap.Error(err))
+		text.WriteString("🎤 *Артисты в фильтрах:*\n")
+		text.WriteString("  • Ошибка получения данных\n\n")
+	} else {
+		text.WriteString("🎤 *Артисты в фильтрах:*\n")
+		text.WriteString(fmt.Sprintf("  • Женские группы: %d\n", femaleCount))
+		text.WriteString(fmt.Sprintf("  • Мужские группы: %d\n", maleCount))
+		text.WriteString(fmt.Sprintf("  • Всего артистов: %d\n\n", totalCount))
+	}
+
+	// Получаем данные о релизах
+	releaseCount, err := h.services.Release.GetTotalReleaseCount()
+	if err != nil {
+		h.logger.Error("Failed to get release count", zap.Error(err))
+		text.WriteString("💿 *Релизы в базе:*\n")
+		text.WriteString("  • Ошибка получения данных\n\n")
+	} else {
+		text.WriteString("💿 *Релизы в базе:*\n")
+		text.WriteString(fmt.Sprintf("  • Количество релизов: %d\n\n", releaseCount))
+	}
+
+	// Получаем метрики LLM
+	llmMetrics := h.services.Release.GetLLMMetrics()
+	text.WriteString("🤖 *LLM метрики:*\n")
+	if errorMsg, ok := llmMetrics["error"]; ok {
+		text.WriteString(fmt.Sprintf("  • Ошибка: %v\n\n", errorMsg))
+	} else {
+		text.WriteString(fmt.Sprintf("  • Всего запросов: %v\n", llmMetrics["total_requests"]))
+		text.WriteString(fmt.Sprintf("  • Успешных: %v\n", llmMetrics["successful_requests"]))
+		text.WriteString(fmt.Sprintf("  • Неудачных: %v\n", llmMetrics["failed_requests"]))
+
+		if lastRequest, ok := llmMetrics["last_request_time"]; ok {
+			if lastTime, ok := lastRequest.(time.Time); ok && !lastTime.IsZero() {
+				text.WriteString(fmt.Sprintf("  • Последний запрос: %s\n", lastTime.Format("15:04:05")))
+			} else {
+				text.WriteString("  • Последний запрос: никогда\n")
+			}
+		}
+
+		if delay, ok := llmMetrics["delay_ms"]; ok {
+			text.WriteString(fmt.Sprintf("  • Задержка: %v мс\n", delay))
+		}
+		text.WriteString("\n")
+	}
+
+	// Получаем данные о домашних заданиях
+	homeworkStats, err := h.services.Homework.GetHomeworkStats()
+	if err != nil {
+		h.logger.Error("Failed to get homework stats", zap.Error(err))
+		text.WriteString("📚 *Домашние задания:*\n")
+		text.WriteString("  • Ошибка получения данных\n\n")
+	} else {
+		text.WriteString("📚 *Домашние задания:*\n")
+		text.WriteString(fmt.Sprintf("  • Всего выдано: %d\n", homeworkStats.TotalAssigned))
+		text.WriteString(fmt.Sprintf("  • Уникальных пользователей: %d\n\n", homeworkStats.UniqueUsers))
+	}
+
+	// Статус планировщика
+	if h.services.Scheduler != nil {
+		schedulerStatus := h.services.Scheduler.GetStatus()
+		text.WriteString("🔄 *Планировщик:*\n")
+		if isRunning, ok := schedulerStatus["running"].(bool); ok && isRunning {
+			text.WriteString("  • Статус: Активен\n")
+			if taskCount, ok := schedulerStatus["tasks_count"].(int); ok {
+				text.WriteString(fmt.Sprintf("  • Активных задач: %d\n", taskCount))
+			}
+		} else {
+			text.WriteString("  • Статус: Неактивен\n")
+		}
+		text.WriteString("\n")
+	}
+
+	// Время работы системы (примерное)
+	text.WriteString("⚡ *Система:*\n")
+	text.WriteString("  • Статус: Работает\n")
+	text.WriteString(fmt.Sprintf("  • Время: %s\n", time.Now().Format("15:04:05")))
+
+	h.sendMessage(message.Chat.ID, text.String())
 }
 
 // Homework выдает случайное домашнее задание

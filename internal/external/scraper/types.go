@@ -11,6 +11,7 @@ import (
 type Fetcher interface {
 	FetchMonthlyLinks(ctx context.Context, months []string, year string) ([]string, error)
 	ParseMonthlyPage(ctx context.Context, url, month, year string, artists map[string]bool) ([]Release, error)
+	GetLLMMetrics() map[string]interface{}
 }
 
 // Config представляет конфигурацию скрейпера
@@ -26,6 +27,7 @@ type LLMConfig struct {
 	BaseURL string
 	APIKey  string
 	Timeout time.Duration
+	Delay   time.Duration
 }
 
 // HTTPClientConfig представляет конфигурацию HTTP клиента

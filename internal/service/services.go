@@ -90,6 +90,7 @@ func NewServices(db *storage.Postgres, cfg *config.Config, logger *zap.Logger) *
 			BaseURL: cfg.LLMConfig.BaseURL,
 			APIKey:  llmAPIKey, // Используем ключ из базы данных
 			Timeout: cfg.LLMConfig.Timeout,
+			Delay:   cfg.LLMConfig.Delay,
 		},
 	}
 	scraperClient := scraper.NewFetcher(scraperConfig, logger)

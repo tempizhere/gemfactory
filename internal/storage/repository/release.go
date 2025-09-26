@@ -278,3 +278,18 @@ func (r *ReleaseRepository) GetWithRelations() ([]model.Release, error) {
 
 	return releases, nil
 }
+
+// GetTotalCount возвращает общее количество релизов в базе данных
+func (r *ReleaseRepository) GetTotalCount() (int, error) {
+	ctx := context.Background()
+
+	count, err := r.db.NewSelect().
+		Model((*model.Release)(nil)).
+		Count(ctx)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to count releases: %w", err)
+	}
+
+	return count, nil
+}
