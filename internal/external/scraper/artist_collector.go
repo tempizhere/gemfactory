@@ -1,6 +1,7 @@
 package scraper
 
 import (
+	"html"
 	"regexp"
 	"strings"
 	"sync"
@@ -11,7 +12,8 @@ import (
 // collectArtistBlock собирает блок с артистом для LLM обработки
 func (f *fetcherImpl) collectArtistBlock(rowHTML string, artists map[string]bool, artistBlocks *[]ArtistBlock, mu *sync.Mutex, rowCount int) {
 	// Извлекаем артиста из строки - ищем <strong><mark> теги с артистами
-	artistPattern := regexp.MustCompile(`<strong><mark[^>]*class="has-inline-color has-red-color"[^>]*>([^<]+)</mark></strong>`)
+	// Используем более гибкий паттерн, который ищет mark теги с классом has-red-color
+	artistPattern := regexp.MustCompile(`<strong><mark[^>]*class="[^"]*has-red-color[^"]*"[^>]*>([^<]+)</mark></strong>`)
 	artistMatches := artistPattern.FindAllStringSubmatch(rowHTML, -1)
 
 	if len(artistMatches) == 0 {
@@ -30,6 +32,8 @@ func (f *fetcherImpl) collectArtistBlock(rowHTML string, artists map[string]bool
 		}
 
 		artist := strings.TrimSpace(match[1])
+		// Декодируем HTML-сущности: &amp;TEAM -> &TEAM
+		artist = html.UnescapeString(artist)
 		artistKey := strings.ToLower(artist)
 
 		// Проверяем, есть ли артист в списке для фильтрации
@@ -57,6 +61,8 @@ func (f *fetcherImpl) collectArtistBlock(rowHTML string, artists map[string]bool
 	firstArtist := ""
 	if len(artistMatches) > 0 && len(artistMatches[0]) > 1 {
 		firstArtist = strings.TrimSpace(artistMatches[0][1])
+		// Декодируем HTML-сущности для логирования
+		firstArtist = html.UnescapeString(firstArtist)
 	}
 	f.logger.Debug("Artist not in filter list", zap.String("artist", firstArtist), zap.Int("row", rowCount))
 }

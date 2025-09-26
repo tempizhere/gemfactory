@@ -54,8 +54,11 @@ func cleanYouTubeURL(url string) string {
 }
 
 // cleanHTMLBlock очищает HTML блок - извлекает дату, артиста и релизы в формате <event>
+// cleanHTMLBlock очищает HTML блок и преобразует его в структурированный формат
+// Входной формат: <tr><td>дата</td><td>артист + релизы</td></tr>
+// Выходной формат: <event><date>дата</date><artist>артист</artist><need_unparse>релизы</need_unparse></event>
 func cleanHTMLBlock(htmlStr string) string {
-	// 1. Извлекаем дату
+	// 1. Извлекаем дату из первого mark тега (левая колонка)
 	dateRe := regexp.MustCompile(`<mark[^>]*>([^<]+)</mark>`)
 	dateMatch := dateRe.FindStringSubmatch(htmlStr)
 	date := ""
@@ -63,52 +66,68 @@ func cleanHTMLBlock(htmlStr string) string {
 		date = strings.TrimSpace(dateMatch[1])
 	}
 
-	// 2. Извлекаем артиста (без скобок)
-	artistRe := regexp.MustCompile(`<strong><mark[^>]*>([^<]+)</mark></strong>|<strong>([^<]+)</strong>`)
-	artistMatch := artistRe.FindStringSubmatch(htmlStr)
+	// 2. Извлекаем имя артиста с приоритетом mark тега
+	// Приоритет 1: содержимое mark тега внутри strong (например, <strong><mark>Rosanna</mark></strong>)
+	markRe := regexp.MustCompile(`<strong><mark[^>]*>([^<]+)</mark></strong>`)
+	markMatch := markRe.FindStringSubmatch(htmlStr)
 	artist := ""
-	if len(artistMatch) > 1 {
-		artist = artistMatch[1]
-		if artist == "" && len(artistMatch) > 2 {
-			artist = artistMatch[2]
+	if len(markMatch) > 1 {
+		artist = markMatch[1]
+	} else {
+		// Приоритет 2: содержимое strong тега (для случаев без mark тега)
+		strongRe := regexp.MustCompile(`<strong>([^<]+)</strong>`)
+		strongMatch := strongRe.FindStringSubmatch(htmlStr)
+		if len(strongMatch) > 1 {
+			artist = strongMatch[1]
 		}
-		artist = regexp.MustCompile(`\s*\(.*?\)\s*`).ReplaceAllString(artist, "")
+	}
+
+	// Обрабатываем извлеченное имя артиста
+	if artist != "" {
+		// Декодируем HTML-сущности: &amp;TEAM -> &TEAM, &lt; -> <, и т.д.
+		artist = html.UnescapeString(artist)
+		// Сохраняем все символы: скобки, специальные символы, эмодзи
+		// Примеры: ALL(H)OURS, tripleS ∞!, IRENE & SEULGI
 		artist = strings.TrimSpace(artist)
 	}
 
-	// 3. Извлекаем релизы
+	// 3. Извлекаем и очищаем информацию о релизах из правой колонки
 	releasesRe := regexp.MustCompile(`<td class="has-text-align-left"[^>]*>(.*?)</td>`)
 	releasesMatch := releasesRe.FindStringSubmatch(htmlStr)
 	releases := ""
 	if len(releasesMatch) > 1 {
 		releases = releasesMatch[1]
 
-		// Убираем Teaser Poster и всё после него
+		// Удаляем служебную информацию (Teaser Poster и всё после него)
 		releases = regexp.MustCompile(`(?is)Teaser Poster:.*`).ReplaceAllString(releases, "")
 
-		// Декодируем HTML сущности
+		// Декодируем HTML-сущности: &amp; -> &, &lt; -> <, &quot; -> ", и т.д.
 		releases = html.UnescapeString(releases)
 
-		// Заменяем <br> на перенос строки
+		// Преобразуем HTML переносы строк в обычные переносы
 		releases = regexp.MustCompile(`(?i)<br\s*/?>`).ReplaceAllString(releases, "\n")
 
-		// Убираем strong/mark/span
+		// Удаляем форматирующие теги (strong, mark, span) - они не нужны для парсинга
 		releases = regexp.MustCompile(`</?(strong|mark|span)[^>]*>`).ReplaceAllString(releases, "")
 
-		// Сохраняем <a> ссылки и теги, которые могут быть частью названий, убираем остальное
+		// Умная очистка HTML тегов:
+		// - Сохраняем <a> ссылки
+		// - Сохраняем теги без атрибутов (могут быть частью названий: <unevermet>, <Club Icarus Remix>)
+		// - Удаляем остальные теги
 		releases = regexp.MustCompile(`</?[^>]+>`).ReplaceAllStringFunc(releases, func(tag string) string {
+			// Сохраняем ссылки
 			if strings.HasPrefix(tag, "<a ") || strings.HasPrefix(tag, "</a>") {
 				return tag
 			}
-			// Сохраняем теги, которые могут быть частью названий (например, <unevermet>, <Club Icarus Remix>)
-			// Исключаем только теги с атрибутами (содержащие =)
+			// Сохраняем теги без атрибутов (могут быть частью названий альбомов/треков)
 			if strings.HasPrefix(tag, "<") && !strings.Contains(tag, "=") {
 				return tag
 			}
+			// Удаляем все остальные теги
 			return ""
 		})
 
-		// Очищаем YouTube ссылки от tracking параметров
+		// Очищаем YouTube ссылки от tracking параметров (si=, t=, и т.д.)
 		releases = regexp.MustCompile(`<a href="([^"]*(?:youtu\.be|youtube\.com)[^"]*)"[^>]*>`).ReplaceAllStringFunc(releases, func(match string) string {
 			hrefRegex := regexp.MustCompile(`href="([^"]*)"`)
 			hrefMatch := hrefRegex.FindStringSubmatch(match)
@@ -119,11 +138,11 @@ func cleanHTMLBlock(htmlStr string) string {
 			return match
 		})
 
-		// Убираем лишние пробелы
+		// Удаляем лишние пробелы в начале и конце
 		releases = strings.TrimSpace(releases)
 	}
 
-	// Формируем финальный результат
+	// 4. Формируем структурированный результат в формате <event>, используется для дальнейшего парсинга (умный парсинг или LLM)
 	result := fmt.Sprintf(
 		"<event>\n<date>%s</date>\n<artist>%s</artist>\n<need_unparse>\n%s\n</need_unparse>\n</event>",
 		date, artist, releases,
