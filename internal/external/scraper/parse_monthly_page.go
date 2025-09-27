@@ -552,41 +552,6 @@ func TestExtractDate(htmlStr, month, year string) string {
 	return extractDate(htmlStr, month, year, logger)
 }
 
-// llmParseBlocks отправляет блоки в LLM для парсинга
-func (f *fetcherImpl) llmParseBlocks(ctx context.Context, blocks []string, month, year string) ([]ParsedRelease, error) {
-	if len(blocks) == 0 {
-		return []ParsedRelease{}, nil
-	}
-
-	// Объединяем все блоки через точку с запятой
-	htmlBlocks := strings.Join(blocks, "; ")
-
-	// Отправляем в LLM
-	llmClient := f.llmClient
-	if llmClient == nil {
-		return nil, fmt.Errorf("LLM client not available")
-	}
-
-	response, err := llmClient.ParseMultiRelease(ctx, htmlBlocks, month)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse with LLM: %w", err)
-	}
-
-	// Конвертируем в ParsedRelease
-	var releases []ParsedRelease
-	for _, release := range response.Releases {
-		releases = append(releases, ParsedRelease{
-			Artist:     release.Artist,
-			Date:       release.Date,
-			Track:      release.Track,
-			Album:      release.Album,
-			YouTubeURL: release.YouTubeURL,
-		})
-	}
-
-	return releases, nil
-}
-
 // llmParseBlocksIndividually отправляет каждый блок в LLM отдельно с rate limiting
 func (f *fetcherImpl) llmParseBlocksIndividually(ctx context.Context, blocks []string, month, year string) ([]ParsedRelease, error) {
 	if len(blocks) == 0 {
