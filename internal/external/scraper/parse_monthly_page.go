@@ -92,7 +92,8 @@ func cleanHTMLBlock(htmlStr string) string {
 	}
 
 	// 3. Извлекаем и очищаем информацию о релизах из правой колонки
-	releasesRe := regexp.MustCompile(`<td class="has-text-align-left"[^>]*>(.*?)</td>`)
+	// Ищем второй <td> тег (правая колонка), исключая первый (левая колонка с датой)
+	releasesRe := regexp.MustCompile(`<td[^>]*>.*?</td>\s*<td[^>]*>(.*?)</td>`)
 	releasesMatch := releasesRe.FindStringSubmatch(htmlStr)
 	releases := ""
 	if len(releasesMatch) > 1 {
@@ -155,9 +156,9 @@ func cleanHTMLBlock(htmlStr string) string {
 func IsSimpleCase(htmlStr string, logger *zap.Logger) bool {
 	// 1. Проверяем количество дат в блоке
 	dateCount := countDatesInBlock(htmlStr)
-	logger.Debug("Date count check", zap.Int("count", dateCount))
+	logger.Info("Date count check", zap.Int("count", dateCount), zap.String("html_preview", htmlStr[:min(200, len(htmlStr))]))
 	if dateCount > 1 {
-		logger.Debug("Multiple dates detected", zap.Int("count", dateCount))
+		logger.Info("Multiple dates detected", zap.Int("count", dateCount))
 		return false // Множественные даты - сложный случай
 	}
 
@@ -204,32 +205,45 @@ func countDatesInBlock(htmlStr string) int {
 	// 1. Ищем даты в <date> тегах (для очищенных блоков)
 	dateTagRegex := regexp.MustCompile(`<date>([^<]+)</date>`)
 	dateTagMatches := dateTagRegex.FindAllString(htmlStr, -1)
+	fmt.Printf("DEBUG: Found %d date tags: %v\n", len(dateTagMatches), dateTagMatches)
 	if len(dateTagMatches) > 0 {
 		// Также считаем даты в <need_unparse> теге, но исключаем справочные даты
 		needUnparseRegex := regexp.MustCompile(`<need_unparse>([\s\S]*?)</need_unparse>`)
 		needUnparseMatches := needUnparseRegex.FindAllStringSubmatch(htmlStr, -1)
 
 		totalDates := len(dateTagMatches)
+		fmt.Printf("DEBUG: Initial total dates from tags: %d\n", totalDates)
 		for _, match := range needUnparseMatches {
 			if len(match) > 1 {
 				content := match[1]
-				// Ищем даты в формате "Month Day, Year", но исключаем справочные даты
-				datePattern := `\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},\s+\d{4}\b`
+				fmt.Printf("DEBUG: need_unparse content: %s\n", content[:min(300, len(content))])
+				// Ищем даты в формате "Month Day, Year" или "Month Day", но исключаем справочные даты
+				datePattern := `\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:,\s+\d{4})?\b`
 				re := regexp.MustCompile(datePattern)
 				allDates := re.FindAllString(strings.ToLower(content), -1)
+				fmt.Printf("DEBUG: Found %d dates in need_unparse: %v\n", len(allDates), allDates)
 
-				// Исключаем даты в контексте "Album Release:", "Digital Release:", "CD Release:" и т.д.
-				referenceDatePattern := `(?i)(album release|digital release|cd release|mv release|pre-release|ost release):\s*[^:]*\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},\s+\d{4}\b`
-				referenceRegex := regexp.MustCompile(referenceDatePattern)
-				referenceMatches := referenceRegex.FindAllString(strings.ToLower(content), -1)
+				// Исключаем только справочные даты (даты прошлых релизов), но НЕ даты текущих релизов
+				// Справочные даты - это даты в контексте "Album Release: Dec 1, 2023" или "Dec 18 at 0 AM KST: ... MV Release"
+				// НЕ исключаем даты типа "Jan 2 at 0 AM KST: ... Release" - это даты самих релизов
+				referenceDatePatterns := []string{
+					// Формат: "Album Release: Month Day, Year" - справочная дата
+					`(?i)\b(album release|digital release|cd release|ost release):\s*[^:]*\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},\s+\d{4}\b`,
+					// Формат: "Month Day, Year: ... Release" - справочная дата
+					`(?i)\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},\s+\d{4}:\s*[^:]*\b(release|mv|album|digital|cd|ost|pre-release)\b`,
+				}
 
 				// Подсчитываем только даты, которые НЕ являются справочными
 				referenceDates := make(map[string]bool)
-				for _, refMatch := range referenceMatches {
-					// Извлекаем дату из справочного контекста
-					dateInRef := re.FindString(refMatch)
-					if dateInRef != "" {
-						referenceDates[dateInRef] = true
+				for _, pattern := range referenceDatePatterns {
+					referenceRegex := regexp.MustCompile(pattern)
+					referenceMatches := referenceRegex.FindAllString(strings.ToLower(content), -1)
+					for _, refMatch := range referenceMatches {
+						// Извлекаем дату из справочного контекста
+						dateInRef := re.FindString(refMatch)
+						if dateInRef != "" {
+							referenceDates[dateInRef] = true
+						}
 					}
 				}
 
@@ -237,10 +251,14 @@ func countDatesInBlock(htmlStr string) int {
 				for _, date := range allDates {
 					if !referenceDates[date] {
 						totalDates++
+						fmt.Printf("DEBUG: Added date: %s\n", date)
+					} else {
+						fmt.Printf("DEBUG: Excluded reference date: %s\n", date)
 					}
 				}
 			}
 		}
+		fmt.Printf("DEBUG: Final total dates: %d\n", totalDates)
 		return totalDates
 	}
 
@@ -534,39 +552,78 @@ func TestExtractDate(htmlStr, month, year string) string {
 	return extractDate(htmlStr, month, year, logger)
 }
 
-// llmParseBlocks отправляет блоки в LLM для парсинга
-func (f *fetcherImpl) llmParseBlocks(ctx context.Context, blocks []string, month, year string) ([]ParsedRelease, error) {
+// llmParseBlocksIndividually отправляет каждый блок в LLM отдельно с rate limiting
+func (f *fetcherImpl) llmParseBlocksIndividually(ctx context.Context, blocks []string, month, year string) ([]ParsedRelease, error) {
 	if len(blocks) == 0 {
 		return []ParsedRelease{}, nil
 	}
 
-	// Объединяем все блоки через точку с запятой
-	htmlBlocks := strings.Join(blocks, "; ")
+	f.logger.Info("Starting individual block processing",
+		zap.Int("total_blocks", len(blocks)),
+		zap.String("month", month))
 
-	// Отправляем в LLM
-	llmClient := f.llmClient
-	if llmClient == nil {
-		return nil, fmt.Errorf("LLM client not available")
+	var allReleases []ParsedRelease
+	var errors []error
+
+	for i, block := range blocks {
+		// Проверяем контекст перед каждым блоком
+		select {
+		case <-ctx.Done():
+			f.logger.Info("Context cancelled during LLM processing",
+				zap.Int("processed_blocks", i),
+				zap.Int("total_blocks", len(blocks)))
+			return allReleases, ctx.Err()
+		default:
+		}
+
+		f.logger.Info("Processing block with LLM",
+			zap.Int("block_index", i+1),
+			zap.Int("total_blocks", len(blocks)),
+			zap.String("month", month))
+
+		// Отправляем один блок в LLM
+		response, err := f.llmClient.ParseSingleBlock(ctx, block, month)
+		if err != nil {
+			f.logger.Error("Failed to parse single block with LLM",
+				zap.Int("block_index", i+1),
+				zap.Error(err))
+			errors = append(errors, fmt.Errorf("block %d: %w", i+1, err))
+			continue // Продолжаем обработку остальных блоков
+		}
+
+		// Конвертируем в ParsedRelease
+		for _, release := range response.Releases {
+			allReleases = append(allReleases, ParsedRelease{
+				Artist:     release.Artist,
+				Date:       release.Date,
+				Track:      release.Track,
+				Album:      release.Album,
+				YouTubeURL: release.YouTubeURL,
+			})
+		}
+
+		f.logger.Info("Successfully processed block",
+			zap.Int("block_index", i+1),
+			zap.Int("releases_found", len(response.Releases)))
 	}
 
-	response, err := llmClient.ParseMultiRelease(ctx, htmlBlocks, month)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse with LLM: %w", err)
+	// Логируем ошибки, но не прерываем выполнение
+	if len(errors) > 0 {
+		f.logger.Warn("Some blocks failed to process",
+			zap.Int("failed_blocks", len(errors)),
+			zap.Int("total_blocks", len(blocks)))
+		for _, err := range errors {
+			f.logger.Warn("Block processing error", zap.Error(err))
+		}
 	}
 
-	// Конвертируем в ParsedRelease
-	var releases []ParsedRelease
-	for _, release := range response.Releases {
-		releases = append(releases, ParsedRelease{
-			Artist:     release.Artist,
-			Date:       release.Date,
-			Track:      release.Track,
-			Album:      release.Album,
-			YouTubeURL: release.YouTubeURL,
-		})
-	}
+	f.logger.Info("Completed individual block processing",
+		zap.Int("total_blocks", len(blocks)),
+		zap.Int("successful_blocks", len(blocks)-len(errors)),
+		zap.Int("failed_blocks", len(errors)),
+		zap.Int("total_releases", len(allReleases)))
 
-	return releases, nil
+	return allReleases, nil
 }
 
 // ParseMonthlyPage parses a monthly schedule page (новая LLM-основанная логика)
@@ -689,12 +746,17 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month, year str
 			zap.String("reason", "complex case or extraction failed"))
 	}
 
-	// Парсим оставшиеся блоки через LLM
-	var llmParsedReleases []ParsedRelease
-	if len(llmBlocks) > 0 && f.llmClient != nil {
-		f.logger.Info("Processing remaining blocks with LLM", zap.Int("blocks_count", len(llmBlocks)))
+	// Дедуплицируем блоки по артисту перед отправкой в LLM
+	deduplicatedBlocks := f.deduplicateBlocksByArtist(llmBlocks, f.logger)
 
-		llmReleases, err := f.llmParseBlocks(ctx, llmBlocks, month, year)
+	// Парсим оставшиеся блоки через LLM (по одному блоку)
+	var llmParsedReleases []ParsedRelease
+	if len(deduplicatedBlocks) > 0 && f.llmClient != nil {
+		f.logger.Info("Processing remaining blocks with LLM (one by one)",
+			zap.Int("original_blocks_count", len(llmBlocks)),
+			zap.Int("deduplicated_blocks_count", len(deduplicatedBlocks)))
+
+		llmReleases, err := f.llmParseBlocksIndividually(ctx, deduplicatedBlocks, month, year)
 		if err != nil {
 			f.logger.Error("Failed to parse blocks with LLM", zap.Error(err))
 			return nil, fmt.Errorf("failed to parse blocks with LLM: %w", err)
@@ -753,4 +815,70 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month, year str
 		zap.Int("total_releases", len(allReleases)))
 
 	return allReleases, nil
+}
+
+// deduplicateBlocksByArtist дедуплицирует блоки по артисту
+// Оставляет только последний блок для каждого артиста
+func (f *fetcherImpl) deduplicateBlocksByArtist(blocks []string, logger *zap.Logger) []string {
+	if len(blocks) == 0 {
+		return blocks
+	}
+
+	// Мапа для отслеживания последнего блока для каждого артиста
+	artistLastBlock := make(map[string]string)
+
+	// Извлекаем артиста и дату из каждого блока
+	for i, block := range blocks {
+		artist, date := f.extractArtistAndDateFromBlock(block)
+		if artist == "" {
+			logger.Warn("Could not extract artist from block", zap.Int("block_index", i+1))
+			continue
+		}
+
+		// Создаем ключ: только артист (без даты)
+		key := strings.ToLower(artist)
+
+		// Сохраняем последний блок для этого артиста
+		artistLastBlock[key] = block
+
+		logger.Debug("Processed block for deduplication",
+			zap.Int("block_index", i+1),
+			zap.String("artist", artist),
+			zap.String("date", date),
+			zap.String("key", key))
+	}
+
+	// Собираем уникальные блоки
+	var deduplicatedBlocks []string
+	for key, block := range artistLastBlock {
+		deduplicatedBlocks = append(deduplicatedBlocks, block)
+		logger.Debug("Added deduplicated block", zap.String("key", key))
+	}
+
+	logger.Info("Block deduplication completed",
+		zap.Int("original_count", len(blocks)),
+		zap.Int("deduplicated_count", len(deduplicatedBlocks)))
+
+	return deduplicatedBlocks
+}
+
+// extractArtistAndDateFromBlock извлекает артиста и дату из HTML блока
+func (f *fetcherImpl) extractArtistAndDateFromBlock(block string) (string, string) {
+	// Извлекаем артиста из тега <artist>
+	artistRe := regexp.MustCompile(`<artist>([^<]+)</artist>`)
+	artistMatch := artistRe.FindStringSubmatch(block)
+	artist := ""
+	if len(artistMatch) > 1 {
+		artist = strings.TrimSpace(artistMatch[1])
+	}
+
+	// Извлекаем дату из тега <date>
+	dateRe := regexp.MustCompile(`<date>([^<]+)</date>`)
+	dateMatch := dateRe.FindStringSubmatch(block)
+	date := ""
+	if len(dateMatch) > 1 {
+		date = strings.TrimSpace(dateMatch[1])
+	}
+
+	return artist, date
 }

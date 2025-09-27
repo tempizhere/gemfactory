@@ -135,6 +135,8 @@ func (r *Router) handleMessage(message *tgbotapi.Message) {
 		r.handlers.ReloadPlaylist(message)
 	case "parse":
 		r.handlers.ParseReleases(message)
+	case "llm_metrics":
+		r.handlers.LLMMetrics(message)
 	default:
 		r.handlers.Unknown(message)
 	}

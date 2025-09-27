@@ -126,6 +126,7 @@ INSERT INTO gemfactory.config (key, value, description) VALUES
 ('LLM_API_KEY', '', 'LLM API key'),
 ('LLM_BASE_URL', 'https://integrate.api.nvidia.com/v1', 'LLM base URL'),
 ('LLM_TIMEOUT', '120', 'LLM timeout in seconds'),
+('LLM_DELAY', '1500', 'LLM request delay in milliseconds'),
 ('HEALTH_PORT', '8080', 'Health check port'),
 ('TIMEZONE', 'Europe/Moscow', 'Application timezone'),
 ('APP_DATA_DIR', './data', 'Application data directory')

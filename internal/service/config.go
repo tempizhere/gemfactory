@@ -60,6 +60,7 @@ func (s *ConfigService) GetAll() (string, error) {
 	sensitiveKeys := map[string]bool{
 		"BOT_TOKEN":             true,
 		"LLM_API_KEY":           true,
+		"LLM_DELAY":             true,
 		"SPOTIFY_CLIENT_ID":     true,
 		"SPOTIFY_CLIENT_SECRET": true,
 	}

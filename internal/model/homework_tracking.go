@@ -38,4 +38,6 @@ type HomeworkTrackingRepository interface {
 	GetIssuedTrackIDs(userID int64, spotifyID string) ([]string, error)
 	CanRequestHomework(userID int64) (bool, error)
 	GetLastRequestTime(userID int64) (*time.Time, error)
+	GetTotalAssignedCount() (int, error)
+	GetUniqueUsersCount() (int, error)
 }

@@ -124,6 +124,7 @@ func Load() (*Config, error) {
 			BaseURL: getEnv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
 			APIKey:  getEnv("LLM_API_KEY", ""),
 			Timeout: getEnvDuration("LLM_TIMEOUT", 2*time.Minute),
+			Delay:   getEnvDuration("LLM_DELAY", 1500*time.Millisecond),
 		},
 	}
 
@@ -235,4 +236,5 @@ type LLMConfig struct {
 	BaseURL string
 	APIKey  string
 	Timeout time.Duration
+	Delay   time.Duration
 }

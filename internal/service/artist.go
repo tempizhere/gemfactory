@@ -252,3 +252,28 @@ func (s *ArtistService) FormatArtists() string {
 
 	return response.String()
 }
+
+// GetArtistCounts возвращает количество артистов по категориям
+func (s *ArtistService) GetArtistCounts() (femaleCount, maleCount, totalCount int, err error) {
+	// Получаем всех активных артистов
+	artists, err := s.repo.GetActive()
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to get active artists: %w", err)
+	}
+
+	femaleCount = 0
+	maleCount = 0
+
+	for _, artist := range artists {
+		switch artist.Gender {
+		case model.GenderFemale:
+			femaleCount++
+		case model.GenderMale:
+			maleCount++
+		// GenderMixed не учитываем в подсчете
+		}
+	}
+
+	totalCount = femaleCount + maleCount
+	return femaleCount, maleCount, totalCount, nil
+}

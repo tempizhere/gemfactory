@@ -507,6 +507,7 @@ func (h *Handlers) Admin(message *tgbotapi.Message) {
 		"/tasks_list - Показать список задач\n" +
 		"/reload_playlist - Перезагрузить плейлист\n" +
 		"/parse [год] - Парсинг релизов\n" +
+		"/llm_metrics - Показать метрики LLM\n" +
 		"/parse [месяц] [год] - Парсинг конкретного месяца\n" +
 		"/parse [месяц] - Парсинг месяца текущего года\n" +
 		"/parse - Парсинг текущего месяца\n\n" +
@@ -515,6 +516,43 @@ func (h *Handlers) Admin(message *tgbotapi.Message) {
 		"/remove_artist ablume, aespa, apink"
 
 	h.sendMessage(message.Chat.ID, text)
+}
+
+// LLMMetrics показывает метрики LLM
+func (h *Handlers) LLMMetrics(message *tgbotapi.Message) {
+	// Проверка прав администратора
+	if !h.isAdmin(message.From) {
+		h.sendMessage(message.Chat.ID, "У вас нет прав для выполнения этой команды")
+		return
+	}
+
+	// Получаем метрики LLM
+	metrics := h.services.Release.GetLLMMetrics()
+
+	var text strings.Builder
+	text.WriteString("📊 *Метрики LLM*\n\n")
+
+	if errorMsg, ok := metrics["error"]; ok {
+		text.WriteString(fmt.Sprintf("❌ Ошибка: %v\n", errorMsg))
+	} else {
+		text.WriteString(fmt.Sprintf("📈 Всего запросов: %v\n", metrics["total_requests"]))
+		text.WriteString(fmt.Sprintf("✅ Успешных: %v\n", metrics["successful_requests"]))
+		text.WriteString(fmt.Sprintf("❌ Неудачных: %v\n", metrics["failed_requests"]))
+
+		if lastRequest, ok := metrics["last_request_time"]; ok {
+			if lastTime, ok := lastRequest.(time.Time); ok && !lastTime.IsZero() {
+				text.WriteString(fmt.Sprintf("🕐 Последний запрос: %s\n", lastTime.Format("15:04:05")))
+			} else {
+				text.WriteString("🕐 Последний запрос: никогда\n")
+			}
+		}
+
+		if delay, ok := metrics["delay_ms"]; ok {
+			text.WriteString(fmt.Sprintf("⏱️ Задержка: %v мс\n", delay))
+		}
+	}
+
+	h.sendMessage(message.Chat.ID, text.String())
 }
 
 // sendMessage отправляет сообщение

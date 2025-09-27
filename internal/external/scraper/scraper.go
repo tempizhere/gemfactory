@@ -25,6 +25,7 @@ func NewFetcher(config Config, logger *zap.Logger) Fetcher {
 		BaseURL: config.LLMConfig.BaseURL,
 		APIKey:  config.LLMConfig.APIKey,
 		Timeout: config.LLMConfig.Timeout,
+		Delay:   config.LLMConfig.Delay,
 	}, logger)
 
 	return &fetcherImpl{
@@ -33,6 +34,16 @@ func NewFetcher(config Config, logger *zap.Logger) Fetcher {
 		httpClient: httpClient,
 		llmClient:  llmClient,
 	}
+}
+
+// GetLLMMetrics возвращает метрики LLM клиента
+func (f *fetcherImpl) GetLLMMetrics() map[string]interface{} {
+	if f.llmClient == nil {
+		return map[string]interface{}{
+			"error": "LLM client not available",
+		}
+	}
+	return f.llmClient.GetMetrics()
 }
 
 // FetchMonthlyLinks получает ссылки на страницы с расписанием релизов за указанные месяцы

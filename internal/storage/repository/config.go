@@ -167,6 +167,7 @@ func (r *ConfigRepository) GetDefaultConfig() map[string]string {
 		"DB_DSN":                "",
 		"HEALTH_PORT":           "8080",
 		"LLM_API_KEY":           "",
+		"LLM_DELAY":             "1500",
 	}
 }
 

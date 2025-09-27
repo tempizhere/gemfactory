@@ -36,6 +36,11 @@ func NewReleaseService(db *bun.DB, scraper scraper.Fetcher, logger *zap.Logger) 
 	}
 }
 
+// GetLLMMetrics возвращает метрики LLM
+func (s *ReleaseService) GetLLMMetrics() map[string]interface{} {
+	return s.scraper.GetLLMMetrics()
+}
+
 // GetReleasesForMonth возвращает релизы за месяц с фильтром
 func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly bool) (string, error) {
 	// Нормализуем месяц
@@ -572,4 +577,9 @@ func translateMonthToRussian(month string) string {
 
 	// Если месяц не найден, возвращаем оригинальное название
 	return month
+}
+
+// GetTotalReleaseCount возвращает общее количество релизов в базе данных
+func (s *ReleaseService) GetTotalReleaseCount() (int, error) {
+	return s.repo.GetTotalCount()
 }

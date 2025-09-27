@@ -207,3 +207,35 @@ func (r *HomeworkTrackingRepository) GetAllPending() ([]model.HomeworkTracking, 
 	}
 	return trackings, nil
 }
+
+// GetTotalAssignedCount возвращает общее количество выданных домашних заданий
+func (r *HomeworkTrackingRepository) GetTotalAssignedCount() (int, error) {
+	ctx := context.Background()
+
+	count, err := r.db.NewSelect().
+		Model((*model.HomeworkTracking)(nil)).
+		Count(ctx)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to count homework assignments: %w", err)
+	}
+
+	return count, nil
+}
+
+// GetUniqueUsersCount возвращает количество уникальных пользователей, получивших домашние задания
+func (r *HomeworkTrackingRepository) GetUniqueUsersCount() (int, error) {
+	ctx := context.Background()
+
+	var count int
+	err := r.db.NewSelect().
+		Model((*model.HomeworkTracking)(nil)).
+		ColumnExpr("COUNT(DISTINCT user_id)").
+		Scan(ctx, &count)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to count unique users: %w", err)
+	}
+
+	return count, nil
+}

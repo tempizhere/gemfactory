@@ -89,6 +89,7 @@ func (f *ComponentFactory) CreateScraper() scraper.Fetcher {
 			BaseURL: f.config.LLMConfig.BaseURL,
 			APIKey:  f.config.LLMConfig.APIKey,
 			Timeout: f.config.LLMConfig.Timeout,
+			Delay:   f.config.LLMConfig.Delay,
 		},
 	}
 	scraperInstance := scraper.NewFetcher(scraperConfig, f.logger)

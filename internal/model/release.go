@@ -70,6 +70,7 @@ type ReleaseRepository interface {
 	GetWithRelations() ([]Release, error)
 	GetByArtistAndTitle(artistID int, title string) (*Release, error)
 	GetByArtistDateAndTrack(artistID int, date, titleTrack string) (*Release, error)
+	GetTotalCount() (int, error)
 }
 
 // ScrapedReleaseData представляет данные релиза для скрейпера
