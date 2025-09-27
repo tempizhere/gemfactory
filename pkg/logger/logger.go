@@ -3,6 +3,7 @@ package logger
 
 import (
 	"os"
+	"path/filepath"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -31,10 +32,11 @@ func New() *zap.Logger {
 	)
 
 	// Файловый вывод
+	logPath := getLogPath()
 	fileCore := zapcore.NewCore(
 		zapcore.NewJSONEncoder(encoderConfig),
 		zapcore.AddSync(&lumberjack.Logger{
-			Filename:   "/app/data/app.log",
+			Filename:   logPath,
 			MaxSize:    100, // MB
 			MaxBackups: 3,
 			MaxAge:     28, // days
@@ -69,4 +71,28 @@ func getLogLevel() zapcore.Level {
 	default:
 		return zapcore.InfoLevel
 	}
+}
+
+// getLogPath получает путь к файлу логов из переменной окружения или использует значение по умолчанию
+func getLogPath() string {
+	// Сначала проверяем переменную LOG_PATH
+	if logPath := os.Getenv("LOG_PATH"); logPath != "" {
+		return logPath
+	}
+	
+	// Затем проверяем APP_DATA_DIR
+	if dataDir := os.Getenv("APP_DATA_DIR"); dataDir != "" {
+		// Создаем директорию если она не существует
+		if err := os.MkdirAll(dataDir, 0755); err == nil {
+			return filepath.Join(dataDir, "app.log")
+		}
+	}
+	
+	// По умолчанию используем локальную папку logs
+	if err := os.MkdirAll("logs", 0755); err == nil {
+		return "logs/app.log"
+	}
+	
+	// Если ничего не получилось, используем текущую директорию
+	return "app.log"
 }
