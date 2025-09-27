@@ -270,7 +270,7 @@ func (s *ArtistService) GetArtistCounts() (femaleCount, maleCount, totalCount in
 			femaleCount++
 		case model.GenderMale:
 			maleCount++
-		// GenderMixed не учитываем в подсчете
+			// GenderMixed не учитываем в подсчете
 		}
 	}
 

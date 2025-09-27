@@ -45,10 +45,11 @@ services:
       # Health check
       HEALTH_PORT: 8080
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_PATH: /app/logs/app.log
     ports:
       - "8080:8080"
     # volumes:
-      # - ../logs:/app/logs:rw  # Отключено - логирование только в консоль
+    # - ../logs:/app/logs:rw  # Отключено - логирование только в консоль
     restart: unless-stopped
     depends_on:
       postgres:
@@ -57,13 +58,21 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 512M
         reservations:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 256M
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -77,4 +86,3 @@ volumes:
 networks:
   gemfactory:
     driver: bridge
-

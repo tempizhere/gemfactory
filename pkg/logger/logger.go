@@ -77,7 +77,12 @@ func getLogLevel() zapcore.Level {
 func getLogPath() string {
 	// Сначала проверяем переменную LOG_PATH
 	if logPath := os.Getenv("LOG_PATH"); logPath != "" {
-		return logPath
+		// Создаем директорию для файла логов если она не существует
+		dir := filepath.Dir(logPath)
+		if err := os.MkdirAll(dir, 0755); err == nil {
+			return logPath
+		}
+		// Если не удалось создать директорию, продолжаем с другими вариантами
 	}
 
 	// Затем проверяем APP_DATA_DIR
