@@ -265,12 +265,13 @@ func (s *ArtistService) GetArtistCounts() (femaleCount, maleCount, totalCount in
 	maleCount = 0
 
 	for _, artist := range artists {
-		if artist.Gender == model.GenderFemale {
+		switch artist.Gender {
+		case model.GenderFemale:
 			femaleCount++
-		} else if artist.Gender == model.GenderMale {
+		case model.GenderMale:
 			maleCount++
-		}
 		// GenderMixed не учитываем в подсчете
+		}
 	}
 
 	totalCount = femaleCount + maleCount

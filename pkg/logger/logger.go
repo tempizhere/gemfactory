@@ -79,7 +79,7 @@ func getLogPath() string {
 	if logPath := os.Getenv("LOG_PATH"); logPath != "" {
 		return logPath
 	}
-	
+
 	// Затем проверяем APP_DATA_DIR
 	if dataDir := os.Getenv("APP_DATA_DIR"); dataDir != "" {
 		// Создаем директорию если она не существует
@@ -87,12 +87,12 @@ func getLogPath() string {
 			return filepath.Join(dataDir, "app.log")
 		}
 	}
-	
+
 	// По умолчанию используем локальную папку logs
 	if err := os.MkdirAll("logs", 0755); err == nil {
 		return "logs/app.log"
 	}
-	
+
 	// Если ничего не получилось, используем текущую директорию
 	return "app.log"
 }
