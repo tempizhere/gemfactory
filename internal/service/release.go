@@ -66,7 +66,7 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 	}
 
 	// Получаем релизы
-	// Получаем все релизы с артистами и фильтруем по месяцу
+	// Получаем активные релизы с артистами и фильтруем по месяцу
 	allReleases, err := s.repo.GetWithRelations()
 	if err != nil {
 		return "", fmt.Errorf("failed to get all releases: %w", err)
@@ -494,9 +494,9 @@ func (s *ReleaseService) ParseReleasesForMonth(ctx context.Context, month string
 	return savedCount, nil
 }
 
-// GetReleasesByArtistName возвращает релизы по имени артиста
+// GetReleasesByArtistName возвращает релизы по имени артиста (только активные)
 func (s *ReleaseService) GetReleasesByArtistName(artistName string) (string, error) {
-	// Получаем релизы по имени артиста
+	// Получаем релизы по имени артиста (только активные)
 	releases, err := s.repo.GetByArtistName(artistName)
 	if err != nil {
 		return "", fmt.Errorf("failed to get releases for artist %s: %w", artistName, err)

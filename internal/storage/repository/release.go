@@ -190,7 +190,7 @@ func (r *ReleaseRepository) GetByArtist(artistID int) ([]model.Release, error) {
 	return releases, nil
 }
 
-// GetByArtistName возвращает релизы по имени артиста (без учета is_active)
+// GetByArtistName возвращает релизы по имени артиста (только активные)
 func (r *ReleaseRepository) GetByArtistName(artistName string) ([]model.Release, error) {
 	ctx := context.Background()
 	var releases []model.Release
@@ -199,6 +199,8 @@ func (r *ReleaseRepository) GetByArtistName(artistName string) ([]model.Release,
 		Model(&releases).
 		Relation("Artist").
 		Where("LOWER(artist.name) = LOWER(?)", artistName).
+		Where("release.is_active = ?", true).
+		Where("artist.is_active = ?", true).
 		Order("date ASC").
 		Scan(ctx)
 
@@ -261,7 +263,7 @@ func (r *ReleaseRepository) GetActive() ([]model.Release, error) {
 	return releases, nil
 }
 
-// GetWithRelations возвращает релизы с загруженными связями
+// GetWithRelations возвращает релизы с загруженными связями (только активные)
 func (r *ReleaseRepository) GetWithRelations() ([]model.Release, error) {
 	ctx := context.Background()
 	var releases []model.Release
@@ -269,6 +271,8 @@ func (r *ReleaseRepository) GetWithRelations() ([]model.Release, error) {
 	err := r.db.NewSelect().
 		Model(&releases).
 		Relation("Artist").
+		Where("release.is_active = ?", true).
+		Where("artist.is_active = ?", true).
 		Order("date ASC").
 		Scan(ctx)
 
