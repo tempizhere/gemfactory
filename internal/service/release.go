@@ -57,6 +57,11 @@ func (s *ReleaseService) GetReleasesForMonth(month string, femaleOnly, maleOnly 
 		}
 	}
 
+	// Если год не указан, используем текущий год
+	if year == 0 {
+		year = time.Now().Year()
+	}
+
 	// Определяем пол по фильтру
 	var gender string
 	if femaleOnly {

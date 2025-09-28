@@ -65,9 +65,13 @@ func (h *Handlers) Month(message *tgbotapi.Message) {
 	}
 
 	// Формируем строку месяца для поиска
-	monthQuery := month
+	var monthQuery string
 	if year != "" {
 		monthQuery = fmt.Sprintf("%s-%s", month, year)
+	} else {
+		// Если год не указан, используем текущий год
+		currentYear := time.Now().Year()
+		monthQuery = fmt.Sprintf("%s-%d", month, currentYear)
 	}
 
 	response, err := h.services.Release.GetReleasesForMonth(monthQuery, femaleOnly, maleOnly)
