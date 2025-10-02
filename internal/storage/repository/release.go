@@ -84,21 +84,21 @@ func (r *ReleaseRepository) GetByArtistAndTitle(artistID int, title string) (*mo
 	return &release, nil
 }
 
-// GetByArtistDateAndTrack возвращает релиз по артисту, дате и треку
+// GetByArtistDateAndTrack возвращает релиз по артисту и дате
 func (r *ReleaseRepository) GetByArtistDateAndTrack(artistID int, date, titleTrack string) (*model.Release, error) {
 	ctx := context.Background()
 	var release model.Release
 
 	err := r.db.NewSelect().
 		Model(&release).
-		Where("artist_id = ? AND date = ? AND title_track = ?", artistID, date, titleTrack).
+		Where("artist_id = ? AND date = ?", artistID, date).
 		Scan(ctx)
 
 	if err != nil {
 		if err.Error() == "sql: no rows in result set" {
 			return nil, nil // Релиз не найден
 		}
-		return nil, fmt.Errorf("failed to query release by artist, date and track: %w", err)
+		return nil, fmt.Errorf("failed to query release by artist and date: %w", err)
 	}
 
 	return &release, nil
