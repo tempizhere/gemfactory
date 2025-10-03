@@ -19,13 +19,13 @@ type HomeworkService struct {
 	playlistRepo    model.PlaylistTracksRepository
 	trackingRepo    model.HomeworkTrackingRepository
 	configRepo      model.ConfigRepository
-	playlistService *PlaylistService
-	taskService     *TaskService
+	playlistService PlaylistServiceInterface
+	taskService     TaskServiceInterface
 	logger          *zap.Logger
 }
 
 // NewHomeworkService создает новый сервис домашних заданий
-func NewHomeworkService(db *bun.DB, playlistService *PlaylistService, taskService *TaskService, logger *zap.Logger) *HomeworkService {
+func NewHomeworkService(db *bun.DB, playlistService PlaylistServiceInterface, taskService TaskServiceInterface, logger *zap.Logger) *HomeworkService {
 	return &HomeworkService{
 		playlistRepo:    repository.NewPlaylistTracksRepository(db, logger),
 		trackingRepo:    repository.NewHomeworkTrackingRepository(db, logger),

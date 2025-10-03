@@ -12,16 +12,16 @@ import (
 
 // ConfigWatcher отслеживает изменения в конфигурации и применяет их автоматически
 type ConfigWatcher struct {
-	configService *ConfigService
-	taskService   *TaskService
-	scheduler     *Scheduler
+	configService ConfigServiceInterface
+	taskService   TaskServiceInterface
+	scheduler     SchedulerInterface
 	logger        *zap.Logger
 	stopChan      chan struct{}
 	lastTaskHash  string // Хеш последнего состояния задач для отслеживания изменений
 }
 
 // NewConfigWatcher создает новый наблюдатель конфигурации
-func NewConfigWatcher(configService *ConfigService, taskService *TaskService, scheduler *Scheduler, logger *zap.Logger) *ConfigWatcher {
+func NewConfigWatcher(configService ConfigServiceInterface, taskService TaskServiceInterface, scheduler SchedulerInterface, logger *zap.Logger) *ConfigWatcher {
 	return &ConfigWatcher{
 		configService: configService,
 		taskService:   taskService,

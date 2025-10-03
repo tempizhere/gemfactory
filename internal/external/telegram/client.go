@@ -4,8 +4,6 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"gemfactory/internal/config"
-	"gemfactory/internal/service"
 	"strings"
 	"time"
 
@@ -21,16 +19,15 @@ type RouterInterface interface {
 
 // Client представляет клиент Telegram Bot API
 type Client struct {
-	bot      *tgbotapi.BotAPI
-	botAPI   BotAPI
-	router   RouterInterface
-	logger   *zap.Logger
-	services *service.Services
-	config   *config.Config
+	bot    *tgbotapi.BotAPI
+	botAPI BotAPI
+	router RouterInterface
+	logger *zap.Logger
+	config ConfigInterface
 }
 
 // NewClient создает новый клиент Telegram
-func NewClient(botToken string, config *config.Config, logger *zap.Logger) (*Client, error) {
+func NewClient(botToken string, config ConfigInterface, logger *zap.Logger) (*Client, error) {
 	bot, err := tgbotapi.NewBotAPI(botToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bot API: %w", err)
@@ -51,8 +48,7 @@ func NewClient(botToken string, config *config.Config, logger *zap.Logger) (*Cli
 }
 
 // Start запускает обработку обновлений
-func (c *Client) Start(ctx context.Context, services *service.Services, router RouterInterface) error {
-	c.services = services
+func (c *Client) Start(ctx context.Context, router RouterInterface) error {
 	c.router = router
 
 	// Инициализация бота

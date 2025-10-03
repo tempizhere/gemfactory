@@ -45,13 +45,12 @@ Copy `env.example` to `.env` and fill in:
 DB_DSN=postgres://username:password@host:port/gemfactory?sslmode=disable
 BOT_TOKEN=your_telegram_bot_token
 ADMIN_USERNAME=your_telegram_username
+LLM_API_KEY=your_llm_api_key
 
 # Optional
 SPOTIFY_CLIENT_ID=your_spotify_client_id
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 PLAYLIST_URL=https://open.spotify.com/playlist/your_playlist_id
-LLM_API_KEY=your_llm_api_key
-LLM_BASE_URL=https://integrate.api.nvidia.com/v1
 ```
 
 ## Architecture

@@ -48,3 +48,36 @@ func (cl *ConfigLoader) LoadConfigValueWithSetter(envValue, configKey string, se
 	}
 	return value
 }
+
+// LoadConfigFromDB загружает конфигурацию из базы данных
+func (cl *ConfigLoader) LoadConfigFromDB(cfg *Config) {
+	// ADMIN_USERNAME
+	cl.LoadConfigValueWithSetter(cfg.AdminUsername, "ADMIN_USERNAME", func(value string) {
+		cfg.AdminUsername = value
+	})
+
+	// LLM_API_KEY
+	cl.LoadConfigValueWithSetter(cfg.LLMConfig.APIKey, "LLM_API_KEY", func(value string) {
+		cfg.LLMConfig.APIKey = value
+	})
+
+	// BOT_TOKEN
+	cl.LoadConfigValueWithSetter(cfg.BotToken, "BOT_TOKEN", func(value string) {
+		cfg.BotToken = value
+	})
+
+	// SPOTIFY_CLIENT_ID
+	cl.LoadConfigValueWithSetter(cfg.SpotifyClientID, "SPOTIFY_CLIENT_ID", func(value string) {
+		cfg.SpotifyClientID = value
+	})
+
+	// SPOTIFY_CLIENT_SECRET
+	cl.LoadConfigValueWithSetter(cfg.SpotifyClientSecret, "SPOTIFY_CLIENT_SECRET", func(value string) {
+		cfg.SpotifyClientSecret = value
+	})
+
+	// PLAYLIST_URL
+	cl.LoadConfigValueWithSetter(cfg.PlaylistURL, "PLAYLIST_URL", func(value string) {
+		cfg.PlaylistURL = value
+	})
+}

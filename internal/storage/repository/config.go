@@ -18,7 +18,7 @@ type ConfigRepository struct {
 }
 
 // NewConfigRepository создает новый репозиторий конфигурации
-func NewConfigRepository(db *bun.DB, logger *zap.Logger) *ConfigRepository {
+func NewConfigRepository(db *bun.DB, logger *zap.Logger) model.ConfigRepository {
 	return &ConfigRepository{
 		db:     db,
 		logger: logger,

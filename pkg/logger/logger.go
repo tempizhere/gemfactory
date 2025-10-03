@@ -33,17 +33,30 @@ func New() *zap.Logger {
 
 	// Файловый вывод
 	logPath := getLogPath()
-	fileCore := zapcore.NewCore(
-		zapcore.NewJSONEncoder(encoderConfig),
-		zapcore.AddSync(&lumberjack.Logger{
-			Filename:   logPath,
-			MaxSize:    100, // MB
-			MaxBackups: 3,
-			MaxAge:     28, // days
-			Compress:   true,
-		}),
-		level,
-	)
+
+	// Проверяем, можем ли мы создать файл логов
+	var fileCore zapcore.Core
+	if logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666); err == nil {
+		// Если можем создать файл, используем lumberjack
+		fileCore = zapcore.NewCore(
+			zapcore.NewJSONEncoder(encoderConfig),
+			zapcore.AddSync(&lumberjack.Logger{
+				Filename:   logPath,
+				MaxSize:    100, // MB
+				MaxBackups: 3,
+				MaxAge:     28, // days
+				Compress:   true,
+			}),
+			level,
+		)
+		if err := logFile.Close(); err != nil {
+			// Если не удалось закрыть файл, используем консольный вывод
+			fileCore = consoleCore
+		}
+	} else {
+		// Если не можем создать файл, используем только консольный вывод
+		fileCore = consoleCore
+	}
 
 	// Объединяем выводы
 	core = zapcore.NewTee(consoleCore, fileCore)
@@ -79,7 +92,7 @@ func getLogPath() string {
 	if logPath := os.Getenv("LOG_PATH"); logPath != "" {
 		// Создаем директорию для файла логов если она не существует
 		dir := filepath.Dir(logPath)
-		if err := os.MkdirAll(dir, 0755); err == nil {
+		if err := os.MkdirAll(dir, 0777); err == nil {
 			return logPath
 		}
 		// Если не удалось создать директорию, продолжаем с другими вариантами
@@ -88,13 +101,13 @@ func getLogPath() string {
 	// Затем проверяем APP_DATA_DIR
 	if dataDir := os.Getenv("APP_DATA_DIR"); dataDir != "" {
 		// Создаем директорию если она не существует
-		if err := os.MkdirAll(dataDir, 0755); err == nil {
+		if err := os.MkdirAll(dataDir, 0777); err == nil {
 			return filepath.Join(dataDir, "app.log")
 		}
 	}
 
 	// По умолчанию используем локальную папку logs
-	if err := os.MkdirAll("logs", 0755); err == nil {
+	if err := os.MkdirAll("logs", 0777); err == nil {
 		return "logs/app.log"
 	}
 

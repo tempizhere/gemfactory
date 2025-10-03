@@ -277,5 +277,5 @@ func (b *Bot) runUpdateLoop(ctx context.Context) error {
 	// Создаем роутер
 	router := NewRouterWithBotAPI(b.services, b.config, b.logger, b.telegram.GetBotAPI())
 
-	return b.telegram.Start(ctx, b.services, router)
+	return b.telegram.Start(ctx, router)
 }

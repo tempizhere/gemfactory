@@ -42,7 +42,7 @@ RUN mkdir -p /app/data /app/logs
 # Устанавливаем права
 RUN chmod +x /app/start.sh /app/gemfactory && \
     chown -R appuser:appuser /app && \
-    chmod -R 755 /app/logs
+    chmod -R 777 /app/logs /app/data
 
 # Переключаемся на непривилегированного пользователя
 USER appuser

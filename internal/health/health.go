@@ -4,7 +4,6 @@ package health
 import (
 	"context"
 	"fmt"
-	"gemfactory/internal/storage"
 	"net/http"
 	"time"
 
@@ -14,12 +13,12 @@ import (
 // Server представляет health check сервер
 type Server struct {
 	server *http.Server
-	db     *storage.Postgres
+	db     DatabaseInterface
 	logger *zap.Logger
 }
 
 // NewServer создает новый health check сервер
-func NewServer(port string, logger *zap.Logger, db *storage.Postgres) *Server {
+func NewServer(port string, logger *zap.Logger, db DatabaseInterface) *Server {
 	mux := http.NewServeMux()
 
 	server := &http.Server{
@@ -117,7 +116,7 @@ func (s *Server) checkDatabase() error {
 	}
 
 	// Выполняем простой запрос
-	rows, err := s.db.GetDB().Query("SELECT 1")
+	rows, err := s.db.Query("SELECT 1")
 	if err != nil {
 		return fmt.Errorf("database query failed: %w", err)
 	}

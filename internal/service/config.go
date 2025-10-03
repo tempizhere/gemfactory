@@ -50,6 +50,31 @@ func (s *ConfigService) Get(key string) (string, error) {
 	return config.Value, nil
 }
 
+// GetConfigValue возвращает значение конфигурации (алиас для Get)
+func (s *ConfigService) GetConfigValue(key string) (string, error) {
+	return s.Get(key)
+}
+
+// SetConfigValue устанавливает значение конфигурации (алиас для Set)
+func (s *ConfigService) SetConfigValue(key, value string) error {
+	return s.Set(key, value)
+}
+
+// GetAllConfig возвращает всю конфигурацию как map
+func (s *ConfigService) GetAllConfig() (map[string]string, error) {
+	configs, err := s.repo.GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all configs: %w", err)
+	}
+
+	result := make(map[string]string)
+	for _, config := range configs {
+		result[config.Key] = config.Value
+	}
+
+	return result, nil
+}
+
 // GetAll возвращает всю конфигурацию
 func (s *ConfigService) GetAll() (string, error) {
 	configs, err := s.repo.GetAll()
@@ -152,9 +177,4 @@ func (s *ConfigService) SetBool(key string, value bool) error {
 // SetFloat устанавливает значение конфигурации как float64
 func (s *ConfigService) SetFloat(key string, value float64) error {
 	return s.Set(key, fmt.Sprintf("%f", value))
-}
-
-// GetConfigValue возвращает значение конфигурации (алиас для Get)
-func (s *ConfigService) GetConfigValue(key string) (string, error) {
-	return s.Get(key)
 }

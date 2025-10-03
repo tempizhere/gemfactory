@@ -142,6 +142,41 @@ func (c *Config) GetAppDataDir() string {
 	return c.AppDataDir
 }
 
+// GetDatabaseURL возвращает URL базы данных
+func (c *Config) GetDatabaseURL() string {
+	return c.DatabaseURL
+}
+
+// GetBotToken возвращает токен бота
+func (c *Config) GetBotToken() string {
+	return c.BotToken
+}
+
+// GetHealthPort возвращает порт health сервера
+func (c *Config) GetHealthPort() string {
+	return c.HealthPort
+}
+
+// GetHealthCheckEnabled возвращает статус health check
+func (c *Config) GetHealthCheckEnabled() bool {
+	return c.HealthCheckEnabled
+}
+
+// GetSpotifyClientID возвращает Spotify client ID
+func (c *Config) GetSpotifyClientID() string {
+	return c.SpotifyClientID
+}
+
+// GetSpotifyClientSecret возвращает Spotify client secret
+func (c *Config) GetSpotifyClientSecret() string {
+	return c.SpotifyClientSecret
+}
+
+// GetAdminUsername возвращает имя администратора
+func (c *Config) GetAdminUsername() string {
+	return c.AdminUsername
+}
+
 func (c *Config) Validate() error {
 	// Критически важные переменные - блокируют старт приложения
 	if c.DatabaseURL == "" {

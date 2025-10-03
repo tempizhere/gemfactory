@@ -118,6 +118,26 @@ func (s *PlaylistService) ReloadPlaylist() error {
 	return nil
 }
 
+// UpdatePlaylist обновляет плейлист (алиас для ReloadPlaylist)
+func (s *PlaylistService) UpdatePlaylist() error {
+	return s.ReloadPlaylist()
+}
+
+// GetPlaylistTracks возвращает все треки плейлиста из БД
+func (s *PlaylistService) GetPlaylistTracks() ([]model.PlaylistTracks, error) {
+	spotifyID := s.extractSpotifyID(s.playlistURL)
+	if spotifyID == "" {
+		return nil, fmt.Errorf("invalid playlist URL")
+	}
+
+	tracks, err := s.playlistRepo.GetBySpotifyID(spotifyID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get playlist tracks: %w", err)
+	}
+
+	return tracks, nil
+}
+
 // GetPlaylistInfo возвращает информацию о плейлисте
 func (s *PlaylistService) GetPlaylistInfo() (*spotify.PlaylistInfo, error) {
 	playlistURL := s.playlistURL

@@ -8,6 +8,7 @@ import (
 	"gemfactory/internal/model"
 	"gemfactory/internal/storage"
 
+	"github.com/uptrace/bun"
 	"go.uber.org/zap"
 )
 
@@ -26,50 +27,56 @@ type Services struct {
 // NewServices создает все сервисы
 func NewServices(db *storage.Postgres, cfg *config.Config, logger *zap.Logger) *Services {
 	configService := NewConfigService(db.GetDB(), logger)
+	configLoader := NewConfigLoader(configService, logger)
+	configLoader.LoadConfigFromDB(cfg)
 
-	// Создаем загрузчик конфигурации
-	configLoader := config.NewConfigLoader(configService, logger)
+	spotifyClient := NewSpotifyClient(cfg, logger)
+	scraperClient := NewScraperClient(cfg, logger)
+	playlistService := NewPlaylistServiceWithClient(db.GetDB(), spotifyClient, cfg.PlaylistURL, logger)
 
-	// Загружаем недостающие значения из базы данных (приоритет: env > база данных)
-	// ADMIN_USERNAME
-	configLoader.LoadConfigValueWithSetter(cfg.AdminUsername, "ADMIN_USERNAME", func(value string) {
-		cfg.AdminUsername = value
-	})
+	coreServices := NewCoreServices(db, logger)
+	coreServices.Release = NewReleaseService(db.GetDB(), scraperClient, logger)
+	coreServices.Homework = NewHomeworkService(db.GetDB(), playlistService, coreServices.Task, logger)
 
-	// LLM_API_KEY
-	llmAPIKey := configLoader.LoadConfigValueWithSetter(cfg.LLMConfig.APIKey, "LLM_API_KEY", func(value string) {
-		cfg.LLMConfig.APIKey = value
-	})
+	RegisterTaskExecutors(coreServices, configService, playlistService, logger)
 
-	// BOT_TOKEN
-	configLoader.LoadConfigValueWithSetter(cfg.BotToken, "BOT_TOKEN", func(value string) {
-		cfg.BotToken = value
-	})
+	configWatcher := NewConfigWatcher(configService, coreServices.Task, coreServices.Scheduler, logger)
 
-	// SPOTIFY_CLIENT_ID
-	spotifyClientID := configLoader.LoadConfigValueWithSetter(cfg.SpotifyClientID, "SPOTIFY_CLIENT_ID", func(value string) {
-		cfg.SpotifyClientID = value
-	})
+	return &Services{
+		Artist:        coreServices.Artist,
+		Release:       coreServices.Release,
+		Homework:      coreServices.Homework,
+		Playlist:      playlistService,
+		Config:        configService,
+		ConfigWatcher: configWatcher,
+		Task:          coreServices.Task,
+		Scheduler:     coreServices.Scheduler,
+	}
+}
 
-	// SPOTIFY_CLIENT_SECRET
-	spotifyClientSecret := configLoader.LoadConfigValueWithSetter(cfg.SpotifyClientSecret, "SPOTIFY_CLIENT_SECRET", func(value string) {
-		cfg.SpotifyClientSecret = value
-	})
+// NewConfigLoader создает загрузчик конфигурации
+func NewConfigLoader(configService *ConfigService, logger *zap.Logger) *config.ConfigLoader {
+	return config.NewConfigLoader(configService, logger)
+}
 
-	// PLAYLIST_URL
-	playlistURL := configLoader.LoadConfigValueWithSetter(cfg.PlaylistURL, "PLAYLIST_URL", func(value string) {
-		cfg.PlaylistURL = value
-	})
-
-	// Создаем Spotify клиент с обновленными значениями
-	spotifyClient, err := spotify.NewClient(spotifyClientID, spotifyClientSecret, logger)
-	if err != nil {
-		logger.Error("Failed to create Spotify client", zap.Error(err))
-		// Продолжаем без Spotify клиента
-		spotifyClient = nil
+// NewSpotifyClient создает Spotify клиент
+func NewSpotifyClient(cfg *config.Config, logger *zap.Logger) *spotify.Client {
+	if cfg.SpotifyClientID == "" || cfg.SpotifyClientSecret == "" {
+		logger.Warn("Spotify credentials not provided, Spotify client will not be created")
+		return nil
 	}
 
-	// Создаем скрейпер с LLM_API_KEY из базы данных
+	client, err := spotify.NewClient(cfg.SpotifyClientID, cfg.SpotifyClientSecret, logger)
+	if err != nil {
+		logger.Error("Failed to create Spotify client", zap.Error(err))
+		return nil
+	}
+
+	return client
+}
+
+// NewScraperClient создает скрейпер
+func NewScraperClient(cfg *config.Config, logger *zap.Logger) scraper.Fetcher {
 	scraperConfig := scraper.Config{
 		HTTPClientConfig: scraper.HTTPClientConfig{
 			MaxIdleConns:          cfg.ScraperConfig.HTTPClientConfig.MaxIdleConns,
@@ -88,55 +95,54 @@ func NewServices(db *storage.Postgres, cfg *config.Config, logger *zap.Logger) *
 		RequestDelay: cfg.ScraperConfig.RequestDelay,
 		LLMConfig: scraper.LLMConfig{
 			BaseURL: cfg.LLMConfig.BaseURL,
-			APIKey:  llmAPIKey, // Используем ключ из базы данных
+			APIKey:  cfg.LLMConfig.APIKey,
 			Timeout: cfg.LLMConfig.Timeout,
 			Delay:   cfg.LLMConfig.Delay,
 		},
 	}
-	scraperClient := scraper.NewFetcher(scraperConfig, logger)
+	return scraper.NewFetcher(scraperConfig, logger)
+}
 
-	// Создаем playlistService только если Spotify клиент доступен
-	var playlistService *PlaylistService
-	if spotifyClient != nil {
-		playlistService = NewPlaylistService(db.GetDB(), *spotifyClient, playlistURL, logger)
-	} else {
+// NewPlaylistServiceWithClient создает сервис плейлиста с клиентом
+func NewPlaylistServiceWithClient(db *bun.DB, spotifyClient *spotify.Client, playlistURL string, logger *zap.Logger) *PlaylistService {
+	if spotifyClient == nil {
 		logger.Warn("Spotify client not available, playlist service will not be created")
+		return nil
 	}
+	return NewPlaylistService(db, *spotifyClient, playlistURL, logger)
+}
 
-	// Создаем остальные сервисы
-	artistService := NewArtistService(db.GetDB(), logger)
-	releaseService := NewReleaseService(db.GetDB(), scraperClient, logger)
+// CoreServices содержит основные сервисы
+type CoreServices struct {
+	Artist    *ArtistService
+	Release   *ReleaseService
+	Homework  *HomeworkService
+	Task      *TaskService
+	Scheduler *Scheduler
+}
+
+// NewCoreServices создает основные сервисы
+func NewCoreServices(db *storage.Postgres, logger *zap.Logger) *CoreServices {
 	taskService := NewTaskService(db.GetDB(), logger)
-	homeworkService := NewHomeworkService(db.GetDB(), playlistService, taskService, logger)
+	return &CoreServices{
+		Artist:    NewArtistService(db.GetDB(), logger),
+		Task:      taskService,
+		Scheduler: NewScheduler(taskService, logger),
+	}
+}
 
-	// Создаем планировщик
-	scheduler := NewScheduler(taskService, logger)
+// RegisterTaskExecutors регистрирует исполнителей задач
+func RegisterTaskExecutors(coreServices *CoreServices, configService *ConfigService, playlistService *PlaylistService, logger *zap.Logger) {
+	parseReleaseExecutor := NewParseReleaseTaskExecutor(coreServices.Release, logger)
+	coreServices.Scheduler.RegisterExecutor(model.TaskTypeParseReleases, parseReleaseExecutor)
 
-	// Регистрируем исполнителей задач
-	parseReleaseExecutor := NewParseReleaseTaskExecutor(releaseService, logger)
-	scheduler.RegisterExecutor(model.TaskTypeParseReleases, parseReleaseExecutor)
+	homeworkResetExecutor := NewHomeworkResetTaskExecutor(coreServices.Homework, configService, logger)
+	coreServices.Scheduler.RegisterExecutor(model.TaskTypeHomeworkReset, homeworkResetExecutor)
 
-	// Регистрируем updatePlaylistExecutor только если playlistService доступен
 	if playlistService != nil {
 		updatePlaylistExecutor := NewUpdatePlaylistTaskExecutor(playlistService, logger)
-		scheduler.RegisterExecutor(model.TaskTypeUpdatePlaylist, updatePlaylistExecutor)
+		coreServices.Scheduler.RegisterExecutor(model.TaskTypeUpdatePlaylist, updatePlaylistExecutor)
 	} else {
 		logger.Warn("Playlist service not available, update playlist tasks will not be registered")
-	}
-
-	homeworkResetExecutor := NewHomeworkResetTaskExecutor(homeworkService, configService, logger)
-	scheduler.RegisterExecutor(model.TaskTypeHomeworkReset, homeworkResetExecutor)
-
-	configWatcher := NewConfigWatcher(configService, taskService, scheduler, logger)
-
-	return &Services{
-		Artist:        artistService,
-		Release:       releaseService,
-		Homework:      homeworkService,
-		Playlist:      playlistService,
-		Config:        configService,
-		ConfigWatcher: configWatcher,
-		Task:          taskService,
-		Scheduler:     scheduler,
 	}
 }

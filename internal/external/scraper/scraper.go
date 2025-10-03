@@ -15,7 +15,7 @@ type fetcherImpl struct {
 	config     Config
 	logger     *zap.Logger
 	httpClient *HTTPClient
-	llmClient  *llm.Client
+	llmClient  LLMClientInterface
 }
 
 // NewFetcher создает новый экземпляр Fetcher
@@ -27,6 +27,18 @@ func NewFetcher(config Config, logger *zap.Logger) Fetcher {
 		Timeout: config.LLMConfig.Timeout,
 		Delay:   config.LLMConfig.Delay,
 	}, logger)
+
+	return &fetcherImpl{
+		config:     config,
+		logger:     logger,
+		httpClient: httpClient,
+		llmClient:  llmClient,
+	}
+}
+
+// NewFetcherWithLLMClient создает новый экземпляр Fetcher с внешним LLM клиентом
+func NewFetcherWithLLMClient(config Config, logger *zap.Logger, llmClient LLMClientInterface) Fetcher {
+	httpClient := NewHTTPClient(config.HTTPClientConfig, logger)
 
 	return &fetcherImpl{
 		config:     config,

@@ -50,7 +50,7 @@ UNION ALL
 SELECT 'artists' as table_name, COUNT(*) as record_count FROM gemfactory.artists;
 " || echo "Ошибка при проверке таблиц"
 
-# Создаем папки для данных и логов
+# Создаем папки для данных и логов (если не существуют)
 echo "Создание папок для данных и логов..."
 mkdir -p /app/data /app/logs
 
@@ -58,6 +58,22 @@ mkdir -p /app/data /app/logs
 echo "Проверка прав доступа к папкам..."
 ls -la /app/data || echo "Не удалось получить информацию о папке данных"
 ls -la /app/logs || echo "Не удалось получить информацию о папке логов"
+
+# Проверяем, можем ли мы писать в папки
+echo "Проверка возможности записи..."
+if touch /app/logs/test.log 2>/dev/null; then
+    echo "✓ Запись в /app/logs возможна"
+    rm -f /app/logs/test.log
+else
+    echo "✗ Запись в /app/logs невозможна"
+fi
+
+if touch /app/data/test.txt 2>/dev/null; then
+    echo "✓ Запись в /app/data возможна"
+    rm -f /app/data/test.txt
+else
+    echo "✗ Запись в /app/data невозможна"
+fi
 
 # Запускаем приложение
 echo "Запуск приложения..."
