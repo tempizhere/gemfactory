@@ -207,7 +207,7 @@ func countDatesInBlock(htmlStr string) int {
 	dateTagMatches := dateTagRegex.FindAllString(htmlStr, -1)
 	fmt.Printf("DEBUG: Found %d date tags: %v\n", len(dateTagMatches), dateTagMatches)
 	if len(dateTagMatches) > 0 {
-		// Также считаем даты в <need_unparse> теге, но исключаем справочные даты
+		// Также считаем даты в <need_unparse> теге
 		needUnparseRegex := regexp.MustCompile(`<need_unparse>([\s\S]*?)</need_unparse>`)
 		needUnparseMatches := needUnparseRegex.FindAllStringSubmatch(htmlStr, -1)
 
@@ -217,44 +217,16 @@ func countDatesInBlock(htmlStr string) int {
 			if len(match) > 1 {
 				content := match[1]
 				fmt.Printf("DEBUG: need_unparse content: %s\n", content[:min(300, len(content))])
-				// Ищем даты в формате "Month Day, Year" или "Month Day", но исключаем справочные даты
+				// Ищем даты в формате "Month Day, Year" или "Month Day"
 				datePattern := `\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:,\s+\d{4})?\b`
 				re := regexp.MustCompile(datePattern)
 				allDates := re.FindAllString(strings.ToLower(content), -1)
 				fmt.Printf("DEBUG: Found %d dates in need_unparse: %v\n", len(allDates), allDates)
 
-				// Исключаем только справочные даты (даты прошлых релизов), но НЕ даты текущих релизов
-				// Справочные даты - это даты в контексте "Album Release: Dec 1, 2023" или "Dec 18 at 0 AM KST: ... MV Release"
-				// НЕ исключаем даты типа "Jan 2 at 0 AM KST: ... Release" - это даты самих релизов
-				referenceDatePatterns := []string{
-					// Формат: "Album Release: Month Day, Year" - справочная дата
-					`(?i)\b(album release|digital release|cd release|ost release):\s*[^:]*\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},\s+\d{4}\b`,
-					// Формат: "Month Day, Year: ... Release" - справочная дата
-					`(?i)\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},\s+\d{4}:\s*[^:]*\b(release|mv|album|digital|cd|ost|pre-release)\b`,
-				}
-
-				// Подсчитываем только даты, которые НЕ являются справочными
-				referenceDates := make(map[string]bool)
-				for _, pattern := range referenceDatePatterns {
-					referenceRegex := regexp.MustCompile(pattern)
-					referenceMatches := referenceRegex.FindAllString(strings.ToLower(content), -1)
-					for _, refMatch := range referenceMatches {
-						// Извлекаем дату из справочного контекста
-						dateInRef := re.FindString(refMatch)
-						if dateInRef != "" {
-							referenceDates[dateInRef] = true
-						}
-					}
-				}
-
-				// Считаем только даты, которые не являются справочными
+				// Считаем ВСЕ даты - если в блоке несколько дат с релизами, это сложный случай
+				totalDates += len(allDates)
 				for _, date := range allDates {
-					if !referenceDates[date] {
-						totalDates++
-						fmt.Printf("DEBUG: Added date: %s\n", date)
-					} else {
-						fmt.Printf("DEBUG: Excluded reference date: %s\n", date)
-					}
+					fmt.Printf("DEBUG: Added date: %s\n", date)
 				}
 			}
 		}
@@ -818,41 +790,60 @@ func (f *fetcherImpl) ParseMonthlyPage(ctx context.Context, url, month, year str
 }
 
 // deduplicateBlocksByArtist дедуплицирует блоки по артисту
-// Оставляет только последний блок для каждого артиста
+// Оставляет только блок с максимальной датой для каждого артиста
 func (f *fetcherImpl) deduplicateBlocksByArtist(blocks []string, logger *zap.Logger) []string {
 	if len(blocks) == 0 {
 		return blocks
 	}
 
-	// Мапа для отслеживания последнего блока для каждого артиста
-	artistLastBlock := make(map[string]string)
+	// Мапа для отслеживания блока с максимальной датой для каждого артиста
+	artistMaxDateBlock := make(map[string]string)
+	artistMaxDate := make(map[string]string)
 
 	// Извлекаем артиста и дату из каждого блока
 	for i, block := range blocks {
 		artist, date := f.extractArtistAndDateFromBlock(block)
+
+		// Добавляем отладочные логи
+		logger.Info("Extracting artist and date from block",
+			zap.Int("block_index", i+1),
+			zap.String("artist", artist),
+			zap.String("date", date),
+			zap.String("block_preview", block[:min(200, len(block))]))
+
 		if artist == "" {
 			logger.Warn("Could not extract artist from block", zap.Int("block_index", i+1))
 			continue
 		}
 
-		// Создаем ключ: только артист (без даты)
-		key := strings.ToLower(artist)
+		artistKey := strings.ToLower(artist)
 
-		// Сохраняем последний блок для этого артиста
-		artistLastBlock[key] = block
+		// Если это первый блок для артиста или дата больше максимальной
+		if currentMaxDate, exists := artistMaxDate[artistKey]; !exists || date > currentMaxDate {
+			artistMaxDate[artistKey] = date
+			artistMaxDateBlock[artistKey] = block
 
-		logger.Debug("Processed block for deduplication",
-			zap.Int("block_index", i+1),
-			zap.String("artist", artist),
-			zap.String("date", date),
-			zap.String("key", key))
+			logger.Info("Updated max date block for artist",
+				zap.Int("block_index", i+1),
+				zap.String("artist", artist),
+				zap.String("date", date),
+				zap.String("previous_max_date", currentMaxDate))
+		} else {
+			logger.Info("Skipped block with earlier date",
+				zap.Int("block_index", i+1),
+				zap.String("artist", artist),
+				zap.String("date", date),
+				zap.String("max_date", currentMaxDate))
+		}
 	}
 
-	// Собираем уникальные блоки
+	// Собираем блоки с максимальными датами
 	var deduplicatedBlocks []string
-	for key, block := range artistLastBlock {
+	for artistKey, block := range artistMaxDateBlock {
 		deduplicatedBlocks = append(deduplicatedBlocks, block)
-		logger.Debug("Added deduplicated block", zap.String("key", key))
+		logger.Debug("Added max date block for artist",
+			zap.String("artist", artistKey),
+			zap.String("max_date", artistMaxDate[artistKey]))
 	}
 
 	logger.Info("Block deduplication completed",
@@ -877,7 +868,12 @@ func (f *fetcherImpl) extractArtistAndDateFromBlock(block string) (string, strin
 	dateMatch := dateRe.FindStringSubmatch(block)
 	date := ""
 	if len(dateMatch) > 1 {
-		date = strings.TrimSpace(dateMatch[1])
+		dateStr := strings.TrimSpace(dateMatch[1])
+		// Парсим дату в формате "Month Day, Year" и конвертируем в DD.MM.YY
+		parsedDate, err := parseEnglishDate(dateStr, "2025")
+		if err == nil {
+			date = parsedDate
+		}
 	}
 
 	return artist, date

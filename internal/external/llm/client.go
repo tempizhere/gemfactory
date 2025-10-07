@@ -213,45 +213,36 @@ func (c *Client) incrementError() {
 
 // createComplexBlockPrompt создает промпт для парсинга сложного блока
 func (c *Client) createComplexBlockPrompt(htmlBlock string, month string) string {
-	return fmt.Sprintf(`Извлеки все релизы одного артиста из HTML-блока в JSON-массив в формате:
+	return fmt.Sprintf(`Извлеки все релизы из HTML-блока в JSON-массив:
+
 [
   {"artist": "NAME", "date": "DD.MM.YY", "track": "NAME", "album": "NAME", "youtube": "URL"},
   ...
 ]
 
-Требования:
-1. Извлекай "artist" из тега <artist>.
-2. Извлекай релизы из блока <need_unparse> ТОЛЬКО за %s месяц. Если в блоке есть даты: используй их для соответствующих релизов, но включай только релизы за %s. Если дат нет: назначь дату из тега <date> для всех релизов.
-3. Название трека берется из кавычек (' ' или " " или другие) без суффиксов "MV Release", "Release", "(Title Track)", "PRE-RELEASE" и т.д, сохраняя версии (ENG Ver.) и коллаборации "feat.". ПРИОРИТЕТ: всегда ищи треки в кавычках перед применением других правил.
-4. Если в <need_unparse> есть поле "Album" или "OST", извлекай название альбома из него и применяй ко ВСЕМ релизам в <need_unparse>.
-7. YouTube-ссылки берутся из тегов <a href=...>YouTube</a> рядом с треком. Ссылка либо встроена в название релиза, либо находится сразу на следующей строке.
-8. Возвращай валидный JSON без объяснений и без не ASCII символов.
+Правила:
+1. Извлекай артиста из тега <artist>
+2. Извлекай ВСЕ релизы за %s месяц из блока <need_unparse> - неважно какая дата в теге <date>
+3. Если есть даты в блоке <need_unparse> - используй их. Если нет - используй дату из тега <date>
+4. Трек берется из кавычек (' ' или " " или другие)
+5. Название альбома из поля "Album" или "OST" применяется ко всем релизам
+6. YouTube ссылки из тегов <a href=...>YouTube</a> встроены в название релиза или находятся на последующих строках
 
-ВАЖНЫЕ ПРИМЕРЫ:
+Пример:
+<event><date>October 27, 2025</date><need_unparse><artist>GROUP</artist>
+September 15: "OLD SONG" MV Release
+Music Video: <a href="https://youtu.be/dsaa">YouTube</a>
+October 13: "TRACK 1" MV Release
+Music Video: <a href="https://youtu.be/abc">YouTube</a>
+October 20: "TRACK 2" MV Release
+Music Video: <a href="https://youtu.be/def">YouTube</a>
+October 27: "TRACK 3" Release
+Album: Album Name</need_unparse></event>
 
-Пример 1 - фильтрация по месяцу (извлекай ТОЛЬКО за august):
-<event><date>August 22, 2025</date><need_unparse><artist>GROUP A</artist>
-July 15: "OLD SONG" MV Release
-August 11: "SONG 1" MV Release
-August 18: "SONG 2" MV Release
-August 22: "SONG 3" MV Release
-September 5: "FUTURE SONG" MV Release
-Album: 2nd Album GROUP A <ALBUM_TITLE></need_unparse></event>
-→ [{"artist": "GROUP A", "date": "11.08.25", "track": "SONG 1", "album": "2nd Album GROUP A ALBUM_TITLE", "youtube": ""}, {"artist": "GROUP A", "date": "18.08.25", "track": "SONG 2", "album": "2nd Album GROUP A ALBUM_TITLE", "youtube": ""}, {"artist": "GROUP A", "date": "22.08.25", "track": "SONG 3", "album": "2nd Album GROUP A ALBUM_TITLE", "youtube": ""}]
-(ТОЛЬКО релизы за august, релизы за июль и сентябрь игнорируются)
-
-Пример 2 - многотрековый релиз без дат:
-<event><date>August 11, 2025</date><need_unparse><artist>GROUP B</artist> (subunit)
-Album: Debut EP <ALBUM_NAME>
-Title Track & MV:
-– <a href="https://youtu.be/abc123">"TRACK 1"</a>
-– <a href="https://youtu.be/def456">"TRACK 2"</a>
-– <a href="https://youtu.be/ghi789">"TRACK 3"</a></need_unparse></event>
-→ [{"artist": "GROUP B", "date": "11.08.25", "track": "TRACK 1", "album": "Debut EP ALBUM_NAME", "youtube": "https://youtu.be/abc123"}, {"artist": "GROUP B", "date": "11.08.25", "track": "TRACK 2", "album": "Debut EP ALBUM_NAME", "youtube": "https://youtu.be/def456"}, {"artist": "GROUP B", "date": "11.08.25", "track": "TRACK 3", "album": "Debut EP ALBUM_NAME", "youtube": "https://youtu.be/ghi789"}]
-(Все треки получают дату из <date>, создаются отдельные релизы для каждого трека)
+→ [{"artist": "GROUP", "date": "13.10.25", "track": "TRACK 1", "album": "Album Name", "youtube": "https://youtu.be/abc"}, {"artist": "GROUP", "date": "20.10.25", "track": "TRACK 2", "album": "Album Name", "youtube": "https://youtu.be/def"}, {"artist": "GROUP", "date": "27.10.25", "track": "TRACK 3", "album": "Album Name", "youtube": ""}]
 
 HTML-блок:
-%s`, month, month, htmlBlock)
+%s`, month, htmlBlock)
 }
 
 // sendRequest отправляет запрос к LLM API
